@@ -11,6 +11,39 @@
   "metadata": {},
   "plugins": [
     {
+      "name": "@larksuite/dsh-lark",
+      "title": {
+        "zh": "飞书渠道",
+        "en": "Feishu Channel"
+      },
+      "description": {
+        "zh": "官方 Lark/Feishu 渠道与卡片流式输出:飞书里直接和 DSH 对话,支持 /model 切换模型、/new 新会话、审批与提问卡片。",
+        "en": "Official Lark/Feishu channel with CardKit streaming: chat with DSH inside Feishu, switch models with /model, start sessions with /new, resolve approvals on cards."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/dsh-lark"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793141367,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "",
+            "path": "plugins/dsh-lark"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/interrupted-turn-resumer",
       "title": {
         "zh": "中断任务续接",

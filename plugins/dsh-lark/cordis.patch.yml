@@ -1,0 +1,3 @@
+- insert:
+    - id: feishu
+      name: '@larksuite/dsh-lark'
