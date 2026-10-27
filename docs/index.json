@@ -1,0 +1,90 @@
+{
+  "format": 1,
+  "title": {
+    "zh": "DSH Friends 插件市场",
+    "en": "DSH Friends Plugin Market"
+  },
+  "description": {
+    "zh": "朋友间共享的 DSH 插件集合:会话标题自动维护、中断任务自动续接等实用工具",
+    "en": "A shared collection of DSH plugins: session title keeping, interrupted turn resuming, and more."
+  },
+  "metadata": {},
+  "plugins": [
+    {
+      "name": "@dsh-friends/interrupted-turn-resumer",
+      "title": {
+        "zh": "中断任务续接",
+        "en": "Interrupted Turn Resumer"
+      },
+      "description": {
+        "zh": "系统重启后自动继续未完成的任务，无需重新催促。",
+        "en": "Automatically resume interrupted turns after restarts."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/dsh-friends/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/dsh-friends/dsh-plugins",
+        "directory": "plugins/interrupted-turn-resumer"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "session",
+          "resumer",
+          "reliability"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.2.1",
+          "publishTimestamp": 1793105447,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/dsh-friends/dsh-plugins",
+            "commit": "5d3b9bcbd28fc1dcacdf03268cf2a2fe4df62259",
+            "path": "plugins/interrupted-turn-resumer"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/session-title-keeper",
+      "title": {
+        "zh": "会话标题",
+        "en": "Session Titles"
+      },
+      "description": {
+        "zh": "自动为对话起一个简短准确的名字，漏了的会定时补上。",
+        "en": "Name conversations automatically; missed ones are refreshed on a schedule."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/dsh-friends/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/dsh-friends/dsh-plugins",
+        "directory": "plugins/session-title-keeper"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "session",
+          "title",
+          "llm"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793105414,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/dsh-friends/dsh-plugins",
+            "commit": "5d3b9bcbd28fc1dcacdf03268cf2a2fe4df62259",
+            "path": "plugins/session-title-keeper"
+          },
+          "engines": {}
+        }
+      ]
+    }
+  ]
+}
