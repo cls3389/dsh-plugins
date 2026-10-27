@@ -36,7 +36,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "",
+            "commit": "b13b3677ee16e33764994e7fbac9d4b94a2fdf2e",
             "path": "plugins/dsh-lark"
           },
           "engines": {}
