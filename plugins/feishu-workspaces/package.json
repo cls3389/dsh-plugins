@@ -1,0 +1,29 @@
+{
+  "name": "@dsh-friends/feishu-workspaces",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "./main.js",
+  "exports": {
+    ".": "./main.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "main.js",
+    "cordis.patch.yml",
+    "README.md",
+    "test.mjs",
+    "locale/*.json"
+  ],
+  "scripts": {
+    "test": "node --test test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "Group Lark sessions into read-only source workspaces by bot name and App ID",
+  "license": "MIT"
+}

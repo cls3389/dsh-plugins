@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-friends/feishu-keeper",
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": "./main.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "main.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "feishu profile 进程保活:容器重启/进程崩溃后自动拉起 dsh --profile feishu",
+  "license": "MIT"
+}

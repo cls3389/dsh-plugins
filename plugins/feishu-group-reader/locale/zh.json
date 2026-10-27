@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "飞书群消息",
+    "description": "以用户身份读取飞书群聊消息（复用 openclaw-lark 官方 UAT 授权存储）。"
+  }
+}

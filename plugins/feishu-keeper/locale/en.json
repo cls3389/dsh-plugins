@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feishu Keeper",
+    "description": "Restart the Feishu channel automatically after crashes or container restarts."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feishu App Workspaces",
+    "description": "Groups Lark sessions into read-only workspace directories by Feishu app name and App ID."
+  }
+}
