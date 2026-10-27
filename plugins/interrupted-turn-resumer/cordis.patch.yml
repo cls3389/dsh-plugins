@@ -1,0 +1,4 @@
+# 仅声明插件；实际配置集中在 profile 的 cordis.patch.yml。
+- insert:
+    - id: interrupted-turn-resumer
+      name: '@dsh-friends/interrupted-turn-resumer'

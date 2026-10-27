@@ -1,0 +1,5 @@
+# 只声明挂载,config 统一由 profile 的 cordis.patch.yml 单点持有
+# (加载器按 id last-wins 且整体替换,两处都写会静默丢配置)。
+- insert:
+    - id: session-title-keeper
+      name: '@dsh-friends/session-title-keeper'

@@ -1,0 +1,13 @@
+{
+  "name": "dsh-plugins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH Friends 插件市场:插件 monorepo + format-1 市场索引(GitHub Pages 托管)",
+  "repository": {
+    "url": "git+https://github.com/dsh-friends/dsh-plugins.git"
+  },
+  "scripts": {
+    "gen-index": "node scripts/gen-index.mjs",
+    "test": "cd plugins/interrupted-turn-resumer && node --test test-regressions.mjs && cd ../session-title-keeper && node test-regressions.mjs"
+  }
+}

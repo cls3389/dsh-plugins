@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+/**
+ * gen-index.mjs — 生成 dsh 插件市场 format-1 索引。
+ *
+ * 扫描 plugins/ 下每个插件目录:
+ *   - package.json: name/version/description/keywords
+ *   - locale/zh.json + en.json: meta.title / meta.description 作为市场标题与描述
+ *   - git: 用仓库 HEAD 的最新 commit SHA 把 git 源 pin 到精确版本
+ * 输出 docs/index.json(静态托管根 = docs/,GitHub Pages 直接指 docs/)。
+ *
+ * 用法: node scripts/gen-index.mjs [--repo-url https://github.com/<user>/dsh-plugins]
+ *       不传 --repo-url 时读 package.json 的 repository.url。
+ */
+import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const pluginsDir = join(root, 'plugins');
+const outPath = join(root, 'docs', 'index.json');
+
+// ── 参数 ──
+const argv = process.argv.slice(2);
+const repoFlag = argv.indexOf('--repo-url');
+const repoUrlArg = repoFlag >= 0 ? argv[repoFlag + 1] : undefined;
+
+const repoMeta = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  .repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
+const repoUrl = repoUrlArg ?? repoMeta;
+if (repoUrl === undefined || !/^https:\/\/[^/]+\/[^/]+\/[^/]+$/u.test(repoUrl)) {
+  console.error('gen-index: 需要 --repo-url https://github.com/<user>/<repo> 或 package.json repository.url');
+  process.exit(1);
+}
+
+// 当前 commit:仓库里 plugins/ 子目录各自独立的最新提交(子目录级 git log)
+function latestCommitFor(dir) {
+  const rel = dir.startsWith(root) ? dir.slice(root.length + 1) : dir;
+  return execSync(`git log -1 --format=%H -- ${JSON.stringify(rel)}`, { cwd: root, encoding: 'utf8' }).trim();
+}
+
+// locale 标题/描述:zh 为主,en 必填(format 要求 en 必须存在)
+function localizedMeta(dir) {
+  const read = (lang) => {
+    try { return JSON.parse(readFileSync(join(dir, 'locale', `${lang}.json`), 'utf8')).meta ?? {}; }
+    catch { return {}; }
+  };
+  const zh = read('zh');
+  const en = read('en');
+  const build = (field) => {
+    const zhText = zh[field] ?? en[field];
+    const enText = en[field] ?? zh[field];
+    return zhText === undefined ? undefined : { zh: zhText, en: enText ?? zhText };
+  };
+  return { title: build('title'), description: build('description') };
+}
+
+const plugins = [];
+for (const entry of readdirSync(pluginsDir)) {
+  const dir = join(pluginsDir, entry);
+  const manifestPath = join(dir, 'package.json');
+  if (!statSync(dir).isDirectory() || !statSync(manifestPath, { throwIfNoEntry: false })?.isFile()) continue;
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const commit = latestCommitFor(join('plugins', entry));
+  const meta = localizedMeta(dir);
+  plugins.push({
+    name: manifest.name,
+    ...meta.title === undefined ? {} : { title: meta.title },
+    ...meta.description === undefined ? {} : { description: meta.description },
+    author: manifest.author ?? 'dsh-friends',
+    homepage: manifest.homepage ?? `${repoUrl}#readme`,
+    repository: { url: repoUrl, directory: `plugins/${entry}` },
+    metadata: {
+      keywords: manifest.keywords ?? [],
+    },
+    versions: [{
+      version: manifest.version,
+      publishTimestamp: Math.floor(statSync(manifestPath).mtimeMs / 1000),
+      source: { type: 'git', url: repoUrl, commit, path: `plugins/${entry}` },
+      engines: manifest.engines?.dsh === undefined ? {} : { dsh: manifest.engines.dsh },
+    }],
+  });
+}
+
+if (plugins.length === 0) {
+  console.error('gen-index: plugins/ 下没有可用的插件');
+  process.exit(1);
+}
+
+const index = {
+  format: 1,
+  title: { zh: 'DSH Friends 插件市场', en: 'DSH Friends Plugin Market' },
+  description: {
+    zh: '朋友间共享的 DSH 插件集合:会话标题自动维护、中断任务自动续接等实用工具',
+    en: 'A shared collection of DSH plugins: session title keeping, interrupted turn resuming, and more.',
+  },
+  metadata: {},
+  plugins,
+};
+
+writeFileSync(outPath, JSON.stringify(index, null, 2) + '\n', 'utf8');
+console.log(`gen-index: 写入 ${plugins.length} 个插件 → ${outPath}`);
+for (const p of plugins) console.log(`  - ${p.name}@${p.versions[0].version} (git ${p.versions[0].source.commit.slice(0, 8)})`);
