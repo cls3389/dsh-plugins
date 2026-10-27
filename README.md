@@ -20,6 +20,7 @@ dsh-plugins/
 | 插件 | 作用 |
 |---|---|
 | `@dsh-friends/interrupted-turn-resumer` | DSH 进程中断恢复后自动续接未完成任务，每个轮次最多补发一次继续消息 |
+| `@larksuite/dsh-lark` | 官方飞书渠道:飞书里对话 DSH,/model 切模型、卡片审批(需自备飞书应用凭据) |
 | `@dsh-friends/session-title-keeper` | 定时扫描会话，把停留在 fallback 截断版或漏更新的标题用 LLM 重算写回 |
 
 两个插件的运行时状态默认写入 `$DSH_HOME`（未设则 `~/.dsh`），无需改配置即可在
