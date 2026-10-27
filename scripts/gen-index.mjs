@@ -10,6 +10,9 @@
  *
  * 用法: node scripts/gen-index.mjs [--repo-url https://github.com/<user>/dsh-plugins]
  *       不传 --repo-url 时读 package.json 的 repository.url。
+ *   --npm-registry <url>  版本源改为 npm(registry 分发),并附 --with-test 掯针;
+ *                         生成 docs/index-local.json 用于本地安装链路实测。
+ *   --with-test           把 plugins-test/ 下的探针也纳入索引。
  */
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -18,12 +21,19 @@ import { execSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pluginsDir = join(root, 'plugins');
-const outPath = join(root, 'docs', 'index.json');
+const testPluginsDir = join(root, 'plugins-test');
 
 // ── 参数 ──
 const argv = process.argv.slice(2);
 const repoFlag = argv.indexOf('--repo-url');
 const repoUrlArg = repoFlag >= 0 ? argv[repoFlag + 1] : undefined;
+const registryFlag = argv.indexOf('--npm-registry');
+const registryArg = registryFlag >= 0 ? argv[registryFlag + 1] : undefined;
+const withTest = argv.includes('--with-test');
+
+const outPath = registryArg === undefined
+  ? join(root, 'docs', 'index.json')
+  : join(root, 'docs', 'index-local.json');
 
 const repoMeta = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   .repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
@@ -34,9 +44,8 @@ if (repoUrl === undefined || !/^https:\/\/[^/]+\/[^/]+\/[^/]+$/u.test(repoUrl)) 
 }
 
 // 当前 commit:仓库里 plugins/ 子目录各自独立的最新提交(子目录级 git log)
-function latestCommitFor(dir) {
-  const rel = dir.startsWith(root) ? dir.slice(root.length + 1) : dir;
-  return execSync(`git log -1 --format=%H -- ${JSON.stringify(rel)}`, { cwd: root, encoding: 'utf8' }).trim();
+function latestCommitFor(relDir) {
+  return execSync(`git log -1 --format=%H -- ${JSON.stringify(relDir)}`, { cwd: root, encoding: 'utf8' }).trim();
 }
 
 // locale 标题/描述:zh 为主,en 必填(format 要求 en 必须存在)
@@ -55,31 +64,44 @@ function localizedMeta(dir) {
   return { title: build('title'), description: build('description') };
 }
 
-const plugins = [];
-for (const entry of readdirSync(pluginsDir)) {
-  const dir = join(pluginsDir, entry);
+function buildPluginEntry(baseDir, relDir, entryName) {
+  const dir = join(baseDir, entryName);
   const manifestPath = join(dir, 'package.json');
-  if (!statSync(dir).isDirectory() || !statSync(manifestPath, { throwIfNoEntry: false })?.isFile()) continue;
+  if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory() || !statSync(manifestPath, { throwIfNoEntry: false })?.isFile()) return undefined;
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const commit = latestCommitFor(join('plugins', entry));
   const meta = localizedMeta(dir);
-  plugins.push({
+  const source = registryArg === undefined
+    ? { type: 'git', url: repoUrl, commit: latestCommitFor(relDir), path: relDir }
+    : { type: 'npm', registry: registryArg };
+  return {
     name: manifest.name,
     ...meta.title === undefined ? {} : { title: meta.title },
     ...meta.description === undefined ? {} : { description: meta.description },
     author: manifest.author ?? 'dsh-friends',
     homepage: manifest.homepage ?? `${repoUrl}#readme`,
-    repository: { url: repoUrl, directory: `plugins/${entry}` },
+    repository: { url: repoUrl, directory: relDir },
     metadata: {
       keywords: manifest.keywords ?? [],
     },
     versions: [{
       version: manifest.version,
       publishTimestamp: Math.floor(statSync(manifestPath).mtimeMs / 1000),
-      source: { type: 'git', url: repoUrl, commit, path: `plugins/${entry}` },
+      source,
       engines: manifest.engines?.dsh === undefined ? {} : { dsh: manifest.engines.dsh },
     }],
-  });
+  };
+}
+
+const plugins = [];
+for (const entry of readdirSync(pluginsDir)) {
+  const plugin = buildPluginEntry(pluginsDir, `plugins/${entry}`, entry);
+  if (plugin !== undefined) plugins.push(plugin);
+}
+if (withTest) {
+  for (const entry of readdirSync(testPluginsDir)) {
+    const plugin = buildPluginEntry(testPluginsDir, `plugins-test/${entry}`, entry);
+    if (plugin !== undefined) plugins.push(plugin);
+  }
 }
 
 if (plugins.length === 0) {
@@ -100,4 +122,8 @@ const index = {
 
 writeFileSync(outPath, JSON.stringify(index, null, 2) + '\n', 'utf8');
 console.log(`gen-index: 写入 ${plugins.length} 个插件 → ${outPath}`);
-for (const p of plugins) console.log(`  - ${p.name}@${p.versions[0].version} (git ${p.versions[0].source.commit.slice(0, 8)})`);
+for (const p of plugins) {
+  const src = p.versions[0].source;
+  const origin = src.type === 'git' ? `git ${src.commit.slice(0, 8)}` : `npm ${src.registry}`;
+  console.log(`  - ${p.name}@${p.versions[0].version} (${origin})`);
+}

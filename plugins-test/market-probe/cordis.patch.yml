@@ -1,0 +1,3 @@
+- insert:
+    - id: market-probe
+      name: '@dsh-friends/market-probe'
