@@ -44,6 +44,105 @@
       ]
     },
     {
+      "name": "@dsh-friends/feishu-group-reader",
+      "title": {
+        "zh": "飞书群消息",
+        "en": "Feishu Group Reader"
+      },
+      "description": {
+        "zh": "以用户身份读取飞书群聊消息（复用 openclaw-lark 官方 UAT 授权存储）。",
+        "en": "Read Feishu group chat messages with user identity (reuses the official openclaw-lark UAT store)."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-group-reader"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793141918,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "44c68bfcccd2a9aae5c2428bb42790d1a516edb1",
+            "path": "plugins/feishu-group-reader"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/feishu-keeper",
+      "title": {
+        "zh": "飞书消息守护",
+        "en": "Feishu Keeper"
+      },
+      "description": {
+        "zh": "容器重启或进程崩溃后自动拉起飞书消息通道，保持随时在线。",
+        "en": "Restart the Feishu channel automatically after crashes or container restarts."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-keeper"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793141918,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "44c68bfcccd2a9aae5c2428bb42790d1a516edb1",
+            "path": "plugins/feishu-keeper"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/feishu-workspaces",
+      "title": {
+        "zh": "飞书应用工作区",
+        "en": "Feishu App Workspaces"
+      },
+      "description": {
+        "zh": "按飞书应用名称和 App ID 把 Lark 会话归组到只读工作区目录。",
+        "en": "Groups Lark sessions into read-only workspace directories by Feishu app name and App ID."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-workspaces"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793141918,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "44c68bfcccd2a9aae5c2428bb42790d1a516edb1",
+            "path": "plugins/feishu-workspaces"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/interrupted-turn-resumer",
       "title": {
         "zh": "中断任务续接",
