@@ -1,10 +1,11 @@
 {
   "name": "@dsh-friends/market-probe",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "exports": {
     ".": "./main.js",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "main.js",
@@ -17,6 +18,10 @@
     }
   },
   "description": "插件市场安装链路实测探针:无任何功能,挂载即成功,验证完即可卸载",
-  "keywords": ["dsh", "market", "probe"],
+  "keywords": [
+    "dsh",
+    "market",
+    "probe"
+  ],
   "license": "MIT"
 }

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./main.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "main.js",
@@ -24,6 +25,11 @@
     }
   },
   "description": "DSH 进程中断恢复后自动续接：监听 interrupted 轮次并补扫，每个轮次最多发送一次继续消息",
-  "keywords": ["dsh", "session", "resumer", "reliability"],
+  "keywords": [
+    "dsh",
+    "session",
+    "resumer",
+    "reliability"
+  ],
   "license": "MIT"
 }

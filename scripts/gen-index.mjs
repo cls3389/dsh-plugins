@@ -70,9 +70,13 @@ function buildPluginEntry(baseDir, relDir, entryName) {
   if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory() || !statSync(manifestPath, { throwIfNoEntry: false })?.isFile()) return undefined;
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const meta = localizedMeta(dir);
+  // npm 模式不写 registry 字段:installBundle 对带 registry 的源会传 --registry=<url>,
+  // pnpm 会把 profile 全部依赖(含 @deepseek-ai 官方包)都指到该 registry → 404。
+  // 正确做法:scoped registry 走各 profile 的 .npmrc(@dsh-friends:registry=...),
+  // 索引里省略 registry → 安装不传 --registry → scope 路由,官方包仍走默认源。
   const source = registryArg === undefined
     ? { type: 'git', url: repoUrl, commit: latestCommitFor(relDir), path: relDir }
-    : { type: 'npm', registry: registryArg };
+    : { type: 'npm' };
   return {
     name: manifest.name,
     ...meta.title === undefined ? {} : { title: meta.title },

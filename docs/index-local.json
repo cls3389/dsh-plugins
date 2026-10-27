@@ -37,10 +37,9 @@
       "versions": [
         {
           "version": "0.2.1",
-          "publishTimestamp": 1793105447,
+          "publishTimestamp": 1793119844,
           "source": {
-            "type": "npm",
-            "registry": "http://127.0.0.1:18731/"
+            "type": "npm"
           },
           "engines": {}
         }
@@ -73,10 +72,9 @@
       "versions": [
         {
           "version": "0.1.0",
-          "publishTimestamp": 1793105414,
+          "publishTimestamp": 1793119844,
           "source": {
-            "type": "npm",
-            "registry": "http://127.0.0.1:18731/"
+            "type": "npm"
           },
           "engines": {}
         }
@@ -107,11 +105,10 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793118496,
+          "version": "0.1.1",
+          "publishTimestamp": 1793119948,
           "source": {
-            "type": "npm",
-            "registry": "http://127.0.0.1:18731/"
+            "type": "npm"
           },
           "engines": {}
         }

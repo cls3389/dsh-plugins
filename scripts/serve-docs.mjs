@@ -33,6 +33,10 @@ const GUI_PROXY = process.env.GUI_PROXY === '1' || process.argv.includes('--gui-
 const GUI_UPSTREAM = { host: '127.0.0.1', port: 3080 };
 
 // ── registry:预先扫描 tarballs/ 构建 packument ──
+// npm 真实行为:packument 的每个 version 对象 = 完整 package.json + dist。
+// 宿主 plugin-manager 的 inspect 走 `pnpm view <spec> --json` 读这里,
+// 并检查 version 对象里的 dsh.bundle(缺失 → not-a-bundle 拒装),
+// 所以必须把 tarball 里的 manifest 全量字段放进 version 条目。
 function readTarManifest(tgzBytes) {
   const raw = gunzipSync(tgzBytes);
   let offset = 0;
@@ -43,8 +47,7 @@ function readTarManifest(tgzBytes) {
     const size = parseInt(header.toString('utf8', 124, 136).replace(/\0.*$/, '').trim(), 8) || 0;
     const dataStart = offset + 512;
     if (name === 'package/package.json') {
-      const manifest = JSON.parse(raw.toString('utf8', dataStart, dataStart + size));
-      return { name: manifest.name, version: manifest.version };
+      return JSON.parse(raw.toString('utf8', dataStart, dataStart + size));
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
@@ -56,13 +59,12 @@ for (const file of readdirSync(tarballDir)) {
   if (!file.endsWith('.tgz')) continue;
   const bytes = readFileSync(join(tarballDir, file));
   const manifest = readTarManifest(bytes);
-  if (manifest === undefined) continue;
+  if (manifest === undefined || typeof manifest.name !== 'string' || typeof manifest.version !== 'string') continue;
   const integrity = 'sha512-' + createHash('sha512').update(bytes).digest('base64');
   const doc = packuments.has(manifest.name) ? JSON.parse(packuments.get(manifest.name)) : { name: manifest.name, 'dist-tags': {}, versions: {} };
   doc['dist-tags'].latest = manifest.version;
   doc.versions[manifest.version] = {
-    name: manifest.name,
-    version: manifest.version,
+    ...manifest,
     dist: { tarball: `http://127.0.0.1:${PORT}/tarballs/${file}`, integrity },
   };
   packuments.set(manifest.name, JSON.stringify(doc));
@@ -106,19 +108,30 @@ main.listen(PORT, '0.0.0.0', () => {
 
 // ── GUI 明文反代(含 WebSocket) ──
 if (GUI_PROXY) {
+  // 转发头:覆盖 Host 为上游、删 Origin/Referer(模仿 caddy,防上游 Origin 校验)
+  const forwardHeaders = (headers) => {
+    const out = {};
+    for (const [k, v] of Object.entries(headers)) {
+      if (k === 'origin' || k === 'referer') continue;
+      out[k] = Array.isArray(v) ? v[0] : v;
+    }
+    out.host = `${GUI_UPSTREAM.host}:${GUI_UPSTREAM.port}`;
+    return out;
+  };
   const proxy = createServer((req, res) => {
     const upstream = httpRequest(
-      { host: GUI_UPSTREAM.host, port: GUI_UPSTREAM.port, method: req.method, path: req.url, headers: { ...req.headers, host: `${GUI_UPSTREAM.host}:${GUI_UPSTREAM.port}` } },
+      { host: GUI_UPSTREAM.host, port: GUI_UPSTREAM.port, method: req.method, path: req.url, headers: forwardHeaders(req.headers) },
       (ur) => { res.writeHead(ur.statusCode, ur.headers); ur.pipe(res); },
     );
     upstream.on('error', () => { res.writeHead(502); res.end('gui proxy upstream error'); });
     req.pipe(upstream);
   });
   proxy.on('upgrade', (req, socket, head) => {
+    const headers = forwardHeaders(req.headers);
     const upstream = tcpConnect(GUI_UPSTREAM.port, GUI_UPSTREAM.host, () => {
       const lines = [`${req.method} ${req.url} HTTP/1.1`];
-      for (const [k, v] of Object.entries(req.headers)) lines.push(`${k}: ${v}`);
-      lines.push(`host: ${GUI_UPSTREAM.host}:${GUI_UPSTREAM.port}`, '', '');
+      for (const [k, v] of Object.entries(headers)) lines.push(`${k}: ${v}`);
+      lines.push('', '');
       upstream.write(lines.join('\r\n'));
       if (head.length > 0) upstream.write(head);
       socket.pipe(upstream);

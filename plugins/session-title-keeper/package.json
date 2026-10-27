@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./main.js",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "main.js",
@@ -21,6 +22,11 @@
     }
   },
   "description": "会话标题增量更新:定时扫描会话日志,把仍停留在 fallback 截断版、或未覆盖最新用户消息的标题用 LLM 重算并写回 session/title 事件",
-  "keywords": ["dsh", "session", "title", "llm"],
+  "keywords": [
+    "dsh",
+    "session",
+    "title",
+    "llm"
+  ],
   "license": "MIT"
 }
