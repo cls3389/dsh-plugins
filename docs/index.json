@@ -11,6 +11,39 @@
   "metadata": {},
   "plugins": [
     {
+      "name": "@dsh-friends/browser-tools",
+      "title": {
+        "zh": "浏览器自动化",
+        "en": "Browser Automation"
+      },
+      "description": {
+        "zh": "打开网页、截图、填写表单，并复用登录状态。",
+        "en": "Open pages, take screenshots, fill forms, and reuse signed-in sessions."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/browser-tools"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793142293,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "a172a922b8dc02f90d9869dbc3e989ec4e001c94",
+            "path": "plugins/browser-tools"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@larksuite/dsh-lark",
       "title": {
         "zh": "飞书渠道",
@@ -65,11 +98,11 @@
       "versions": [
         {
           "version": "0.2.0",
-          "publishTimestamp": 1793141918,
+          "publishTimestamp": 1793142324,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "44c68bfcccd2a9aae5c2428bb42790d1a516edb1",
+            "commit": "a172a922b8dc02f90d9869dbc3e989ec4e001c94",
             "path": "plugins/feishu-group-reader"
           },
           "engines": {}
@@ -131,11 +164,11 @@
       "versions": [
         {
           "version": "0.2.0",
-          "publishTimestamp": 1793141918,
+          "publishTimestamp": 1793142324,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "44c68bfcccd2a9aae5c2428bb42790d1a516edb1",
+            "commit": "a172a922b8dc02f90d9869dbc3e989ec4e001c94",
             "path": "plugins/feishu-workspaces"
           },
           "engines": {}
