@@ -19,5 +19,13 @@
     }
   },
   "description": "飞书群消息读取:复用 openclaw-lark 官方 UAT 存储,以用户身份拉取群聊消息(web/feishu 通用)",
-  "license": "MIT"
+  "license": "MIT",
+  "peerDependencies": {
+    "@larksuite/dsh-lark": "*"
+  },
+  "peerDependenciesMeta": {
+    "@larksuite/dsh-lark": {
+      "optional": true
+    }
+  }
 }

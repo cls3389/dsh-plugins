@@ -25,5 +25,13 @@
     }
   },
   "description": "Group Lark sessions into read-only source workspaces by bot name and App ID",
-  "license": "MIT"
+  "license": "MIT",
+  "peerDependencies": {
+    "@larksuite/dsh-lark": "*"
+  },
+  "peerDependenciesMeta": {
+    "@larksuite/dsh-lark": {
+      "optional": true
+    }
+  }
 }

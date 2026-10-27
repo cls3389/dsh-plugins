@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-friends/browser-tools",
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": "./main.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "main.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "共享浏览器(browser-gateway)接入:抓取渲染页/截图/执行JS/长期页面(登录态复用)/profile",
+  "license": "MIT"
+}
