@@ -21,9 +21,9 @@
         "en": "Automatically resume interrupted turns after restarts."
       },
       "author": "dsh-friends",
-      "homepage": "https://github.com/dsh-friends/dsh-plugins#readme",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
       "repository": {
-        "url": "https://github.com/dsh-friends/dsh-plugins",
+        "url": "https://github.com/cls3389/dsh-plugins",
         "directory": "plugins/interrupted-turn-resumer"
       },
       "metadata": {
@@ -37,11 +37,11 @@
       "versions": [
         {
           "version": "0.2.1",
-          "publishTimestamp": 1793105447,
+          "publishTimestamp": 1793119844,
           "source": {
             "type": "git",
-            "url": "https://github.com/dsh-friends/dsh-plugins",
-            "commit": "5d3b9bcbd28fc1dcacdf03268cf2a2fe4df62259",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "4548ebbc83ad3d114015a88df897639520f07122",
             "path": "plugins/interrupted-turn-resumer"
           },
           "engines": {}
@@ -59,9 +59,9 @@
         "en": "Name conversations automatically; missed ones are refreshed on a schedule."
       },
       "author": "dsh-friends",
-      "homepage": "https://github.com/dsh-friends/dsh-plugins#readme",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
       "repository": {
-        "url": "https://github.com/dsh-friends/dsh-plugins",
+        "url": "https://github.com/cls3389/dsh-plugins",
         "directory": "plugins/session-title-keeper"
       },
       "metadata": {
@@ -75,11 +75,11 @@
       "versions": [
         {
           "version": "0.1.0",
-          "publishTimestamp": 1793105414,
+          "publishTimestamp": 1793119844,
           "source": {
             "type": "git",
-            "url": "https://github.com/dsh-friends/dsh-plugins",
-            "commit": "5d3b9bcbd28fc1dcacdf03268cf2a2fe4df62259",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "4548ebbc83ad3d114015a88df897639520f07122",
             "path": "plugins/session-title-keeper"
           },
           "engines": {}

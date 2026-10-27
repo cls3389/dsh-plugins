@@ -4,7 +4,7 @@
   "private": true,
   "description": "DSH Friends 插件市场:插件 monorepo + format-1 市场索引(GitHub Pages 托管)",
   "repository": {
-    "url": "git+https://github.com/dsh-friends/dsh-plugins.git"
+    "url": "git+https://github.com/cls3389/dsh-plugins.git"
   },
   "scripts": {
     "gen-index": "node scripts/gen-index.mjs",

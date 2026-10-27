@@ -30,7 +30,7 @@ dsh-plugins/
 在 DSH Web GUI 打开 **插件 → 发现 → 管理索引源**，添加：
 
 ```
-https://<github用户名>.github.io/dsh-plugins/index.json
+https://cls3389.github.io/dsh-plugins/index.json
 ```
 
 之后即可浏览、搜索、点「安装」。dsh 会自动从本仓库拉取对应 commit 的插件目录、
@@ -39,7 +39,7 @@ https://<github用户名>.github.io/dsh-plugins/index.json
 命令行等价方式（任选其一）：
 
 ```bash
-dsh plugin --profile <name> add git+https://github.com/<github用户名>/dsh-plugins.git#<commit>&path:/plugins/<插件目录>
+dsh plugin --profile <name> add git+https://github.com/cls3389/dsh-plugins.git#<commit>&path:/plugins/<插件目录>
 ```
 
 ## 维护流程（发布新版本）
