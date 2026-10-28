@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Model Config Audit",
+    "description": "Audit DSH model lists against upstream catalogs/policies and produce user-confirmed edit-anchor proposals (read-only)."
+  }
+}

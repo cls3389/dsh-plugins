@@ -1,0 +1,25 @@
+{
+  "name": "@dsh-friends/model-config",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./policy.json": "./policy.json",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "policy.json",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "DSH 模型配置审计与提案:多端点比对 OpenRouter 目录/手工策略,生成经用户确认的 edit 锚点提案(只读不写)",
+  "license": "MIT"
+}
