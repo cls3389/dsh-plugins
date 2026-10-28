@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "1Panel",
+    "description": "Manage 1Panel cronjobs and panel API: list, execute, update, records, generic calls."
+  }
+}

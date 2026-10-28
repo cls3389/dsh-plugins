@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-friends/onepanel",
+  "version": "0.5.1",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "1Panel 面板 API 工具:计划任务、容器、应用、宿主状态与通用 API 调用",
+  "license": "MIT"
+}

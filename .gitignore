@@ -1,2 +1,3 @@
 # 本地实测 registry 数据(npm pack 产物,可随时重生成)
 tarballs/
+plugins/onepanel/servers.json
