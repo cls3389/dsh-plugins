@@ -10,6 +10,7 @@
 | `model_config_audit` | 按 provider 审计：cpa（OpenRouter 目录 + 策略映射）、kimi-coding 等（手工策略）；含 compat、路由默认档交集、压缩预算不变量 |
 | `model_config_propose` | 对可修复项生成提案：current/proposed/理由 + 经唯一性校验的 `edit` 锚点（oldString/newString） |
 | `model_config_policy` | 查看策略、约束、不变量自检 |
+| `model_config_discover` | 新端点接入：拉 `{baseUrl}/models` 模型列表，匹配 OpenRouter 目录预填建议参数与路由默认档交集，供用户挑选（apiKey 仅本次请求使用，不落盘不回显） |
 
 标准流程：`model_config_audit` → 有 mismatch 时 `model_config_propose` → 把提案展示给用户确认
 → agent 用 `edit` 工具按锚点落盘 → 复跑 `model_config_audit` + `dsh web --dump-config` 双验证。

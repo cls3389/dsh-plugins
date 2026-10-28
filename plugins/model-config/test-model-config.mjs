@@ -12,6 +12,10 @@ import {
 	buildProposals,
 	loadPolicy,
 	CONFIG_DEFAULTS,
+	extractModelIds,
+	matchCatalogEntry,
+	suggestModelParams,
+	intersectEfforts,
 } from './index.js';
 
 /* ── fixtures ─────────────────────────────────────────── */
@@ -276,7 +280,57 @@ test('propose: models 过滤只处理指定模型', () => {
 	assert.equal(proposals.filter((p) => p.id === 'alpha').length, 0);
 });
 
+/* ── 端点发现 ─────────────────────────────────────────── */
+
+test('extractModelIds: 兼容 data/models/裸数组/字符串项,去重', () => {
+	assert.deepEqual(extractModelIds({ data: [{ id: 'a' }, { id: 'a' }, { id: 'b' }] }), ['a', 'b']);
+	assert.deepEqual(extractModelIds({ models: ['x', 'y'] }), ['x', 'y']);
+	assert.deepEqual(extractModelIds(['p', { id: 'q' }]), ['p', 'q']);
+});
+
+test('matchCatalogEntry: 精确→vendor 后缀→归一化后缀→未匹配', () => {
+	const byId = new Map([
+		['z-ai/glm-5.3', {}],
+		['openai/gpt-6-astra', {}],
+		['anthropic/gpt-6-astra', {}],
+		['qwen/qwen3.8_max', {}],
+	].map(([k, v]) => [k, v]));
+	assert.equal(matchCatalogEntry('z-ai/glm-5.3', byId).tier, 'exact');
+	assert.equal(matchCatalogEntry('glm-5.3', byId).match, 'z-ai/glm-5.3');
+	const amb = matchCatalogEntry('gpt-6-astra', byId);
+	assert.equal(amb.tier, 'suffix-ambiguous');
+	assert.ok(amb.alternatives.length === 2);
+	assert.equal(matchCatalogEntry('qwen3.8.max', byId).match, 'qwen/qwen3.8_max'); // . → _ 归一化
+	assert.equal(matchCatalogEntry('totally-unknown', byId).match, null);
+});
+
+test('suggestModelParams: 窗口钳制/目录上限收窄/不变量/档位与 MANUAL', () => {
+	const s1 = suggestModelParams(
+		{ context_length: 1000000, top_provider: { max_completion_tokens: 943718 }, architecture: { input_modalities: ['file', 'text', 'image'] }, reasoning: { supported_efforts: ['none', 'low', 'high'] } },
+		{ cap: 400000, headroom: 65536, defaultMaxTokens: 12288 },
+	);
+	assert.equal(s1.contextWindow, 400000);
+	assert.equal(s1.maxTokens, 12288);
+	assert.deepEqual(s1.input, ['text', 'image']);
+	assert.deepEqual(s1.reasoningEfforts, { off: 'none', low: 'low', high: 'high' });
+	// 目录上限 8192 < 默认 12288 → 先收窄到 8192;70000-65536 预算再压到 4464(不变量钳制)
+	const s2 = suggestModelParams({ context_length: 70000, top_provider: { max_completion_tokens: 8192 }, architecture: { input_modalities: ['text'] }, reasoning: { enabled: true } }, { cap: 400000, headroom: 65536, defaultMaxTokens: 12288 });
+	assert.equal(s2.maxTokens, 4464);
+	assert.equal(s2.reasoningEfforts, null);
+	assert.match(s2.reasoningNote, /MANUAL/);
+	const s3 = suggestModelParams({ context_length: 60000, top_provider: {}, architecture: { input_modalities: ['text'] }, reasoning: null }, { cap: 400000, headroom: 65536, defaultMaxTokens: 12288 });
+	assert.equal(s3.maxTokens, null); // 60000-65536<0:预算不足,不给出建议
+	assert.equal(s3.reasoningEfforts, false);
+});
+
+test('intersectEfforts + 路由默认档优先级: 任一非对象→无交集', () => {
+	assert.deepEqual(intersectEfforts([{ low: 'low', high: 'high' }, { high: 'high', max: 'max' }]), ['high']);
+	assert.equal(intersectEfforts([{ low: 'low' }, false]), null);
+	assert.deepEqual(intersectEfforts([]), null);
+});
+
 /* ── 真实文件形状(本机存在才跑) ───────────────────────── */
+
 
 test('real profile: 解析真实 home 层 + policy 不变量自检', { skip: !fs.existsSync(CONFIG_DEFAULTS.profilePath) }, () => {
 	const text = fs.readFileSync(CONFIG_DEFAULTS.profilePath, 'utf8');

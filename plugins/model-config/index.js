@@ -17,6 +17,8 @@
  *                        edit 锚点(oldString/newString),供 agent 展示给
  *                        用户确认后用 edit 工具落盘,再复跑 audit+dump 验证
  *   model_config_policy  查看当前策略、约束与生效路径
+ *   model_config_discover 新端点接入:拉端点模型列表,匹配 OpenRouter 目录
+ *                        预填建议参数,供用户挑选(仅此一步读外部端点)
  *
  * 护栏:只对模型块的 contextWindow/maxTokens/input/reasoningEfforts 生成提案;
  *   provider 级受保护键(api/baseURL/apiKeyEnv/...)与模型集合增删只报告不提案;
@@ -40,10 +42,12 @@ const CONFIG_DEFAULTS = {
 	catalogUrl: 'https://openrouter.ai/api/v1/models',
 	policyFile: '', // 空=依次找 $DSH_HOME/model-config/policy.json → 包内 policy.json
 	requestTimeoutMs: 45000,
-	userAgent: '@dsh-friends/model-config/0.1.0',
+	userAgent: '@dsh-friends/model-config/0.2.0',
 };
 
 const DSH_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+// 路由默认档推荐优先级:交集内先取次顶,再取更高级/更低档
+const ROUTE_EFFORT_PRIORITY = ['high', 'medium', 'xhigh', 'low', 'max', 'minimal', 'off'];
 const FIXABLE_FIELDS = ['contextWindow', 'maxTokens', 'input', 'reasoningEfforts'];
 // YAML 1.1 里会被解析成 null/布尔的裸词,作为值输出时必须加引号
 const YAML_AMBIGUOUS = new Set(['null', '~', 'true', 'false', 'yes', 'no', 'on', 'off']);
@@ -544,6 +548,78 @@ function effectiveValue(patches, view, field) {
 	return view[field];
 }
 
+/* ── 端点发现(model_config_discover,只读) ─────────────── */
+
+function normalizeBaseUrl(raw) {
+	return String(raw).trim().replace(/\/+$/, '');
+}
+
+/** 端点 /models 载荷 → 模型 id 列表(兼容 {data:[...]}/{models:[...]}/[...] 与字符串项) */
+function extractModelIds(payload) {
+	const arr = Array.isArray(payload) ? payload : payload?.data ?? payload?.models ?? [];
+	const ids = [];
+	for (const item of arr) {
+		const id = typeof item === 'string' ? item : item?.id;
+		if (id && !ids.includes(id)) ids.push(id);
+	}
+	return ids;
+}
+
+/** 端点模型 id → OpenRouter 目录条目(精确 → vendor/后缀 → 归一化后缀) */
+function matchCatalogEntry(modelId, catalogById) {
+	const raw = String(modelId);
+	const lower = raw.toLowerCase();
+	const norm = (s) => s.toLowerCase().replace(/[._]/g, '-');
+	if (catalogById.has(raw)) return { match: raw, tier: 'exact' };
+	const suffixHits = [...catalogById.keys()].filter((id) => id.toLowerCase().endsWith(`/${lower}`));
+	if (suffixHits.length === 1) return { match: suffixHits[0], tier: 'suffix' };
+	if (suffixHits.length > 1) return { match: suffixHits.sort()[0], tier: 'suffix-ambiguous', alternatives: suffixHits };
+	const n = norm(raw);
+	const normHits = [...catalogById.keys()].filter((id) => norm(id).endsWith(`/${n}`));
+	if (normHits.length === 1) return { match: normHits[0], tier: 'normalized-suffix' };
+	if (normHits.length > 1) return { match: normHits.sort()[0], tier: 'normalized-ambiguous', alternatives: normHits };
+	return { match: null, tier: 'none' };
+}
+
+/** 按策略把目录条目转成本地建议参数(窗口钳制/maxTokens 预留+不变量/模态/档位) */
+function suggestModelParams(entry, { cap, headroom, defaultMaxTokens }) {
+	let contextWindow = entry.context_length ?? cap;
+	if (cap && contextWindow > cap) contextWindow = cap;
+	const topMax = entry.top_provider?.max_completion_tokens ?? null;
+	let maxTokens = Math.min(defaultMaxTokens, topMax ?? defaultMaxTokens);
+	if (Number.isFinite(contextWindow) && maxTokens + headroom > contextWindow) maxTokens = contextWindow - headroom;
+	if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = null;
+	const input = ['text', 'image'].filter((x) => (entry.architecture?.input_modalities ?? []).includes(x));
+	const r = expectedEffortsFromCatalog(entry.reasoning);
+	let reasoningEfforts = null;
+	let reasoningNote = null;
+	if (r.error) reasoningNote = r.error;
+	else if (r.manual) reasoningNote = '目录无 supported_efforts:档位需网关实测(MANUAL),配置时留空或用人工实测值';
+	else reasoningEfforts = r.efforts; // false 或档位表
+	return {
+		contextWindow,
+		maxTokens,
+		input,
+		reasoningEfforts,
+		reasoningNote,
+		upstreamDefaultEffort: entry.reasoning?.default_effort ?? null,
+	};
+}
+
+/** 全部模型 efforts 键的交集;任一模型非对象(false/未定)则无交集 */
+function intersectEfforts(effortsList) {
+	if (!effortsList.length) return null;
+	let common = null;
+	for (const e of effortsList) {
+		if (!e || typeof e !== 'object') return null;
+		const keys = new Set(Object.keys(e));
+		common = common ? new Set([...common].filter((k) => keys.has(k))) : keys;
+	}
+	return [...common];
+}
+
+
+
 /* ── 装载 ───────────────────────────────────────────── */
 
 function policyCandidates(cfg) {
@@ -727,7 +803,109 @@ function apply(ctx, config) {
 		},
 	});
 
-	logger?.info?.('model-config: 已注册 model_config_audit / model_config_propose / model_config_policy');
+	ctx.tools.register({
+		name: 'model_config_discover',
+		description:
+			'新端点接入第一步:拉取 OpenAI 兼容端点的模型列表(GET {baseUrl}/models),逐个与 OpenRouter 目录匹配并按策略预填建议参数(窗口钳制/maxTokens 预留/输入模态/思考档位/路由默认档交集),供用户挑选。只读不写文件;apiKey 仅用于本次请求,不落盘不回显不记日志。',
+		parameters: {
+			type: 'object',
+			properties: {
+				baseUrl: { type: 'string', description: '端点 base,如 https://x.example.com/v1(自动尝试 /models 与 /v1/models)' },
+				apiKey: { type: 'string', description: 'API key(仅本次请求使用,不出现在输出里)' },
+				provider: { type: 'string', description: '建议的 provider 名(之后写配置用;缺省留给用户定)' },
+				contextWindowCap: { type: 'number', description: '窗口钳制上限,缺省 400000' },
+				defaultMaxTokens: { type: 'number', description: '建议 maxTokens 预留输出,缺省 12288' },
+				catalogFile: { type: 'string', description: '本地 OpenRouter models JSON(离线)' },
+				modelsFile: { type: 'string', description: '本地端点 models JSON(离线调试,兼容 {data:[...]}/{models:[...]}/[id...];提供时忽略 baseUrl/apiKey)' },
+			},
+		},
+		output: anyJsonOutput,
+		async execute(args) {
+			try {
+				const a = args || {};
+				const { policy } = loadPolicy(cfg);
+				const headroom = policy.constraints?.headroomTokens ?? 65536;
+				const cap = Number.isFinite(a.contextWindowCap) ? a.contextWindowCap : 400000;
+				const defMax = Number.isFinite(a.defaultMaxTokens) ? a.defaultMaxTokens : 12288;
+				let endpointIds = null;
+				let source = null;
+				if (a.modelsFile) {
+					endpointIds = extractModelIds(JSON.parse(fs.readFileSync(a.modelsFile, 'utf8')));
+					source = a.modelsFile;
+				} else {
+					if (!a.baseUrl || !a.apiKey) return { error: '需要 baseUrl 与 apiKey(或用 modelsFile 离线调试)' };
+					const base = normalizeBaseUrl(a.baseUrl);
+					const attempts = [/\/v\d+$/.test(base) ? `${base}/models` : null, `${base}/models`, `${base}/v1/models`].filter(Boolean);
+					let lastErr = null;
+					for (const u of [...new Set(attempts)]) {
+						try {
+							const res = await fetch(u, {
+								headers: { Authorization: `Bearer ${a.apiKey}`, 'User-Agent': cfg.userAgent },
+								signal: AbortSignal.timeout(cfg.requestTimeoutMs),
+							});
+							if (!res.ok) {
+								lastErr = `HTTP ${res.status} @ ${u}`;
+								continue;
+							}
+							endpointIds = extractModelIds(await res.json());
+							source = u;
+							break;
+						} catch (e) {
+							lastErr = `${u}: ${e.message}`;
+						}
+					}
+					if (!endpointIds) return { error: `端点模型列表获取失败:${lastErr}` };
+				}
+				const catalog = await loadCatalog(cfg, a.catalogFile);
+				const models = [];
+				const effortsList = [];
+				for (const id of endpointIds) {
+					const m = matchCatalogEntry(id, catalog.byId);
+					if (!m.match) {
+						models.push({ id, matched: false, note: 'OpenRouter 未匹配:参数需按官方文档人工提供,不猜' });
+						continue;
+					}
+					const s = suggestModelParams(catalog.byId.get(m.match), { cap, headroom, defaultMaxTokens: defMax });
+					if (s.reasoningEfforts && typeof s.reasoningEfforts === 'object') effortsList.push(s.reasoningEfforts);
+					models.push({
+						id,
+						matched: true,
+						openrouter: m.match,
+						tier: m.tier,
+						...(m.alternatives ? { alternatives: m.alternatives } : {}),
+						suggested: {
+							contextWindow: s.contextWindow,
+							maxTokens: s.maxTokens,
+							input: s.input,
+							reasoningEfforts: s.reasoningEfforts,
+						},
+						...(s.upstreamDefaultEffort ? { upstreamDefaultEffort: s.upstreamDefaultEffort } : {}),
+						...(s.reasoningNote ? { reasoningNote: s.reasoningNote } : {}),
+					});
+				}
+				const intersection = intersectEfforts(effortsList);
+				const routeDefault = intersection ? (ROUTE_EFFORT_PRIORITY.find((l) => intersection.includes(l)) ?? null) : null;
+				return {
+					ok: true,
+					provider: a.provider ?? null,
+					endpointSource: source ?? '(modelsFile)',
+					catalogSource: catalog.source,
+					contextWindowCap: cap,
+					defaultMaxTokens: defMax,
+					modelCount: models.length,
+					models,
+					suggestedRouteReasoning: routeDefault,
+					routeIntersection: intersection,
+					nextSteps:
+						'把 models 展示给用户挑选,逐条收集特殊要求(窗口上限/别名/视觉桥接/manual 档位);选定后:①policy.json providers 加段(openrouter 映射+notes+期望值)②cordis.patch.yml 插模型块(展示 diff 经用户确认,edit 落盘)③凭据入 DSH credentials 并配 apiKeyEnv(密钥不进 patch/policy)④model_config_audit + dsh web --dump-config 双验证',
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		},
+	});
+
+	logger?.info?.('model-config: 已注册 model_config_audit / model_config_propose / model_config_policy / model_config_discover');
 }
 
 export {
@@ -745,6 +923,11 @@ export {
 	auditProvider,
 	buildProposals,
 	loadPolicy,
+	normalizeBaseUrl,
+	extractModelIds,
+	matchCatalogEntry,
+	suggestModelParams,
+	intersectEfforts,
 };
 
 // 不要 export default:dsh 以模块命名空间为 plugin 对象读取 inject/name,
