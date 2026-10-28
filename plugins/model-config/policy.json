@@ -1,7 +1,14 @@
 {
   "constraints": {
     "headroomTokens": 65536,
-    "protectedProviderKeys": ["api", "baseURL", "apiKeyEnv", "displayName", "defaultContextWindow", "defaultMaxTokens"],
+    "protectedProviderKeys": [
+      "api",
+      "baseURL",
+      "apiKeyEnv",
+      "displayName",
+      "defaultContextWindow",
+      "defaultMaxTokens"
+    ],
     "note": "不变量:maxTokens + headroomTokens <= contextWindow,否则 dsh-compaction-basic 压力压缩静默失效;protectedProviderKeys 永不生成提案。"
   },
   "providers": {
@@ -18,28 +25,28 @@
           "openrouter": "deepseek/deepseek-v4.1-flash",
           "upstreamDefaultEffort": "high",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "deepseek-flash",
           "openrouter": "~deepseek/deepseek-flash-latest",
           "upstreamDefaultEffort": "high",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "kimi-k3.1-pro",
           "openrouter": "moonshotai/kimi-k3.1-pro",
           "upstreamDefaultEffort": "max",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "kimi-k3",
           "openrouter": "moonshotai/kimi-k3",
           "upstreamDefaultEffort": "max",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "kimi-k2.8-code",
@@ -52,13 +59,13 @@
           "id": "mimo-v2.6-flash",
           "openrouter": "xiaomi/mimo-v2.6-flash",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "mimo-v2.6-pro",
           "openrouter": "xiaomi/mimo-v2.6-pro",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "GPT-6 Astra",
@@ -72,7 +79,7 @@
           "openrouter": "openai/gpt-6-astra",
           "upstreamDefaultEffort": "medium",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "GPT-6 Sol",
@@ -86,7 +93,7 @@
           "openrouter": "openai/gpt-6-sol",
           "upstreamDefaultEffort": "medium",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "GPT-6 Luna",
@@ -100,7 +107,7 @@
           "openrouter": "openai/gpt-6-luna",
           "upstreamDefaultEffort": "medium",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "GPT-5.6 Sol",
@@ -114,14 +121,14 @@
           "openrouter": "openai/gpt-5.6-sol",
           "upstreamDefaultEffort": "medium",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "Grok 4.7",
           "openrouter": "x-ai/grok-4.7",
           "upstreamDefaultEffort": "high",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "glm-5.3",
@@ -135,14 +142,17 @@
           "openrouter": "z-ai/glm-5.3-flash",
           "upstreamDefaultEffort": "max",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "glm-5.3v",
           "openrouter": "z-ai/glm-5.3",
           "upstreamDefaultEffort": "max",
           "contextWindow": 400000,
-          "input": ["text", "image"],
+          "input": [
+            "text",
+            "image"
+          ],
           "maxTokens": 20480,
           "notes": "视觉桥接:参数继承 glm-5.3,仅 input 覆盖为 text+image(目录本身纯文本)。"
         },
@@ -158,33 +168,33 @@
           "openrouter": "tencent/hy4-preview",
           "upstreamDefaultEffort": "high",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "qwen3.8-flash",
           "openrouter": "qwen/qwen3.8-flash",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "qwen3.8-max",
           "openrouter": "qwen/qwen3.8-max-0902",
           "upstreamDefaultEffort": "xhigh",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "minimax-m3",
           "openrouter": "minimax/minimax-m3",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         },
         {
           "id": "minimax-m3.1-flash",
           "openrouter": "minimax/minimax-m3.1-flash",
           "upstreamDefaultEffort": "max",
           "contextWindow": 400000,
-          "maxTokens": 12288
+          "maxTokens": 20480
         }
       ]
     },
@@ -196,8 +206,15 @@
           "id": "k3.1-pro",
           "contextWindow": 1048576,
           "maxTokens": 32768,
-          "input": ["text", "image"],
-          "reasoningEfforts": { "low": "low", "high": "high", "max": "max" },
+          "input": [
+            "text",
+            "image"
+          ],
+          "reasoningEfforts": {
+            "low": "low",
+            "high": "high",
+            "max": "max"
+          },
           "notes": "K3.1 Pro 官方:始终思考,仅 low/high/max,不提供 off/medium。无机器可读目录,期望值来自官方文档+网关实测(增改须经用户确认后更新本 policy)。"
         }
       ]
