@@ -21,11 +21,30 @@
       "routeReasoningNote": "未选档时实际发送的档位,同时是 GUI defaultEffort;必须是全部模型 reasoningEfforts 键的交集(当前 low/high)。改档前先核交集,否则不支持该档的模型未选档请求会直接 UNSUPPORTED_REASONING_EFFORT。",
       "models": [
         {
-          "id": "deepseek-v4-flash",
-          "openrouter": "deepseek/deepseek-v4.1-flash",
-          "upstreamDefaultEffort": "high",
+          "id": "glm-5.3",
+          "openrouter": "z-ai/glm-5.3",
+          "upstreamDefaultEffort": "max",
           "contextWindow": 400000,
           "maxTokens": 20480
+        },
+        {
+          "id": "glm-5.3-flash",
+          "openrouter": "z-ai/glm-5.3-flash",
+          "upstreamDefaultEffort": "max",
+          "contextWindow": 400000,
+          "maxTokens": 20480
+        },
+        {
+          "id": "glm-5.3v",
+          "openrouter": "z-ai/glm-5.3",
+          "upstreamDefaultEffort": "max",
+          "contextWindow": 400000,
+          "input": [
+            "text",
+            "image"
+          ],
+          "maxTokens": 20480,
+          "notes": "视觉桥接:参数继承 glm-5.3,仅 input 覆盖为 text+image(目录本身纯文本)。"
         },
         {
           "id": "kimi-k3.1-pro",
@@ -38,6 +57,13 @@
           "id": "kimi-k3",
           "openrouter": "moonshotai/kimi-k3",
           "upstreamDefaultEffort": "max",
+          "contextWindow": 400000,
+          "maxTokens": 20480
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "openrouter": "deepseek/deepseek-v4.1-flash",
+          "upstreamDefaultEffort": "high",
           "contextWindow": 400000,
           "maxTokens": 20480
         },
@@ -80,32 +106,6 @@
           "upstreamDefaultEffort": "medium",
           "contextWindow": 272000,
           "maxTokens": 12288
-        },
-        {
-          "id": "glm-5.3",
-          "openrouter": "z-ai/glm-5.3",
-          "upstreamDefaultEffort": "max",
-          "contextWindow": 400000,
-          "maxTokens": 20480
-        },
-        {
-          "id": "glm-5.3-flash",
-          "openrouter": "z-ai/glm-5.3-flash",
-          "upstreamDefaultEffort": "max",
-          "contextWindow": 400000,
-          "maxTokens": 20480
-        },
-        {
-          "id": "glm-5.3v",
-          "openrouter": "z-ai/glm-5.3",
-          "upstreamDefaultEffort": "max",
-          "contextWindow": 400000,
-          "input": [
-            "text",
-            "image"
-          ],
-          "maxTokens": 20480,
-          "notes": "视觉桥接:参数继承 glm-5.3,仅 input 覆盖为 text+image(目录本身纯文本)。"
         }
       ]
     },
