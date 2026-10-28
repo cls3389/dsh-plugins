@@ -214,6 +214,39 @@
       ]
     },
     {
+      "name": "@dsh-friends/onepanel",
+      "title": {
+        "zh": "1Panel 面板",
+        "en": "1Panel"
+      },
+      "description": {
+        "zh": "管理 1Panel 计划任务与面板 API:列表、手动执行、修改、执行记录、通用调用。",
+        "en": "Manage 1Panel cronjobs and panel API: list, execute, update, records, generic calls."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/onepanel"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.5.1",
+          "publishTimestamp": 1793190987,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "7986a6c55c81832f330135137bb6cb3e30f2748e",
+            "path": "plugins/onepanel"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/session-title-keeper",
       "title": {
         "zh": "会话标题",
