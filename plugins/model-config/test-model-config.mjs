@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { join } from 'node:path';
 import {
 	buildTree,
 	splitTrailingComment,
@@ -11,6 +12,7 @@ import {
 	auditProvider,
 	buildProposals,
 	loadPolicy,
+	loadCatalog,
 	CONFIG_DEFAULTS,
 	extractModelIds,
 	matchCatalogEntry,
@@ -327,6 +329,58 @@ test('intersectEfforts + 路由默认档优先级: 任一非对象→无交集',
 	assert.deepEqual(intersectEfforts([{ low: 'low', high: 'high' }, { high: 'high', max: 'max' }]), ['high']);
 	assert.equal(intersectEfforts([{ low: 'low' }, false]), null);
 	assert.deepEqual(intersectEfforts([]), null);
+});
+
+/* ── 目录缓存 ─────────────────────────────────────────── */
+
+test('loadCatalog: 拉取→写缓存→TTL 内命中→断网回退旧缓存', async () => {
+	const { createServer } = await import('node:http');
+	const { mkdtemp, writeFile } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const dir = await mkdtemp(join(tmpdir(), 'mc-cache-'));
+	const cachePath = `${dir}/catalog-cache.json`;
+	let hits = 0;
+	const server = createServer((req, res) => {
+		hits += 1;
+		res.setHeader('content-type', 'application/json');
+		res.end(JSON.stringify({ data: [{ id: 'z-ai/glm-5.3' }] }));
+	});
+	await new Promise((r) => server.listen(0, '127.0.0.1', r));
+	const port = server.address().port;
+	const cfg = {
+		catalogUrl: `http://127.0.0.1:${port}/models`,
+		catalogCachePath: cachePath,
+		catalogCacheTtlMs: 60 * 60 * 1000,
+		requestTimeoutMs: 5000,
+		userAgent: 'test',
+	};
+	try {
+		// ① 首次:拉网并写缓存
+		const first = await loadCatalog(cfg);
+		assert.equal(hits, 1);
+		assert.equal(first.byId.size, 1);
+		assert.ok(first.cachedAt);
+		// ② 二次:TTL 内命中缓存,不再打网
+		const second = await loadCatalog(cfg);
+		assert.equal(hits, 1);
+		assert.match(second.source, /^cache\(/);
+		assert.equal(second.byId.get('z-ai/glm-5.3')?.id, 'z-ai/glm-5.3');
+		// ③ forceRefresh:强拉
+		const third = await loadCatalog(cfg, undefined, { forceRefresh: true });
+		assert.equal(hits, 2);
+		assert.equal(third.source, cfg.catalogUrl);
+		// ④ 拉网失败+缓存已过期:回退 stale(缓存过期才会尝试拉网)
+		const stale = { url: 'http://127.0.0.1:1/v1/models', fetchedAt: new Date(Date.now() - 2 * cfg.catalogCacheTtlMs).toISOString(), data: [{ id: 'stale/model' }] };
+		await writeFile(cachePath, JSON.stringify(stale));
+		const fourth = await loadCatalog({ ...cfg, catalogUrl: stale.url, requestTimeoutMs: 500 });
+		assert.match(fourth.source, /^stale-cache\(/);
+		assert.equal(fourth.byId.get('stale/model')?.id, 'stale/model');
+		// ⑤ 断网且无缓存:报错并提示 catalogFile
+		await import('node:fs').then((m) => m.rmSync(cachePath));
+		await assert.rejects(() => loadCatalog({ ...cfg, catalogUrl: stale.url, requestTimeoutMs: 500 }), /无可用缓存/);
+	} finally {
+		server.close();
+	}
 });
 
 /* ── 真实文件形状(本机存在才跑) ───────────────────────── */

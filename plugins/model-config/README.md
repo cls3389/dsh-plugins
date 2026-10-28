@@ -24,6 +24,12 @@ profile 热加载，无需重启。
 - `source: "manual"`：无机器可读目录（如 kimi-coding 官方文档），policy 记录期望值直接比对；
   增改期望值须先经用户确认并写明依据。
 
+## 目录缓存
+
+OpenRouter 目录带本地缓存：`$DSH_HOME/model-config/catalog-cache.json`（可用 config `catalogCachePath` 覆盖）。
+TTL 默认 30 分钟（`catalogCacheTtlMs`），TTL 内所有工具直接用缓存不打网；拉取失败时自动回退旧缓存（结果里标注 `stale-cache`）；
+audit/propose/discover 都支持 `forceRefresh: true` 强刷。catalogFile 离线路径不经过缓存。
+
 ## 策略文件（policy）
 
 查找顺序：config `policyFile` → `$DSH_HOME/model-config/policy.json` → 包内 `policy.json`。

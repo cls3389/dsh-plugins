@@ -42,7 +42,10 @@ const CONFIG_DEFAULTS = {
 	catalogUrl: 'https://openrouter.ai/api/v1/models',
 	policyFile: '', // 空=依次找 $DSH_HOME/model-config/policy.json → 包内 policy.json
 	requestTimeoutMs: 45000,
-	userAgent: '@dsh-friends/model-config/0.2.0',
+	userAgent: '@dsh-friends/model-config/0.3.0',
+	// OpenRouter 目录缓存:命中 TTL 内的缓存不再拉网;拉取失败时回退旧缓存
+	catalogCachePath: '', // 空=$DSH_HOME/model-config/catalog-cache.json
+	catalogCacheTtlMs: 30 * 60 * 1000,
 };
 
 const DSH_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -644,19 +647,65 @@ function loadProfile(cfg) {
 	return { text, lines: tree.lines, tree, providers };
 }
 
-async function loadCatalog(cfg, catalogFile) {
+function catalogCachePath(cfg) {
+	if (cfg.catalogCachePath) return cfg.catalogCachePath;
+	return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'model-config', 'catalog-cache.json');
+}
+
+/**
+ * 目录装载:catalogFile 离线路径 → 直接读;
+ * 在线 → ①TTL 内缓存命中 ②拉网并写缓存(原子替换) ③拉网失败回退旧缓存(stale 标注)。
+ */
+async function loadCatalog(cfg, catalogFile, opts = {}) {
 	if (catalogFile) {
 		const raw = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
 		const data = raw.data ?? raw;
 		return { byId: new Map(data.map((m) => [m.id, m])), source: catalogFile };
 	}
-	const res = await fetch(cfg.catalogUrl, {
-		headers: { 'User-Agent': cfg.userAgent },
-		signal: AbortSignal.timeout(cfg.requestTimeoutMs),
-	});
-	if (!res.ok) throw new Error(`OpenRouter 目录请求失败 HTTP ${res.status}`);
-	const raw = await res.json();
-	return { byId: new Map((raw.data ?? []).map((m) => [m.id, m])), source: cfg.catalogUrl };
+	const cachePath = catalogCachePath(cfg);
+	const ttl = Number.isFinite(cfg.catalogCacheTtlMs) ? cfg.catalogCacheTtlMs : 30 * 60 * 1000;
+	let cache = null;
+	try {
+		const raw = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+		if (raw && raw.url === cfg.catalogUrl && Array.isArray(raw.data)) cache = raw;
+	} catch {
+		/* 无缓存或缓存损坏,忽略 */
+	}
+	const ageMs = cache ? Date.now() - Date.parse(cache.fetchedAt) : Number.POSITIVE_INFINITY;
+	const ageMin = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 60000)) : null;
+	if (!opts.forceRefresh && cache && ageMs >= 0 && ageMs < ttl) {
+		return {
+			byId: new Map(cache.data.map((m) => [m.id, m])),
+			source: `cache(${ageMin}min 前拉取,ttl ${Math.round(ttl / 60000)}min):${cachePath}`,
+		};
+	}
+	try {
+		const res = await fetch(cfg.catalogUrl, {
+			headers: { 'User-Agent': cfg.userAgent },
+			signal: AbortSignal.timeout(cfg.requestTimeoutMs),
+		});
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		const raw = await res.json();
+		const data = raw.data ?? [];
+		const payload = { url: cfg.catalogUrl, fetchedAt: new Date().toISOString(), data };
+		try {
+			fs.mkdirSync(dirname(cachePath), { recursive: true });
+			const tmp = `${cachePath}.tmp`;
+			fs.writeFileSync(tmp, JSON.stringify(payload));
+			fs.renameSync(tmp, cachePath);
+		} catch {
+			/* 缓存写失败不影响本次结果 */
+		}
+		return { byId: new Map(data.map((m) => [m.id, m])), source: cfg.catalogUrl, cachedAt: payload.fetchedAt };
+	} catch (e) {
+		if (cache) {
+			return {
+				byId: new Map(cache.data.map((m) => [m.id, m])),
+				source: `stale-cache(${ageMin}min 前,拉取失败:${e.message},已回退):${cachePath}`,
+			};
+		}
+		throw new Error(`OpenRouter 目录请求失败:${e.message}(且无可用缓存;可用 catalogFile 指向本地 JSON)`);
+	}
 }
 
 /* ── 工具注册 ───────────────────────────────────────── */
@@ -693,7 +742,7 @@ function apply(ctx, config) {
 		if (unknown.length) return { error: `policy 中没有 provider: ${unknown.join(',')}(可用: ${Object.keys(policy.providers).join('/')})` };
 		let catalog = null;
 		if (wanted.some((p) => policy.providers[p].source === 'openrouter')) {
-			catalog = await loadCatalog(cfg, args.catalogFile);
+			catalog = await loadCatalog(cfg, args.catalogFile, { forceRefresh: args.forceRefresh });
 		}
 		const headroom = policy.constraints?.headroomTokens ?? 65536;
 		const providers = {};
@@ -730,7 +779,8 @@ function apply(ctx, config) {
 			type: 'object',
 			properties: {
 				provider: providerParam(),
-				catalogFile: { type: 'string', description: '本地已保存的 OpenRouter models JSON 路径(离线调试;缺省在线拉取)' },
+				catalogFile: { type: 'string', description: '本地已保存的 OpenRouter models JSON 路径(离线调试;缺省在线拉取,命中 30 分钟内缓存)' },
+				forceRefresh: { type: 'boolean', description: '跳过目录缓存强制拉最新(默认 TTL 内直接用缓存)' },
 			},
 		},
 		output: anyJsonOutput,
@@ -753,13 +803,14 @@ function apply(ctx, config) {
 				provider: providerParam(),
 				models: { type: 'array', items: { type: 'string' }, description: '只处理这些模型 id(缺省全部)' },
 				catalogFile: { type: 'string', description: '本地已保存的 OpenRouter models JSON 路径(离线调试)' },
+				forceRefresh: { type: 'boolean', description: '跳过目录缓存强制拉最新' },
 			},
 		},
 		output: anyJsonOutput,
 		async execute(args) {
 			try {
 				const a = args || {};
-				const audit = await runAudit({ provider: a.provider, catalogFile: a.catalogFile });
+				const audit = await runAudit({ provider: a.provider, catalogFile: a.catalogFile, forceRefresh: a.forceRefresh });
 				if (audit.error) return audit;
 				const { policy } = loadPolicy(cfg);
 				const profile = loadProfile(cfg);
@@ -817,6 +868,7 @@ function apply(ctx, config) {
 				defaultMaxTokens: { type: 'number', description: '建议 maxTokens 预留输出,缺省 12288' },
 				catalogFile: { type: 'string', description: '本地 OpenRouter models JSON(离线)' },
 				modelsFile: { type: 'string', description: '本地端点 models JSON(离线调试,兼容 {data:[...]}/{models:[...]}/[id...];提供时忽略 baseUrl/apiKey)' },
+				forceRefresh: { type: 'boolean', description: '跳过目录缓存强制拉最新 OpenRouter 目录' },
 			},
 		},
 		output: anyJsonOutput,
@@ -856,7 +908,7 @@ function apply(ctx, config) {
 					}
 					if (!endpointIds) return { error: `端点模型列表获取失败:${lastErr}` };
 				}
-				const catalog = await loadCatalog(cfg, a.catalogFile);
+				const catalog = await loadCatalog(cfg, a.catalogFile, { forceRefresh: a.forceRefresh });
 				const models = [];
 				const effortsList = [];
 				for (const id of endpointIds) {
@@ -923,6 +975,7 @@ export {
 	auditProvider,
 	buildProposals,
 	loadPolicy,
+	loadCatalog,
 	normalizeBaseUrl,
 	extractModelIds,
 	matchCatalogEntry,
