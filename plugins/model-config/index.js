@@ -42,10 +42,12 @@ const CONFIG_DEFAULTS = {
 	catalogUrl: 'https://openrouter.ai/api/v1/models',
 	policyFile: '', // 空=依次找 $DSH_HOME/model-config/policy.json → 包内 policy.json
 	requestTimeoutMs: 45000,
-	userAgent: '@dsh-friends/model-config/0.3.0',
-	// OpenRouter 目录缓存:命中 TTL 内的缓存不再拉网;拉取失败时回退旧缓存
+	userAgent: '@dsh-friends/model-config/0.4.0',
+	// OpenRouter 目录缓存:默认永久(参数基本不变);缺失模型增量补拉单模型端点并写回缓存;
+	// 拉取失败回退旧缓存;forceRefresh 全量强刷。
 	catalogCachePath: '', // 空=$DSH_HOME/model-config/catalog-cache.json
-	catalogCacheTtlMs: 30 * 60 * 1000,
+	catalogCacheTtlMs: Number.POSITIVE_INFINITY,
+	catalogFillMissing: true,
 };
 
 const DSH_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -647,6 +649,70 @@ function loadProfile(cfg) {
 	return { text, lines: tree.lines, tree, providers };
 }
 
+function formatAge(ms) {
+	if (ms < 60 * 1000) return `${Math.round(ms / 1000)}s`;
+	if (ms < 60 * 60 * 1000) return `${Math.round(ms / 60000)}min`;
+	if (ms < 24 * 60 * 60 * 1000) return `${Math.round(ms / 3600000)}h`;
+	return `${Math.round(ms / 86400000)}d`;
+}
+
+/** 读取缓存文件内容(损坏返回 null) */
+function readCatalogCache(cachePath) {
+	try {
+		const raw = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+		if (raw && Array.isArray(raw.data)) return raw;
+	} catch {
+		/* 无缓存或损坏 */
+	}
+	return null;
+}
+
+function writeCatalogCache(cachePath, payload) {
+	fs.mkdirSync(dirname(cachePath), { recursive: true });
+	const tmp = `${cachePath}.tmp`;
+	fs.writeFileSync(tmp, JSON.stringify(payload));
+	fs.renameSync(tmp, cachePath);
+}
+
+/**
+ * 缺失补拉:OpenRouter 无单模型端点(/models/{id} 实测 404),故策略为
+ * "缓存缺谁→全量拉一次→只合并缺失条目进永久缓存(更新+追加,不删旧条目)"。
+ * 平时零网络;仅当 policy/discover 需要缓存里没有的模型时打一次网。
+ */
+async function fillMissingModels(cfg, missingIds, cachePath) {
+	const want = [...new Set(missingIds)].filter(Boolean);
+	if (!want.length) return { filled: [], stillMissing: [], byId: null };
+	let fresh = null;
+	try {
+		const res = await fetch(cfg.catalogUrl, {
+			headers: { 'User-Agent': cfg.userAgent },
+			signal: AbortSignal.timeout(cfg.requestTimeoutMs),
+		});
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		fresh = (await res.json()).data ?? [];
+	} catch (e) {
+		return { filled: [], stillMissing: want, byId: null, error: e.message };
+	}
+	const byId = new Map(fresh.map((m) => [m.id, m]));
+	const filled = [];
+	const stillMissing = [];
+	for (const id of want) (byId.has(id) ? filled : stillMissing).push(id);
+	const cache = readCatalogCache(cachePath);
+	if (cache && filled.length) {
+		const map = new Map(cache.data.map((m) => [m.id, m]));
+		for (const id of filled) map.set(id, byId.get(id));
+		cache.data = [...map.values()];
+		cache.fetchedAt = new Date().toISOString();
+		try {
+			writeCatalogCache(cachePath, cache);
+		} catch {
+			/* 写失败不影响本次结果 */
+		}
+	}
+	return { filled, stillMissing, byId };
+}
+
+/** 目录缓存文件路径(config 可覆盖,默认 $DSH_HOME/model-config/catalog-cache.json) */
 function catalogCachePath(cfg) {
 	if (cfg.catalogCachePath) return cfg.catalogCachePath;
 	return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'model-config', 'catalog-cache.json');
@@ -663,7 +729,7 @@ async function loadCatalog(cfg, catalogFile, opts = {}) {
 		return { byId: new Map(data.map((m) => [m.id, m])), source: catalogFile };
 	}
 	const cachePath = catalogCachePath(cfg);
-	const ttl = Number.isFinite(cfg.catalogCacheTtlMs) ? cfg.catalogCacheTtlMs : 30 * 60 * 1000;
+	const ttl = Number.isFinite(cfg.catalogCacheTtlMs) ? cfg.catalogCacheTtlMs : Number.POSITIVE_INFINITY;
 	let cache = null;
 	try {
 		const raw = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
@@ -672,11 +738,13 @@ async function loadCatalog(cfg, catalogFile, opts = {}) {
 		/* 无缓存或缓存损坏,忽略 */
 	}
 	const ageMs = cache ? Date.now() - Date.parse(cache.fetchedAt) : Number.POSITIVE_INFINITY;
-	const ageMin = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 60000)) : null;
+	const ageLabel = Number.isFinite(ageMs) ? formatAge(Math.max(0, ageMs)) : null;
+	const ttlLabel = Number.isFinite(ttl) ? `${Math.round(ttl / 60000)}min` : '永久';
 	if (!opts.forceRefresh && cache && ageMs >= 0 && ageMs < ttl) {
 		return {
 			byId: new Map(cache.data.map((m) => [m.id, m])),
-			source: `cache(${ageMin}min 前拉取,ttl ${Math.round(ttl / 60000)}min):${cachePath}`,
+			source: `cache(${ageLabel}前拉取,ttl ${ttlLabel}):${cachePath}`,
+			cachePath,
 		};
 	}
 	try {
@@ -696,12 +764,12 @@ async function loadCatalog(cfg, catalogFile, opts = {}) {
 		} catch {
 			/* 缓存写失败不影响本次结果 */
 		}
-		return { byId: new Map(data.map((m) => [m.id, m])), source: cfg.catalogUrl, cachedAt: payload.fetchedAt };
+		return { byId: new Map(data.map((m) => [m.id, m])), source: cfg.catalogUrl, cachedAt: payload.fetchedAt, cachePath };
 	} catch (e) {
 		if (cache) {
 			return {
 				byId: new Map(cache.data.map((m) => [m.id, m])),
-				source: `stale-cache(${ageMin}min 前,拉取失败:${e.message},已回退):${cachePath}`,
+				source: `stale-cache(${ageLabel}前,拉取失败:${e.message},已回退):${cachePath}`,
 			};
 		}
 		throw new Error(`OpenRouter 目录请求失败:${e.message}(且无可用缓存;可用 catalogFile 指向本地 JSON)`);
@@ -741,8 +809,23 @@ function apply(ctx, config) {
 		const unknown = wanted.filter((p) => !policy.providers[p]);
 		if (unknown.length) return { error: `policy 中没有 provider: ${unknown.join(',')}(可用: ${Object.keys(policy.providers).join('/')})` };
 		let catalog = null;
+		let filledModels = [];
 		if (wanted.some((p) => policy.providers[p].source === 'openrouter')) {
 			catalog = await loadCatalog(cfg, args.catalogFile, { forceRefresh: args.forceRefresh });
+			// 缺失补拉:policy 登记了但缓存缺的模型 → 一次全量拉取合并缺失条目(默认开启,catalogFile 离线时跳过)
+			if (!args.catalogFile && cfg.catalogFillMissing !== false) {
+				const missing = [];
+				for (const p of wanted) {
+					const pol = policy.providers[p];
+					if (pol.source !== 'openrouter') continue;
+					for (const m of pol.models ?? []) if (!catalog.byId.has(m.openrouter) && !missing.includes(m.openrouter)) missing.push(m.openrouter);
+				}
+				if (missing.length) {
+					const fill = await fillMissingModels(cfg, missing, catalog.cachePath ?? catalogCachePath(cfg));
+					if (fill.byId) for (const id of fill.filled) catalog.byId.set(id, fill.byId.get(id));
+					filledModels = fill.filled;
+				}
+			}
 		}
 		const headroom = policy.constraints?.headroomTokens ?? 65536;
 		const providers = {};
@@ -763,6 +846,7 @@ function apply(ctx, config) {
 			profilePath: cfg.profilePath,
 			policyPath,
 			catalogSource: catalog?.source ?? null,
+			...(filledModels.length ? { filledModels } : {}),
 			providers,
 			summary: parts.join('; '),
 			hint: ok
@@ -909,12 +993,22 @@ function apply(ctx, config) {
 					if (!endpointIds) return { error: `端点模型列表获取失败:${lastErr}` };
 				}
 				const catalog = await loadCatalog(cfg, a.catalogFile, { forceRefresh: a.forceRefresh });
+				const allowFill = !a.catalogFile && cfg.catalogFillMissing !== false;
+				const fillCachePath = () => catalog.cachePath ?? catalogCachePath(cfg);
+				// 缺失补拉(两阶段):先按缓存匹配,未匹配的 id 集合做一次全量拉取合并,再重新匹配
+				const phase1 = endpointIds.map((id) => ({ id, m: matchCatalogEntry(id, catalog.byId) }));
+				const unmatchedRaw = phase1.filter((x) => !x.m.match).map((x) => x.id);
+				const filledModels = [];
+				if (allowFill && unmatchedRaw.length) {
+					const fill = await fillMissingModels(cfg, unmatchedRaw, fillCachePath());
+					if (fill.byId) for (const id of fill.filled) filledModels.push(id);
+				}
 				const models = [];
 				const effortsList = [];
 				for (const id of endpointIds) {
 					const m = matchCatalogEntry(id, catalog.byId);
 					if (!m.match) {
-						models.push({ id, matched: false, note: 'OpenRouter 未匹配:参数需按官方文档人工提供,不猜' });
+						models.push({ id, matched: false, note: 'OpenRouter 未匹配(含缺失补拉):参数需按官方文档人工提供,不猜' });
 						continue;
 					}
 					const s = suggestModelParams(catalog.byId.get(m.match), { cap, headroom, defaultMaxTokens: defMax });
@@ -946,6 +1040,7 @@ function apply(ctx, config) {
 					defaultMaxTokens: defMax,
 					modelCount: models.length,
 					models,
+					...(filledModels.length ? { filledModels } : {}),
 					suggestedRouteReasoning: routeDefault,
 					routeIntersection: intersection,
 					nextSteps:
@@ -976,6 +1071,7 @@ export {
 	buildProposals,
 	loadPolicy,
 	loadCatalog,
+	fillMissingModels,
 	normalizeBaseUrl,
 	extractModelIds,
 	matchCatalogEntry,

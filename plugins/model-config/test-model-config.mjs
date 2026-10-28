@@ -13,6 +13,7 @@ import {
 	buildProposals,
 	loadPolicy,
 	loadCatalog,
+	fillMissingModels,
 	CONFIG_DEFAULTS,
 	extractModelIds,
 	matchCatalogEntry,
@@ -378,6 +379,73 @@ test('loadCatalog: 拉取→写缓存→TTL 内命中→断网回退旧缓存', 
 		// ⑤ 断网且无缓存:报错并提示 catalogFile
 		await import('node:fs').then((m) => m.rmSync(cachePath));
 		await assert.rejects(() => loadCatalog({ ...cfg, catalogUrl: stale.url, requestTimeoutMs: 500 }), /无可用缓存/);
+	} finally {
+		server.close();
+	}
+});
+
+test('loadCatalog 默认永久缓存:10 天前的缓存也不打网(forceRefresh 才全量拉)', async () => {
+	const { createServer } = await import('node:http');
+	const { mkdtemp, writeFile } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const dir = await mkdtemp(join(tmpdir(), 'mc-perm-'));
+	const cachePath = `${dir}/catalog-cache.json`;
+	let hits = 0;
+	const server = createServer((req, res) => {
+		hits += 1;
+		res.setHeader('content-type', 'application/json');
+		res.end(JSON.stringify({ data: [{ id: 'a/b' }] }));
+	});
+	await new Promise((r) => server.listen(0, '127.0.0.1', r));
+	const cfg = { catalogUrl: `http://127.0.0.1:${server.address().port}/models`, catalogCachePath: cachePath, requestTimeoutMs: 5000, userAgent: 'test' };
+	try {
+		const first = await loadCatalog(cfg);
+		assert.equal(hits, 1);
+		// fetchedAt 拨回 10 天前:默认 ttl=Infinity → 仍命中
+		const payload = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+		payload.fetchedAt = new Date(Date.now() - 10 * 86400000).toISOString();
+		await writeFile(cachePath, JSON.stringify(payload));
+		const second = await loadCatalog(cfg);
+		assert.equal(hits, 1);
+		assert.match(second.source, /永久/);
+		// forceRefresh 才全量重拉
+		const third = await loadCatalog(cfg, undefined, { forceRefresh: true });
+		assert.equal(hits, 2);
+	} finally {
+		server.close();
+	}
+});
+
+test('fillMissingModels: 缺失触发一次全量拉取→只合并缺失条目,未命中与网络失败各有出口', async () => {
+	const { createServer } = await import('node:http');
+	const { mkdtemp } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const dir = await mkdtemp(join(tmpdir(), 'mc-fill-'));
+	const cachePath = `${dir}/catalog-cache.json`;
+	fs.writeFileSync(cachePath, JSON.stringify({ url: 'x', fetchedAt: new Date().toISOString(), data: [{ id: 'a/b' }] }));
+	let serve = true;
+	const server = createServer((req, res) => {
+		res.setHeader('content-type', 'application/json');
+		if (serve) res.end(JSON.stringify({ data: [{ id: 'a/b' }, { id: 'vendor/new', context_length: 123 }] }));
+		else res.statusCode = 500, res.end('{}');
+	});
+	await new Promise((r) => server.listen(0, '127.0.0.1', r));
+	const cfg = { catalogUrl: `http://127.0.0.1:${server.address().port}/models`, requestTimeoutMs: 5000, userAgent: 'test' };
+	try {
+		// 命中:vendor/new 补进来,a/b 保留,不存在的标记 stillMissing
+		const hit = await fillMissingModels(cfg, ['vendor/new', 'vendor/none'], cachePath);
+		assert.deepEqual(hit.filled, ['vendor/new']);
+		assert.deepEqual(hit.stillMissing, ['vendor/none']);
+		const after = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+		assert.ok(after.data.some((m) => m.id === 'vendor/new'));
+		assert.ok(after.data.some((m) => m.id === 'a/b'));
+		// 网络失败:filled 空、全部 stillMissing、带 error,不动缓存
+		serve = false;
+		const fail = await fillMissingModels(cfg, ['vendor/other'], cachePath);
+		assert.deepEqual(fail.filled, []);
+		assert.deepEqual(fail.stillMissing, ['vendor/other']);
+		assert.ok(fail.error);
+		assert.ok(JSON.parse(fs.readFileSync(cachePath, 'utf8')).data.some((m) => m.id === 'vendor/new'));
 	} finally {
 		server.close();
 	}
