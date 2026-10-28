@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "1Panel 面板",
-    "description": "管理 1Panel 计划任务与面板 API:列表、手动执行、修改、执行记录、通用调用。"
+    "title": "1Panel 面板多服务器管理",
+    "description": "8 个工具管多台 1Panel:计划任务、容器启停与日志、应用商店、宿主机状态、通用 API。servers.json 热读加服务器免重启,v1 老面板走透传。"
   }
 }

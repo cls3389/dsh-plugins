@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "1Panel",
-    "description": "Manage 1Panel cronjobs and panel API: list, execute, update, records, generic calls."
+    "title": "1Panel Multi-Server",
+    "description": "8 tools to manage multiple 1Panel servers: cronjobs, containers & logs, apps, host status, generic API. Hot-reloaded servers.json, v1 passthrough."
   }
 }
