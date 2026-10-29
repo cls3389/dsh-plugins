@@ -11,6 +11,41 @@
   "metadata": {},
   "plugins": [
     {
+      "name": "@dsh-friends/asr-tools",
+      "title": {
+        "zh": "音视频转写 (asr-mcp)",
+        "en": "Media Transcribe (asr-mcp)"
+      },
+      "description": {
+        "zh": "本地 SenseVoice 转写：抖音分享文案/任意音视频 URL/本地文件转文字，缓存命中秒回。",
+        "en": "Local SenseVoice transcription: Douyin share text / any media URL / local file to text, with instant cache hits."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/asr-tools"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh-plugin"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793200710,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "path": "plugins/asr-tools"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/browser-tools",
       "title": {
         "zh": "浏览器自动化",
@@ -97,12 +132,12 @@
       },
       "versions": [
         {
-          "version": "0.2.0",
-          "publishTimestamp": 1793142324,
+          "version": "0.2.1",
+          "publishTimestamp": 1793246988,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "a172a922b8dc02f90d9869dbc3e989ec4e001c94",
+            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
             "path": "plugins/feishu-group-reader"
           },
           "engines": {}
@@ -214,6 +249,72 @@
       ]
     },
     {
+      "name": "@dsh-friends/media-tools",
+      "title": {
+        "zh": "媒体工具",
+        "en": "Media Tools"
+      },
+      "description": {
+        "zh": "SenseNova 文生图/图生图(经 CPA 网关)与文档转 Markdown(docx/pptx/xlsx/csv 等,毫秒级本地转换)。",
+        "en": "SenseNova image generation/editing (via CPA gateway) and document-to-Markdown conversion."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/media-tools"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793246587,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "path": "plugins/media-tools"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/model-config",
+      "title": {
+        "zh": "模型配置审计",
+        "en": "Model Config Audit"
+      },
+      "description": {
+        "zh": "审计 DSH 模型列表与上游目录/策略的一致性,生成经用户确认后由 agent 落盘的变更提案(只读)。",
+        "en": "Audit DSH model lists against upstream catalogs/policies and produce user-confirmed edit-anchor proposals (read-only)."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/model-config"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.4.1",
+          "publishTimestamp": 1793194813,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "b98c42e7572a761ea176e09bfcbd20c383b7e47a",
+            "path": "plugins/model-config"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/onepanel",
       "title": {
         "zh": "1Panel 面板多服务器管理",
@@ -279,6 +380,105 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "4548ebbc83ad3d114015a88df897639520f07122",
             "path": "plugins/session-title-keeper"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/ths-favorites",
+      "title": {
+        "zh": "同花顺自选(每用户)",
+        "en": "THS Favorites (per-user)"
+      },
+      "description": {
+        "zh": "每人独立登录(扫码/Cookie/密码)管理自己的手机自选:分组增删查、股票增删排序、分享。按会话身份隔离,官方接口。",
+        "en": "Per-user THS favorites via official API: QR/cookie/password login, groups, stocks, sharing. Session-scoped."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ths-favorites"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793246587,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "path": "plugins/ths-favorites"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/ths-market",
+      "title": {
+        "zh": "同花顺行情+盯盘",
+        "en": "THS Market & Watch"
+      },
+      "description": {
+        "zh": "行情查询(报价/K线/搜索/问财/L2/大盘体检/异动/两融折算率)与条件盯盘:纯提醒,或同装 ths-trade 并配钥后支持自动执行。",
+        "en": "Read-only market data (quotes/klines/search/wencai/L2/pulse/moves/margin rates) plus watch rules: reminder-only, or auto-exec when ths-trade is co-installed."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ths-market"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793246487,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "path": "plugins/ths-market"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/ths-trade",
+      "title": {
+        "zh": "同花顺交易",
+        "en": "THS Trading"
+      },
+      "description": {
+        "zh": "账户持仓、实盘下单撤单、AI 分时信号条件单、数据中心自选股管理。行情与盯盘已拆至 ths-market。",
+        "en": "Positions, live orders, AI intraday signal condition orders, and data-center favorites. Quotes & watch moved to ths-market."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ths-trade"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.4.0",
+          "publishTimestamp": 1793246982,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "path": "plugins/ths-trade"
           },
           "engines": {}
         }

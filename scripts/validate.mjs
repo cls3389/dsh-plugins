@@ -5,7 +5,7 @@
  * 用法: node scripts/validate.mjs [索引文件名] [索引URL]
  *   默认验证 docs/index.json;传 index-local.json 验证实测索引。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,7 +16,9 @@ const indexUrl = process.argv[3] ?? (indexFile === 'index-local.json'
   ? 'http://127.0.0.1:18731/index-local.json'
   : 'https://dsh-friends.github.io/dsh-plugins/index.json');
 
-const dshRoot = '/usr/local/lib/node_modules/@deepseek-ai/dsh';
+const dshRoot = process.env.DSH_ROOT
+  ?? ['/usr/local/lib/node_modules/@deepseek-ai/dsh', '/usr/lib/node_modules/@deepseek-ai/dsh']
+    .find((p) => { try { statSync(join(p, 'package.json')); return true; } catch { return false; } });
 const require = createRequire(pathToFileURL(join(dshRoot, "package.json")).href);
 const { parseMarketIndex, marketInstallTarget } = require('@deepseek-ai/dsh-plugin-market-index');
 
