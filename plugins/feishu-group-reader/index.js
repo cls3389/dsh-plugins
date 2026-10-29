@@ -579,9 +579,13 @@ async function fetchMessages(cfg, args) {
 			/* 群信息失败不阻断消息读取 */
 		}
 	}
+	// p2p 单聊接口可能无 name 字段;undefined 会破坏工具输出的无损 JSON 校验,兜底成字符串
+	if (typeof chatName !== 'string') chatName = '';
+	// undefined 字段会破坏工具输出的无损 JSON 校验,按需携带
+	const range = { ...(startSec ? { start: startSec } : {}), ...(endSec ? { end: endSec } : {}), ...(args.relative_time ? { relative: args.relative_time } : {}) };
 	return {
 		chat: { chat_id: chatId, name: chatName },
-		range: { start: startSec, end: endSec, relative: args.relative_time },
+		range,
 		count: formatted.length,
 		has_more: hasMore || messages.length > max,
 		messages: formatted,

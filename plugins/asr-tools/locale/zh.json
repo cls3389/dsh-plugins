@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "音视频转写 (asr-mcp)",
+    "description": "本地 SenseVoice 转写：抖音分享文案/任意音视频 URL/本地文件转文字，缓存命中秒回。"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "THS Market & Watch",
+    "description": "Read-only market data (quotes/klines/search/wencai/L2/pulse/moves/margin rates) plus watch rules: reminder-only, or auto-exec when ths-trade is co-installed."
+  }
+}

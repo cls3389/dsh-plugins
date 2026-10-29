@@ -1,0 +1,22 @@
+{
+  "name": "@dsh-friends/ths-market",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "同花顺行情+盯盘(纯提醒或双门禁自动执行):行情9工具+盯盘引擎,自动执行须同装 ths-trade",
+  "license": "MIT"
+}

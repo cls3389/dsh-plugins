@@ -1,0 +1,39 @@
+- insert:
+    - id: ths-trade
+      name: '@dsh-friends/ths-trade'
+      config:
+        # xiadan 交易网关(REST, Bearer)
+        xiadanBaseUrl: http://127.0.0.1:18710
+        xiadanApiKey: ''
+        # FQGate 行情网关(REST + WS, 无鉴权)
+        fqgateBaseUrl: http://127.0.0.1:18000
+        # 请求超时(毫秒)
+        requestTimeoutMs: 15000
+        # 真实下单/撤单无工具审批门,调用即执行;保留幂等与回执对账要求。
+        # 盯盘引擎:FQGate WS 实时推送 + 规则匹配 + 触发唤醒(规则由 ths_watch_add 动态添加)
+        watchEnabled: true
+        # 监控 master 归属:web/feishu 双 profile 各跑一个引擎实例、共享规则文件,
+        # 匹配/唤醒只能由 master 做(否则重复唤醒+重复消耗 oneShot)。feishu bot
+        # 由 keeper 7×24 拉起,定为 master;web 侧实例仅作规则管理面。
+        watchExclusiveMaster: feishu
+        # 规则持久化文件(绝对路径,web/feishu 双 profile 共享同一份;进程重启自动恢复)
+        watchRulesFile: /data/dsh/home/dsh-management/watch-rules.json
+        # ths-data-center 数据中心(L2 云端指标/秒K/异动/交易日历/问财/自选REST)
+        # 2026-10-27 补齐:此前缺失导致 ths_market_pulse / ths_sec_kline / ths_wencai / ths_level2 全部 401
+        dataCenterBaseUrl: http://127.0.0.1:17890
+        dataCenterApiKey: ''
+        # ths-ai-signal-trader AI信号引擎(发信号→评分动态定参→自动条件单)
+        # 2026-10-27 补齐:此前缺失导致 ths_signal_status 查询 401
+        signalTraderBaseUrl: http://127.0.0.1:8011
+        signalTraderWebuiToken: ''
+        signalTraderWebhookToken: ''
+        # 条件单自动执行护栏(当前所有规则均为纯提醒,不下单;护栏仅在带 action 时生效)
+        autoTradeMaxOrderValue: 80000
+        autoTradeDailyMaxValue: 200000
+        autoTradeMaxDeviationPercent: 2
+        autoTradeHaltGuardPercent: 0.5
+
+# 2026-10-29 v0.2.1: +ths_margin_collateral(华宝两融折算率,自 OpenClaw 移植);dataCenterBaseUrl 默认值修正 127.0.0.1
+# v0.2.2: +toolDeny/toolAllow 工具面收窄(通配符,deny 优先);v0.2.1: +ths_margin_collateral
+# v0.4.0: 拆分——行情+盯盘+引擎迁出至 @dsh-friends/ths-market;本插件聚焦交易(account/order/cancel)+信号(signal)+数据中心自选(ths_fav_*);自动执行入口在 ths-market(双门禁)
+# 注:真实密钥/地址在本机 profile patch(cordis.patch.yml),不入市场包

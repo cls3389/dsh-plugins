@@ -1,0 +1,25 @@
+{
+  "name": "@dsh-friends/ths-favorites",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3"
+  },
+  "description": "同花顺自选股(每用户独立登录态):扫码/Cookie/密码登录,分组与股票增删排序分享,直连官方接口",
+  "license": "MIT"
+}

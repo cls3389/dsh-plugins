@@ -1,0 +1,16 @@
+# @dsh-friends/ths-market 默认配置(2026-10-29 自 ths-trade 拆分)
+# 自动执行双门禁:同 profile 装有 ths-trade 且下方 xiadanApiKey 非空才启用;
+# 否则 action 盯盘规则自动降级为提醒型。
+- insert:
+    - id: ths-market
+      name: '@dsh-friends/ths-market'
+      config:
+        fqgateBaseUrl: http://127.0.0.1:18000
+        dataCenterBaseUrl: http://127.0.0.1:17890
+        requestTimeoutMs: 15000
+        watchEnabled: true
+        watchExclusiveMaster: feishu
+        watchRulesFile: /data/dsh/home/dsh-management/watch-rules.json
+        # 自动执行后端(可选;不配=纯提醒)
+        xiadanBaseUrl: http://127.0.0.1:18710
+        xiadanApiKey: ''

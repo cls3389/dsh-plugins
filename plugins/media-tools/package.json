@@ -1,0 +1,27 @@
+{
+  "name": "@dsh-friends/media-tools",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@firecrawl/anydoc": "^0.1.7"
+  },
+  "description": "媒体工具:SenseNova 文生图/图生图(via CPA)+ 文档转 Markdown(anydoc)",
+  "license": "MIT"
+}

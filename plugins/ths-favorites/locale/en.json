@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "THS Favorites (per-user)",
+    "description": "Per-user THS favorites via official API: QR/cookie/password login, groups, stocks, sharing. Session-scoped."
+  }
+}
