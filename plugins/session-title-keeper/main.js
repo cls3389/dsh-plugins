@@ -489,11 +489,13 @@ function apply(ctx, config) {
 		let call;
 		try {
 			// 路由准备也必须在超时和重载取消范围内。
+		// 2026-10-30:reasoningEffort 可配(cfg.reasoningEffort,默认不发送字段走路由默认)。
+		// 硬编码 'off' 在模型表删掉 off 档后会 UNSUPPORTED_REASONING_EFFORT。
 		const preparation = ctx.llm.prepareCall({
 				provider,
 				model,
 				maxTokens: cfg.maxOutputTokens,
-				reasoningEffort: 'off',
+				...(cfg.reasoningEffort ? { reasoningEffort: cfg.reasoningEffort } : {}),
 			}, controller.signal);
 			const timeout = new Promise((_, reject) => {
 				controller.signal.addEventListener('abort', () => reject(abortError()), { once: true });
