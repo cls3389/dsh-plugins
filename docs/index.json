@@ -112,6 +112,72 @@
       ]
     },
     {
+      "name": "@dsh-friends/dsh-keeper",
+      "title": {
+        "zh": "飞书消息守护",
+        "en": "Feishu Keeper"
+      },
+      "description": {
+        "zh": "容器重启或进程崩溃后自动拉起飞书消息通道，保持随时在线。",
+        "en": "Restart the Feishu channel automatically after crashes or container restarts."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/dsh-keeper"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.3.0",
+          "publishTimestamp": 1793356347,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
+            "path": "plugins/dsh-keeper"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/dsh-memory",
+      "title": {
+        "zh": "用户级长期记忆",
+        "en": "Feishu Per-User Memory"
+      },
+      "description": {
+        "zh": "每个可信用户独立的长期记忆：主题地图、中英混合检索、行号读取、私有写入与审计，按 senderOpenId 隔离。",
+        "en": "Long-term memory isolated per trusted Feishu senderOpenId: topic shards, bilingual lexical search, line-numbered reads, private writes and audit."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/dsh-memory"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.3.0",
+          "publishTimestamp": 1793356347,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
+            "path": "plugins/dsh-memory"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/feishu-channel",
       "title": {
         "zh": "飞书渠道（多 bot 改造版）",
@@ -137,7 +203,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -170,7 +236,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/feishu-group-reader"
           },
           "engines": {}
@@ -203,7 +269,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/feishu-principal"
           },
           "engines": {}
@@ -236,7 +302,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/feishu-workspaces"
           },
           "engines": {}
@@ -387,7 +453,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/media-tools"
           },
           "engines": {}
@@ -420,7 +486,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/model-config"
           },
           "engines": {}
@@ -524,7 +590,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/ths-favorites"
           },
           "engines": {}
@@ -557,7 +623,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/ths-market"
           },
           "engines": {}
