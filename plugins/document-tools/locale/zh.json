@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "文档工具",
+    "description": "基于 @firecrawl/anydoc 将 Office、EPUB、CSV 等文档转换为 Markdown。"
+  }
+}

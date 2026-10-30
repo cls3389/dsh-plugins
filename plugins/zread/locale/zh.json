@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Zread 开源仓库阅读",
+    "description": "免克隆搜索 GitHub 公开仓库文档、Issue、Commit、目录结构与源码；原生 HTTP 实现，无需 MCP 中间层"
+  }
+}

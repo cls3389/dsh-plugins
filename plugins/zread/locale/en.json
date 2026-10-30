@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Zread Repository Reader",
+    "description": "Read public GitHub documentation, issues, commits, repository trees, and source files without cloning; native HTTP with no MCP middleware"
+  }
+}

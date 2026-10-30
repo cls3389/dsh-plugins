@@ -1,0 +1,11 @@
+export declare const name: string;
+export declare function assertOpenId(openId: string): string;
+export declare function userKey(openId: string): string;
+export declare function workspaceFor(appRoot: string, openId: string): string;
+export declare function stateForKey(root: string, key: string, category: string): string;
+export declare function stateFor(root: string, openId: string, category: string): string;
+export declare function readUsers(filePath: string): Record<string, { displayName?: string; enabled?: boolean }>;
+export declare function connectionForUser(openId: string, cfg: Record<string, unknown>, kind: string): Record<string, unknown>;
+export declare function currentOpenId(agent: unknown): string | undefined;
+export declare function toolAllowFor(openId: string | undefined, defaults: string[] | undefined, usersFile?: string): string[];
+export declare function apply(ctx: unknown, config: Record<string, unknown>): () => void;

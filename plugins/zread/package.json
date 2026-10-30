@@ -1,0 +1,45 @@
+{
+  "name": "@dsh-friends/zread",
+  "version": "0.2.0",
+  "description": "Zread 开源仓库阅读：免克隆搜索 GitHub 公开仓库文档、目录结构与源码，原生 HTTP 无 MCP 中间层",
+  "type": "module",
+  "main": "./main.js",
+  "exports": {
+    ".": "./main.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "main.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md",
+    "test-regressions.mjs"
+  ],
+  "scripts": {
+    "test": "node --test test-regressions.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cls3389/dsh-plugins.git",
+    "directory": "plugins/zread"
+  },
+  "homepage": "https://github.com/cls3389/dsh-plugins/tree/main/plugins/zread#readme",
+  "keywords": [
+    "dsh",
+    "mcp",
+    "zread",
+    "github",
+    "zhipu"
+  ],
+  "author": "dsh-friends",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

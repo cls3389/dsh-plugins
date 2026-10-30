@@ -1,0 +1,8 @@
+- insert:
+    - id: document-tools
+      name: '@dsh-friends/document-tools'
+      config:
+        allowedPathPrefixes:
+          - /tmp/
+          - /data/dsh/
+          - /home/

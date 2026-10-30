@@ -1,0 +1,4 @@
+# 只声明挂载；URL、凭据引用等配置由 profile 的 cordis.patch.yml 单点持有。
+- insert:
+    - id: zread
+      name: '@dsh-friends/zread'

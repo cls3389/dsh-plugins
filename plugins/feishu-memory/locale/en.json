@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feishu Per-User Memory",
+    "description": "Long-term memory isolated per trusted Feishu senderOpenId: topic shards, bilingual lexical search, line-numbered reads, private writes and audit."
+  }
+}

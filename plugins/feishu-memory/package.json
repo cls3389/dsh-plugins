@@ -1,0 +1,37 @@
+{
+  "name": "@dsh-friends/feishu-memory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@jipika/dsh-memory": "0.9.2"
+  },
+  "description": "飞书用户级长期记忆：主题地图、词法检索、按行读取、私有写入与审计",
+  "files": [
+    "index.js",
+    "README.md",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "test.mjs"
+  ],
+  "peerDependencies": {
+    "@jipika/dsh-memory": "*"
+  },
+  "peerDependenciesMeta": {
+    "@jipika/dsh-memory": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,5 @@
+- insert:
+    - id: feishu-principal
+      name: '@dsh-friends/feishu-principal'
+      config:
+        usersFile: /data/dsh/lark/user-connections.json

@@ -1,0 +1,3 @@
+- insert:
+    - id: feishu-memory
+      name: '@dsh-friends/feishu-memory'
