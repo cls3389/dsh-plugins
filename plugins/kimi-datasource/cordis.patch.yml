@@ -1,0 +1,3 @@
+- insert:
+    - id: kimi-datasource
+      name: '@dsh-friends/kimi-datasource'

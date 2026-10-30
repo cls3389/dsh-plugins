@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Kimi Datasource",
+    "description": "Realtime stock quotes (A/HK/US, auto batching) plus Tianyancha company search & registry lookups; curated 3-tool surface, dual public endpoints with failover."
+  }
+}

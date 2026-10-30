@@ -1,0 +1,27 @@
+{
+  "name": "@dsh-friends/kimi-datasource",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/*.js",
+    "README.md",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "description": "Kimi professional datasource: realtime stock quotes (A/HK/US) and Tianyancha company registry lookups; curated 3-tool surface, public endpoints only",
+  "keywords": ["dsh", "cordis", "kimi", "tianyancha", "stock", "feishu"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}
