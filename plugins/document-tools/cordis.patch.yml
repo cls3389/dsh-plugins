@@ -1,3 +1,9 @@
+# 安装后按本机需要编辑允许读取的目录前缀；不要把密钥写进此文件。
 - insert:
     - id: document-tools
       name: '@dsh-friends/document-tools'
+      config:
+        allowedPathPrefixes:
+          - /tmp/
+          - /data/dsh/
+          - /home/

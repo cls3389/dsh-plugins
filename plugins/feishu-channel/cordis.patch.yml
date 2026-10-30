@@ -1,3 +1,28 @@
+# 安装后填写 appId，并在环境变量或 credentials refs 配置 FEISHU_MAIN_APP_SECRET。
+# 多 Bot、自有模型路由、聊天/用户白名单和工具白名单可在本机外层完整配置中扩展。
 - insert:
     - id: feishu
       name: '@dsh-friends/feishu-channel'
+      config:
+        appId: ''
+        appName: ''
+        appSecret: ''
+        appSecretEnv: FEISHU_MAIN_APP_SECRET
+        domain: feishu
+        defaultCwd: /data/dsh/home
+        workspaceRoot: /data/dsh/home/feishu-apps
+        dataDir: /data/dsh/lark
+        # 以下路由留空时使用 profile/会话默认；数组留空表示不额外限制。
+        provider: ''
+        model: ''
+        reasoningEffort: ''
+        accountId: ''
+        mcpEndpoint: ''
+        allowedChats: []
+        allowedUsers: []
+        groupMentionMode: always
+        replyMode: streaming
+        tools:
+          deny: []
+        botsFile: ''
+        bots: []

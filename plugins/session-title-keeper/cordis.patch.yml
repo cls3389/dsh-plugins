@@ -1,5 +1,25 @@
-# 只声明挂载,config 统一由 profile 的 cordis.patch.yml 单点持有
-# (加载器按 id last-wins 且整体替换,两处都写会静默丢配置)。
+# 完整可见配置；provider/model 留空表示跟随各会话最后一次请求路由。
 - insert:
     - id: session-title-keeper
       name: '@dsh-friends/session-title-keeper'
+      config:
+        enabled: true
+        intervalMs: 3600000
+        initialDelayMs: 60000
+        maxPerRun: 12
+        paceMs: 1200
+        maxOutputTokens: 512
+        timeoutMs: 60000
+        maxInputBytes: 24000
+        maxMessages: 24
+        targetCjkCharacters: 14
+        targetWords: 6
+        maxTitleBytes: 80
+        format: structured
+        includeTime: false
+        projectMinShare: 0.4
+        workspaceRoot: ''
+        stateFile: /data/dsh/.title-keeper-state.json
+        provider: ''
+        model: ''
+        reasoningEffort: ''

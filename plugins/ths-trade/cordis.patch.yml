@@ -1,3 +1,20 @@
+# 完整插件配置：安装后按本机服务地址修改；真实密钥只在本机外层配置，勿提交。
+# 行情与盯盘已拆到 ths-market；本插件聚焦账户/交易、AI 分时信号和数据中心自选。
 - insert:
     - id: ths-trade
       name: '@dsh-friends/ths-trade'
+      config:
+        # xiadan 真实交易网关（REST + Bearer）。
+        xiadanBaseUrl: http://127.0.0.1:18710
+        xiadanApiKey: ''
+        requestTimeoutMs: 15000
+        # 数据中心自选股接口。
+        dataCenterBaseUrl: http://127.0.0.1:17890
+        dataCenterApiKey: ''
+        # AI 分时信号引擎。
+        signalTraderBaseUrl: http://127.0.0.1:8011
+        signalTraderWebuiToken: ''
+        signalTraderWebhookToken: ''
+        # 工具面过滤：deny 优先；allow 为空表示不过滤。
+        toolDeny: []
+        toolAllow: []

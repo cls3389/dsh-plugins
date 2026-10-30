@@ -1,3 +1,9 @@
+# 安装后修改持久化目录和默认飞书应用 ID；多应用状态按 appId+openId 隔离。
 - insert:
     - id: ths-favorites
       name: '@dsh-friends/ths-favorites'
+      config:
+        stateDir: /data/dsh/storages/ths-favorites
+        defaultAppId: cli_replace_me
+        syncTableBaseUrl: http://127.0.0.1:39871
+        syncTimeoutMs: 300000

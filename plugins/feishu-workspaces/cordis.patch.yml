@@ -1,3 +1,9 @@
+# 飞书会话注册表聚合；支持绝对路径与 * 通配。
 - insert:
     - id: feishu-workspaces
       name: '@dsh-friends/feishu-workspaces'
+      config:
+        intervalMs: 3000
+        registryFiles:
+          - /data/dsh/lark/workspace.json
+          - /data/dsh/lark/bots/*/workspace.json

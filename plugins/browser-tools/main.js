@@ -73,9 +73,9 @@ async function readCredentialRef(refName) {
 }
 
 const CONFIG_DEFAULTS = {
-	baseUrl: 'http://browser-gateway:8088',
+	baseUrl: 'http://127.0.0.1:18090',
 	apiToken: '',
-	apiTokenRef: '',
+	apiTokenRef: 'BROWSER_GATEWAY_TOKEN',
 	// 网关排队 30s + 任务 120s + HTTP 开销。
 	requestTimeoutMs: 190000,
 	allowPrivateNetworks: false,
@@ -321,6 +321,11 @@ async function saveScreenshot(ctx, exec, args, bytes, contentType) {
 
 function apply(ctx, config) {
 	const cfg = { ...CONFIG_DEFAULTS, ...config };
+	// 本机 profile 的完整覆盖可显式放开私网；公共默认则连网关地址也一起拦截，
+	// 避免 baseUrl 绕过 allowPrivateNetworks=false。
+	if (!cfg.allowPrivateNetworks && isPrivateUrl(cfg.baseUrl)) {
+		throw new Error(`browser-tools: baseUrl 是内网/回环地址;确需本机网关时请显式配置 allowPrivateNetworks: true: ${cfg.baseUrl}`);
+	}
 	if (!cfg.apiToken && !cfg.apiTokenRef) ctx.logger.warn('browser-tools: apiToken 与 apiTokenRef 均未配置,工具调用会失败');
 
 	ctx.tools.register({

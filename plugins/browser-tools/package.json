@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/browser-tools",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "exports": {
     ".": "./main.js",
@@ -11,7 +11,8 @@
     "main.js",
     "cordis.patch.yml",
     "locale/*.json",
-    "README.md"
+    "README.md",
+    "test-config.mjs"
   ],
   "dsh": {
     "bundle": {

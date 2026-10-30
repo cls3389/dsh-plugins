@@ -1,4 +1,11 @@
-# 只声明挂载；URL、凭据引用等配置由 profile 的 cordis.patch.yml 单点持有。
+# 完整可见配置；在 credentials refs 配置 Z_AI_API_KEY，不要把真实 Key 写入此文件。
 - insert:
     - id: zread
       name: '@dsh-friends/zread'
+      config:
+        url: https://open.bigmodel.cn/api/mcp/zread/mcp
+        apiKeyRef: Z_AI_API_KEY
+        requestTimeoutMs: 120000
+        maxResponseBytes: 4194304
+        cacheTtlMs: 300000
+        cacheMaxEntries: 100

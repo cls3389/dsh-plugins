@@ -1,3 +1,14 @@
+# 安装后在 credentials refs 配置两个引用对应的 Key；仅使用公网端点，不写真实密钥。
 - insert:
     - id: kimi-datasource
       name: '@dsh-friends/kimi-datasource'
+      config:
+        endpoints:
+          - apiUrl: https://agent-gw.kimi.com/coding/v1/tools
+            apiKeyRef: KIMI_DS_KEY_PRIMARY
+          - apiUrl: https://api.kimi.com/coding/v1/tools
+            apiKeyRef: KIMI_DS_KEY_SECONDARY
+        timeoutSeconds: 30
+        proxy: ''
+        failoverCooldownSeconds: 60
+        authFailoverCooldownSeconds: 300

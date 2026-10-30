@@ -1,5 +1,13 @@
-# 只声明挂载,不放 config(与 onepanel 同约定)。
-# 可选 config(profile/home 层):catalogUrl / profilePath / policyFile / requestTimeoutMs / userAgent
+# 模型配置审计路径与目录策略；policyFile/catalogCachePath 留空时使用包内或 DSH_HOME 默认位置。
 - insert:
     - id: model-config
       name: '@dsh-friends/model-config'
+      config:
+        profilePath: /data/dsh/cordis.patch.yml
+        catalogUrl: https://openrouter.ai/api/v1/models
+        policyFile: ''
+        requestTimeoutMs: 45000
+        userAgent: '@dsh-friends/model-config/0.4.2'
+        catalogCachePath: ''
+        catalogCacheTtlMs: .inf
+        catalogFillMissing: true

@@ -1,5 +1,12 @@
-# 只声明挂载,config 统一由 profile/home 层的 cordis.patch.yml 单点持有
-# (加载器按 id last-wins 且整体替换,两处都写会静默丢配置;密钥绝不进包)。
+# 安装后选择一种连接方式：serversFile（推荐热读）/ servers 数组 / 单服务器 baseUrl+apiKey。
+# 真实 API Key 只放本机私有配置或 serversFile，勿提交到公开仓库。
 - insert:
     - id: onepanel
       name: '@dsh-friends/onepanel'
+      config:
+        baseUrl: http://127.0.0.1:8090
+        apiKey: ''
+        requestTimeoutMs: 15000
+        servers: []
+        # 例：/data/dsh/home/dsh-management/dsh-plugins/plugins/onepanel/servers.json
+        serversFile: ''

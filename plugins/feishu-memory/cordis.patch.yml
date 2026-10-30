@@ -1,3 +1,7 @@
+# 必填：单应用使用 workspaceRoot；多应用使用 appsRoot。用户记忆写在这些根目录下。
 - insert:
     - id: feishu-memory
       name: '@dsh-friends/feishu-memory'
+      config:
+        workspaceRoot: /data/dsh/home
+        appsRoot: /data/dsh/home/feishu-apps

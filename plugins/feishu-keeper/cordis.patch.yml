@@ -1,5 +1,16 @@
-# 只声明挂载,config 统一由 profile 的 cordis.patch.yml 单点持有
-# (加载器按 id last-wins 且整体替换,两处都写会静默丢配置)。
+# 进程保活配置；bin=dsh 表示使用 PATH 中的命令，也可改为入口脚本绝对路径。
 - insert:
     - id: feishu-keeper
       name: '@dsh-friends/feishu-keeper'
+      config:
+        enabled: true
+        intervalMs: 60000
+        restartBackoffMs: 10000
+        restartBackoffMaxMs: 300000
+        bin: dsh
+        profile: feishu
+        logFile: /data/dsh/feishu-lark.log
+        exitFile: /data/dsh/feishu-process.exit
+        keeperLog: /data/dsh/feishu-keeper.log
+        home: /data/dsh/home
+        dshHome: /data/dsh

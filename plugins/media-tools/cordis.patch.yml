@@ -1,3 +1,19 @@
+# 完整插件配置：安装后按本机端点、凭据引用和目录修改；不要写入明文密钥。
 - insert:
     - id: media-tools
       name: '@dsh-friends/media-tools'
+      config:
+        # OpenAI 兼容图像端点；宿主示例为回环地址，容器/远程部署需修改。
+        baseUrl: http://127.0.0.1:8317/v1
+        # 凭据解析顺序：内联 apiKey（不建议）→ apiKeyRef → apiKeyEnv。
+        apiKey: ''
+        apiKeyRef: CPA_API_KEY
+        apiKeyEnv: CPA_API_KEY
+        # 生成图片落盘目录（1 小时 TTL 自动清理）。
+        imageDir: /data/dsh/tmp/media-images
+        # 图生图允许读取的本地参考图路径前缀。
+        allowedPathPrefixes:
+          - /tmp/
+          - /data/dsh/
+          - /home/
+        requestTimeoutMs: 180000

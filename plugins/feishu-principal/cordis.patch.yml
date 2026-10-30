@@ -1,3 +1,6 @@
+# 飞书用户连接配置文件；安装后改成实际路径，文件本身不得提交到公开仓库。
 - insert:
     - id: feishu-principal
       name: '@dsh-friends/feishu-principal'
+      config:
+        usersFile: /data/dsh/lark/user-connections.json

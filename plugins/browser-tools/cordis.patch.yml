@@ -1,7 +1,12 @@
-# 只声明挂载,不在此处写 config。
-# 原因:DSH 加载器按 id 去重是 last-wins(Object.fromEntries),且是整体替换而非深合并;
-# 若 bundle 与 profile 两处都写 config,后加载者会整份覆盖前者。让 profile 的
-# cordis.patch.yml 单点拥有 config,避免两边漂移时静默丢配置。
+# 完整可见配置；Token 使用 credentials refs，不写明文。私网访问默认关闭，确有需要再开启。
 - insert:
     - id: browser-tools
       name: '@dsh-friends/browser-tools'
+      config:
+        baseUrl: http://127.0.0.1:18090
+        apiToken: ''
+        apiTokenRef: BROWSER_GATEWAY_TOKEN
+        requestTimeoutMs: 190000
+        allowPrivateNetworks: false
+        maxResponseBytes: 10485760
+        maxScreenshotBytes: 20971520

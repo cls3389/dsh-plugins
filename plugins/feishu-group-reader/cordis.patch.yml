@@ -1,5 +1,18 @@
-# 只声明挂载,config 统一由 profile 的 cordis.patch.yml 单点持有
-# (加载器按 id last-wins 且整体替换,两处都写会静默丢配置)。
+# 安装后填写 appId，并在环境变量或 credentials refs 配置 FEISHU_MAIN_APP_SECRET。
 - insert:
     - id: feishu-messages
       name: '@dsh-friends/feishu-messages'
+      config:
+        baseUrl: https://open.feishu.cn
+        appId: ''
+        appSecret: ''
+        appSecretEnv: FEISHU_MAIN_APP_SECRET
+        defaultChatId: ''
+        refreshAheadMs: 300000
+        pageSize: 50
+        requestTimeoutMs: 20000
+        timeZone: Asia/Shanghai
+        # 多 Bot 场景可选；文件内容含私密凭据，不得提交。
+        botsFile: ''
+        restrictCurrentChat: false
+        restrictGroupChats: false

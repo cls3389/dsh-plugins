@@ -1,5 +1,8 @@
-# 只声明挂载,config 统一由 profile 的 cordis.patch.yml 单点持有
-# (加载器按 id last-wins 且整体替换,两处都写会静默丢配置)。
+# 安装后按实际 ASR 服务地址与超时修改。
 - insert:
     - id: asr-tools
       name: '@dsh-friends/asr-tools'
+      config:
+        baseUrl: http://127.0.0.1:8410
+        requestTimeoutMs: 300000
+        healthTimeoutMs: 15000

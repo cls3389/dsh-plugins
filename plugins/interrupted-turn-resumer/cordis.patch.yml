@@ -1,4 +1,17 @@
-# 仅声明插件；实际配置集中在 profile 的 cordis.patch.yml。
+# 完整可见配置；maxScanSessions=0 表示扫描全部会话。
 - insert:
     - id: interrupted-turn-resumer
       name: '@dsh-friends/interrupted-turn-resumer'
+      config:
+        enabled: true
+        scanIntervalMs: 30000
+        initialDelayMs: 5000
+        maxEventAgeMs: 86400000
+        maxScanSessions: 0
+        maxAttempts: 3
+        retryDelayMs: 60000
+        ignoredSessionIdPrefixes:
+          - lark-
+          - feishu-
+        stateFile: /data/dsh/.interrupted-turn-resumer-state.json
+        prompt: 继续上次任务。先核对中断时工具调用和文件的实际状态，不要重复执行已完成的操作，再继续完成剩余任务。如果存在长期 Goal，请恢复该 Goal 后继续；若它仍要求人工授权，明确说明并停下等待授权。

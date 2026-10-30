@@ -1,3 +1,27 @@
+# 完整插件配置：安装后按本机服务地址和盯盘策略修改；密钥只留空或在本机外层配置。
+# 自动执行有双门禁：同 profile 安装 ths-trade 且 xiadanApiKey 非空；否则仅提醒。
 - insert:
     - id: ths-market
       name: '@dsh-friends/ths-market'
+      config:
+        fqgateBaseUrl: http://127.0.0.1:18000
+        dataCenterBaseUrl: http://127.0.0.1:17890
+        dataCenterApiKey: ''
+        marginCollateralBaseUrl: https://www.cnhbstock.com/tt/308
+        requestTimeoutMs: 15000
+        # 盯盘引擎与规则持久化。
+        # 公共默认关闭；需要盯盘时在本机完整配置中启用，并指定唯一 master。
+        watchEnabled: false
+        watchIntervalMs: 30000
+        watchExclusiveMaster: any
+        watchRulesFile: /data/dsh/home/dsh-management/watch-rules.json
+        # 可选自动执行后端；未配置时自动降级为纯提醒。
+        xiadanBaseUrl: http://127.0.0.1:18710
+        xiadanApiKey: ''
+        autoTradeMaxOrderValue: 80000
+        autoTradeDailyMaxValue: 200000
+        autoTradeMaxDeviationPercent: 2
+        autoTradeHaltGuardPercent: 0.5
+        # 工具面过滤：deny 优先；allow 为空表示不过滤。
+        toolDeny: []
+        toolAllow: []

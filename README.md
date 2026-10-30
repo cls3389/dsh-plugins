@@ -23,9 +23,10 @@ dsh-plugins/
 | `@larksuite/dsh-lark` | 官方飞书渠道:飞书里对话 DSH,/model 切模型、卡片审批(需自备飞书应用凭据) |
 | `@dsh-friends/onepanel` | 1Panel 面板工具：多服务器管理计划任务、容器、应用与宿主状态，servers.json 热读免重启 |
 | `@dsh-friends/session-title-keeper` | 定时扫描会话，把停留在 fallback 截断版或漏更新的标题用 LLM 重算写回 |
+| `@dsh-friends/zread` | 免克隆搜索 GitHub 公开仓库文档、Issue、Commit、目录结构与源码，原生 HTTP 无 MCP 中间层 |
 
-两个插件的运行时状态默认写入 `$DSH_HOME`（未设则 `~/.dsh`），无需改配置即可在
-任何机器使用；如需自定义可参考各插件 README。
+需要保存运行时状态的插件默认写入 `$DSH_HOME`（未设则 `~/.dsh`）；各插件的前置条件与
+自定义配置见对应 README。
 
 ## 朋友如何使用（一行接入）
 
@@ -44,6 +45,12 @@ https://cls3389.github.io/dsh-plugins/index.json
 dsh plugin --profile <name> add git+https://github.com/cls3389/dsh-plugins.git#<commit>&path:/plugins/<插件目录>
 ```
 
+## 配置分层（重要）
+
+- **插件层**：`plugins/<name>/cordis.patch.yml` 同时声明挂载和完整、可见、可编辑的非私密配置；需要配置的插件不能把重要选项只藏在代码默认值里。安装后按本机环境修改端点、目录和功能开关。
+- **用户层**：profile 的 `cordis.patch.yml` 保存本机覆盖，凭据使用 `.credentials.yaml` refs 或环境变量，公开仓库不保存真实密钥和私有用户连接。
+- **覆盖语义**：DSH 后加载的用户层会**替换整个 `config` 对象，不会逐键深合并**。二选一维护：优先直接编辑插件目录内 patch；如用外层覆盖，必须复制插件层完整配置再修改，不能只写其中一个字段并期待其余字段从插件 patch 继承。
+
 ## 维护流程（发布新版本）
 
 1. 改插件代码，**跑测试**：`npm test`（在仓库根）
@@ -60,7 +67,7 @@ dsh plugin --profile <name> add git+https://github.com/cls3389/dsh-plugins.git#<
 ### 上架新插件清单
 
 - `plugins/<name>/package.json` 必须有 `"dsh": {"bundle": {"patch": "./cordis.patch.yml"}}`
-- `cordis.patch.yml` 只声明挂载（id + name），不放 config，避免与 profile 层冲突
+- `cordis.patch.yml` 声明挂载（id + name），并列出完整可见的非私密 config；不要把必要配置只藏在代码里
 - `locale/zh.json` + `locale/en.json` 必须有 `meta.title/description`（市场卡片显示名）
 - `files` 字段必须包含 cordis.patch.yml（patched 安装路径解析依赖它）
 - **严禁硬编码**密钥、token、内网 IP、绝对路径 —— 用 env / 配置 / 家目录回退

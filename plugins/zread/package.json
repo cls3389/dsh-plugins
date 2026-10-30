@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/zread",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Zread 开源仓库阅读：免克隆搜索 GitHub 公开仓库文档、目录结构与源码，原生 HTTP 无 MCP 中间层",
   "type": "module",
   "main": "./main.js",
