@@ -8,3 +8,4 @@ plugins/feishu-principal/node_modules/
 pnpm-lock.yaml
 plugins/feishu-channel/node_modules/
 plugins/feishu-channel/_dev/
+plugins/media-tools/*.bak-*
