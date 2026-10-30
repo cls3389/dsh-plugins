@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-friends/feishu-group-reader",
-  "version": "0.2.1",
+  "name": "@dsh-friends/feishu-messages",
+  "version": "0.2.2",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -18,13 +18,13 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "飞书群消息读取:复用 openclaw-lark 官方 UAT 存储,以用户身份拉取群聊消息(web/feishu 通用)",
+  "description": "飞书批量消息读取优化:群聊与私聊按时间批量拉取、裁剪并复用官方 UAT 授权",
   "license": "MIT",
   "peerDependencies": {
-    "@larksuite/dsh-lark": "*"
+    "@dsh-friends/feishu-channel": "*"
   },
   "peerDependenciesMeta": {
-    "@larksuite/dsh-lark": {
+    "@dsh-friends/feishu-channel": {
       "optional": true
     }
   }

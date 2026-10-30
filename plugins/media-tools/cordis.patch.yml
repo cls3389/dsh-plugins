@@ -1,18 +1,3 @@
-# @dsh-friends/media-tools 默认配置(host 版;Docker 实例覆盖 baseUrl 为容器 DNS)
 - insert:
     - id: media-tools
       name: '@dsh-friends/media-tools'
-      config:
-        # CPA(cli-proxy-api)OpenAI 兼容端点;宿主版走 127.0.0.1,Docker 版改 http://cli-proxy-api:8317/v1
-        baseUrl: http://127.0.0.1:8317/v1
-        # 凭据引用(refs.CPA_API_KEY);内联 apiKey 优先(测试用)
-        apiKeyRef: CPA_API_KEY
-        apiKey: ''
-        # 生成图片落盘目录(1 小时 TTL 自动清理;会话可用 read_image 查看)
-        imageDir: /data/dsh/tmp/media-images
-        # 图生图允许读取的本地参考图路径前缀(Docker 版需补 /home/node/)
-        allowedPathPrefixes:
-          - /tmp/
-          - /data/dsh/
-          - /home/
-        requestTimeoutMs: 60000

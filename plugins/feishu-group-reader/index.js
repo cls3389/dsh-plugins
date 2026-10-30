@@ -22,11 +22,13 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const name = 'feishu-group-reader';
+const name = 'feishu-messages';
+const READ_MESSAGE_SCOPES = ['im:chat:read', 'im:message:readonly', 'im:message.group_msg:get_as_user', 'im:message.p2p_msg:get_as_user'];
 const inject = ['tools'];
 
 const CONFIG_DEFAULTS = {
@@ -34,9 +36,10 @@ const CONFIG_DEFAULTS = {
 	baseUrl: 'https://open.feishu.cn',
 	/** openclaw 官方 UAT 存储目录(与 dsh-lark 共享) */
 	uatDir: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'openclaw-feishu-uat'),
-	/** app 凭据:默认从 profile config 读 */
+	/** app 凭据:默认从 profile config 读;appSecretEnv 指定环境变量名(env→credentials refs 兜底) */
 	appId: '',
 	appSecret: '',
+	appSecretEnv: '',
 	/** 默认群(可配 chat_id 或群名) */
 	defaultChatId: '',
 	/** access_token 过期前提前刷新窗口 */
@@ -47,6 +50,24 @@ const CONFIG_DEFAULTS = {
 	/** 解析"今天/本周"与展示时间的时区(容器系统时区是 UTC,业务按北京时间) */
 	timeZone: 'Asia/Shanghai',
 };
+
+/** 凭据 refs 直读:credentials 服务未挂载的 profile 用(env 未命中时) */
+function readCredentialRef(ref) {
+	try {
+		const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+		const text = fs.readFileSync(join(dshHome, '.credentials.yaml'), 'utf8');
+		const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		let inRefs = false;
+		for (const line of text.split(/\r?\n/)) {
+			if (/^refs:\s*$/.test(line)) { inRefs = true; continue; }
+			if (!inRefs) continue;
+			if (/^\S/.test(line)) break;
+			const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
+			if (match?.[1] && !match[1].startsWith('"')) return match[1];
+		}
+	} catch { /* 文件缺失静默 */ }
+	return undefined;
+}
 
 /* ─────────────────── UAT 存储(与 openclaw token-store.ts 同格式) ─────────────────── */
 
@@ -97,39 +118,22 @@ function encryptData(plaintext, key) {
 	return Buffer.concat([iv, cipher.getAuthTag(), enc]);
 }
 
-/** 读取指定 appId 下已授权用户列表的 token(取第一个可用的)。 */
-async function loadStoredToken(cfg) {
-	const { readdir } = await import('node:fs/promises');
-	let files;
+/** Read only the trusted sender's encrypted token; never borrow another user's latest token. */
+async function loadStoredToken(cfg, openId) {
+	if (typeof openId !== 'string' || !/^ou_[a-f0-9]{32}$/i.test(openId)) {
+		throw new Error('无法确认当前飞书用户身份，已拒绝读取任何用户授权或群消息');
+	}
 	try {
-		files = await readdir(cfg.uatDir);
-	} catch {
-		return null;
+		const file = join(cfg.uatDir, linuxSafeFileName(`${cfg.appId}:${openId}`));
+		const plain = decryptData(await readFile(file), await getMasterKey(cfg.uatDir));
+		if (!plain) throw new Error('授权文件无法解密，请重新授权');
+		const token = JSON.parse(plain);
+		if (token.userOpenId !== openId) throw new Error('授权用户身份不匹配，请重新授权');
+		return token;
+	} catch (error) {
+		if (error?.code === 'ENOENT') return null;
+		throw error;
 	}
-	const prefix = `${cfg.appId}_`;
-	const encFiles = files.filter((f) => f.startsWith(prefix) && f.endsWith('.enc'));
-	if (encFiles.length === 0) return null;
-	// 最新修改的优先(多账号时)
-	const sorted = [];
-	for (const f of encFiles) {
-		const full = join(cfg.uatDir, f);
-		const { stat } = await import('node:fs/promises');
-		const st = await stat(full);
-		sorted.push({ f: full, mtime: st.mtimeMs });
-	}
-	sorted.sort((a, b) => b.mtime - a.mtime);
-	for (const { f } of sorted) {
-		const key = await getMasterKey(cfg.uatDir);
-		const data = await readFile(f);
-		const plain = decryptData(data, key);
-		if (!plain) continue;
-		try {
-			return JSON.parse(plain);
-		} catch {
-			continue;
-		}
-	}
-	return null;
 }
 
 async function saveStoredToken(cfg, token) {
@@ -143,7 +147,7 @@ async function saveStoredToken(cfg, token) {
 
 /* ─────────────────── token 获取与刷新(参考 uat-client.ts) ─────────────────── */
 
-let tokenPromise = null;
+const tokenPromises = new Map();
 
 async function refreshToken(cfg, stored) {
 	const res = await fetch(`${cfg.baseUrl}/open-apis/authen/v2/oauth/token`, {
@@ -180,23 +184,26 @@ async function refreshToken(cfg, stored) {
 
 /** 获取可用 access_token(带过期刷新与并发去重)。 */
 async function getAccessToken(cfg) {
-	if (tokenPromise) return tokenPromise;
-	tokenPromise = (async () => {
-		const stored = await loadStoredToken(cfg);
+	const openId = cfg.userOpenId;
+	const pending = tokenPromises.get(openId);
+	if (pending) return pending;
+	const promise = (async () => {
+		const stored = await loadStoredToken(cfg, openId);
 		if (!stored) {
-			throw new Error(
-				`未找到已授权的飞书用户 token(${cfg.uatDir} 下无 ${cfg.appId}_*.enc)。` +
-					`请先在飞书会话里对 bot 发任意消息并完成一次 feishu_oauth 用户授权。`,
-			);
+			throw new Error('当前用户尚未完成飞书用户授权。可调用 feishu_oauth(action=authorize)发送一次授权卡片；若飞书提示账号未在应用所在企业/可用范围，直接展示该原因并停止，不要重复授权或借用其他用户令牌。');
 		}
 		const now = Date.now();
-		if (stored.expiresAt > now + cfg.refreshAheadMs) return stored;
-		cfg.logger?.info?.('[feishu-group-reader] UAT expired, refreshing');
+		if (stored.expiresAt > now + cfg.refreshAheadMs) {
+			const granted = new Set(String(stored.scope ?? '').split(/\s+/));
+			const missing = READ_MESSAGE_SCOPES.filter((scope) => !granted.has(scope));
+			if (missing.length) throw new Error(`当前用户授权缺少群消息权限：${missing.join('、')}。请调用 feishu_oauth(action=authorize)发送增量授权卡片；不要根据空结果推断用户退群。`);
+			return stored;
+		}
+		cfg.logger?.info?.('[feishu-group-reader] sender UAT expired, refreshing');
 		return refreshToken(cfg, stored);
-	})().finally(() => {
-		tokenPromise = null;
-	});
-	return tokenPromise;
+	})().finally(() => tokenPromises.delete(openId));
+	tokenPromises.set(openId, promise);
+	return promise;
 }
 
 /* ─────────────────── 飞书 API ─────────────────── */
@@ -224,8 +231,9 @@ async function larkGet(cfg, path, query = {}) {
 	return data;
 }
 
-async function larkGetOnce(cfg, path, query = {}) {
+async function larkGetOnce(cfg, path, query = {}, requiredScope) {
 	const token = await getAccessToken(cfg);
+	if (requiredScope && !String(token.scope ?? '').split(/\s+/).includes(requiredScope)) throw new Error(`当前用户授权缺少 ${requiredScope}，请调用 feishu_oauth(action=authorize)发送增量授权卡片`);
 	const qs = new URLSearchParams(
 		Object.fromEntries(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')),
 	).toString();
@@ -476,7 +484,7 @@ async function listChats(cfg) {
 			user_id_type: 'open_id',
 			page_size: 100,
 			...(pageToken ? { page_token: pageToken } : {}),
-		});
+		}, 'im:chat:read');
 		chats.push(...(data.items ?? []));
 		pageToken = data.page_token;
 	} while (pageToken);
@@ -608,6 +616,17 @@ function renderJson(value, budget = 20000) {
 
 export function apply(ctx, config) {
 	const cfg = { ...CONFIG_DEFAULTS, ...config, logger: ctx.logger };
+	// appSecretEnv:env 优先,退 $DSH_HOME/.credentials.yaml refs: 段直读(与 channel/media-tools 同款)
+	if (!cfg.appSecret && cfg.appSecretEnv) {
+		cfg.appSecret = process.env[cfg.appSecretEnv] ?? readCredentialRef(cfg.appSecretEnv) ?? '';
+	}
+	const bots = cfg.botsFile ? JSON.parse(fs.readFileSync(cfg.botsFile, 'utf8')) : [];
+	const forExecution = (exec) => {
+		const user = exec?.agent?.larkUser;
+		const bot = user?.accountId && user.accountId !== 'default' ? bots.find((entry) => entry.accountId === user.accountId) : undefined;
+		if (user?.accountId && user.accountId !== 'default' && (!bot || bot.appId !== user.appId || !bot.appSecret)) throw new Error('当前飞书应用未配置独立消息读取凭据，已拒绝回退默认应用');
+		return { ...cfg, ...(bot ? { appId: bot.appId, appSecret: bot.appSecret } : {}), userOpenId: user?.openId, currentChatId: user?.chatId, currentChatType: user?.chatType };
+	};
 	if (!cfg.appId || !cfg.appSecret) {
 		ctx.logger.warn('[feishu-group-reader] 缺少 appId/appSecret 配置,工具不可用');
 		return;
@@ -616,7 +635,7 @@ export function apply(ctx, config) {
 	ctx.tools.register({
 		name: 'feishu_group_chats',
 		description:
-			'列出当前飞书用户所在的所有群聊(chat_id + 群名)。用于查找目标群的 chat_id(oc_ 开头)。',
+			'列出当前可信飞书用户实际可见的群聊(chat_id + 群名)。按发言人独立 OAuth，不使用其他用户令牌。0 个结果只表示接口可见列表为空，不能据此推断退群或授权不足；未授权会明确报错并指引 feishu_oauth(action=authorize)。',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -624,8 +643,10 @@ export function apply(ctx, config) {
 			},
 		},
 		output: anyJsonOutput,
-		async execute(args) {
-			let chats = await listChats(cfg);
+		async execute(args, exec) {
+			const scoped = forExecution(exec);
+			let chats = await listChats(scoped);
+			if (scoped.restrictGroupChats) chats = chats.filter((chat) => chat.chat_mode === 'group');
 			if (args?.keyword) {
 				const k = args.keyword.toLowerCase();
 				chats = chats.filter((c) => c.name?.toLowerCase().includes(k));
@@ -647,7 +668,7 @@ export function apply(ctx, config) {
 	ctx.tools.register({
 		name: 'feishu_group_messages',
 		description:
-			'【优先用本工具读飞书消息】读取飞书聊天消息(用户身份,群聊+单聊都支持)。覆盖一切"看飞书消息/群消息/聊天记录/某人给我发了什么"的需求,优先于 feishu_im_user_* 系列(本工具已配好默认群与相对时间,输出更精简)。返回时间、发送者、消息文本;含图消息带 images 字段(配合 feishu_group_image 下载识别)。支持 chat_id / 群名模糊 / open_id(单聊)三种定位。',
+			'【优先用本工具读飞书消息】按当前发言人独立 OAuth 读取飞书聊天消息。支持 chat_id / 群名模糊 / open_id(单聊)三种定位。显式指定目标后绝不能改读当前私聊；私聊中未指定目标必须先用 feishu_group_chats 定位群。0 条只表示该时间范围无可见消息，禁止据此猜测退群/权限不足。缺少授权时调用 feishu_oauth(action=authorize)向当前用户发送授权卡片，绝不借用其他用户令牌。',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -665,8 +686,15 @@ export function apply(ctx, config) {
 			},
 		},
 		output: anyJsonOutput,
-		async execute(args) {
-			return fetchMessages(cfg, args ?? {});
+		async execute(args, exec) {
+			const scoped = forExecution(exec);
+			// Only an omitted target means "this group". An explicit chat_name/chat_id
+			// must never be silently replaced by a private-chat ID.
+			if (scoped.restrictCurrentChat && !args?.chat_id && !args?.chat_name && !args?.open_id) {
+				if (scoped.currentChatType !== 'group') throw new Error('当前是私聊。请提供目标 chat_name，或先用 feishu_group_chats 查找群；未指定目标时不默认读取其他群。');
+				return fetchMessages(scoped, { ...(args ?? {}), chat_id: scoped.currentChatId });
+			}
+			return fetchMessages(scoped, args ?? {});
 		},
 	});
 
@@ -708,6 +736,9 @@ export function apply(ctx, config) {
 			const data = await larkGet(cfg, `/open-apis/im/v1/messages/${mid}`, { user_id_type: 'open_id' });
 			const item = data.items?.[0];
 			if (!item) throw new Error(`消息 ${mid} 不存在或不可见`);
+			if (cfg.restrictCurrentChat && item.chat_id !== forExecution(exec).currentChatId) {
+				throw new Error('只能读取当前对话中的图片');
+			}
 			let keys = extractImageKeys(item.body);
 			if (args?.image_key) {
 				if (!keys.includes(args.image_key)) throw new Error(`image_key ${args.image_key} 不在该消息中(可用: ${keys.join(', ') || '无'})`);

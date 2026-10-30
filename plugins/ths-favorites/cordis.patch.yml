@@ -1,7 +1,3 @@
-# @dsh-friends/ths-favorites 默认配置(每用户独立登录态)
 - insert:
     - id: ths-favorites
       name: '@dsh-friends/ths-favorites'
-      config:
-        # 每会话身份一个子目录,存 Cookie 缓存等登录态
-        stateDir: /data/dsh/storages/ths-favorites

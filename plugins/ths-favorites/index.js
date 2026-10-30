@@ -3,7 +3,7 @@
  *
  * 2026-10-29 自 OpenClaw ths-favorite 整体移植:
  *   - 直连同花顺官方接口(ugc/t/cs.10jqka.com.cn,手机端 UA)
- *   - 每会话身份(exec.agent.sessionId)独立 Cookie 缓存与自选操作,
+ *   - 飞书 sender_open_id 独立 Cookie 缓存与自选操作；换会话仍属于同一用户，
  *     扫码(ths_qr_login)/Cookie(ths_login)/密码(ths_password_login)三种登录
  *   - 12 工具:登录×3 + 分组增删查 + 股票增删排序 + 分享 + 同步表格
  *   - 状态目录默认 /data/dsh/storages/ths-favorites/<agentId>/
@@ -15,6 +15,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import iconv from "iconv-lite";
+import { principalKey, stateForKey } from "../feishu-principal/index.js";
 
 const PLUGIN_ID = "ths-favorite";
 
@@ -49,7 +50,7 @@ const SELF_STOCK_DEFAULT_NAME = "我的自选";
 const DEFAULT_FROM_PARAM = "sjcg_gphone";
 const GROUP_QUERY_TYPES = "0,1";
 const DEFAULT_HTTP_TIMEOUT = 10000;
-const DEFAULT_STATE_DIR = "/data/dsh/storages/ths-favorites";
+const DEFAULT_STATE_DIR = (process.env.DSH_HOME ?? require("node:os").homedir() + "/.dsh") + "/storages/ths-favorites";
 const QR_IMAGE_ROOT = "/tmp/openclaw-ths-qr";
 const QR_OWNER_TTL_MS = 2 * 60 * 1000;
 const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -501,7 +502,7 @@ async function pollQrLogin(qrid, timeoutMs = 120000) {
   const startTime = Date.now();
   const intervalMs = 4000;
 
-  while (Date.now() - startTime < timeoutMs) {
+  while (Date.now() - startTime < timeoutMs || timeoutMs === 0 && startTime === Date.now()) {
     const body = new URLSearchParams({
       qrid,
       state: "1",
@@ -542,7 +543,8 @@ async function pollQrLogin(qrid, timeoutMs = 120000) {
       throw new Error("二维码已过期，请重新生成");
     }
 
-    // status=1 or other: still waiting, sleep and retry
+    // status=1 or other: single check must return immediately, never schedule another QR.
+    if (timeoutMs === 0) throw new Error("尚未检测到扫码确认；请在 App 确认后再次说完成登录。二维码过期时请重新发起登录");
     await new Promise(r => setTimeout(r, intervalMs));
   }
 
@@ -1745,12 +1747,9 @@ function normalizeAgentId(agentId) {
 }
 
 function getAgentCookieCachePath(config, agentId) {
-  const stateDir = path.resolve(String(config.stateDir || DEFAULT_STATE_DIR));
-  const agentDir = path.join(stateDir, agentId);
-  if (agentDir !== stateDir && !agentDir.startsWith(stateDir + path.sep)) {
-    throw new Error("非法 agent 状态目录");
-  }
-  return path.join(agentDir, "ths-favorite", "cookies.json");
+  const key = normalizeAgentId(agentId);
+  if (!key.startsWith("user-") || !/^[a-f0-9]{32}$/.test(key.slice(5))) throw new Error("非法用户状态目录");
+  return path.join(stateForKey(String(config.stateDir || DEFAULT_STATE_DIR), key.slice(5), "ths-favorite"), "cookies.json");
 }
 
 function scopedManagerConfig(config, agentId) {
@@ -1866,15 +1865,15 @@ function createScopedTools(api, agentId) {
   tools.push({
     name: "ths_qr_login",
     label: "同花顺扫码登录",
-    description: "通过同花顺 App 为当前 agent 扫码登录，无需密码。调用流程：1) action=create 生成二维码，返回 media/output 图片路径和 qrid；2) 立即使用 message(action=send, media=<路径>) 将二维码发给用户；3) 确认图片已发出后调用 action=poll（传入 qrid）轮询等待扫码。二维码和 qrid 只能由创建它的 agent 轮询，扫码成功后仅缓存到该 agent（最多等待 120 秒）。",
+    description: "同花顺扫码登录。用户明确要求登录时 action=create 生成一次二维码，并立即用 feishu_send_image 发送，然后结束对话，不要轮询或自动重发。二维码过期就放弃。只有用户之后明确说已完成扫码/完成登录时，才 action=check 检查一次；不要自动检查。action=poll 仅为兼容保留，禁止主动使用。",
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
         action: {
           type: "string",
-          enum: ["create", "poll"],
-          description: "create=生成二维码，poll=轮询扫码状态并完成登录",
+          enum: ["create", "check", "poll"],
+          description: "create=生成一次二维码；check=用户确认扫码后检查一次；poll=兼容旧调用，不要主动使用",
         },
         qrid: {
           type: "string",
@@ -1922,12 +1921,12 @@ function createScopedTools(api, agentId) {
             mediaUrls: [output],
             trustedLocalMedia: true,
             message: `二维码已生成，请立即把图片发送给用户后再等待扫码（有效期约 120 秒）。图片路径：${output}`,
-            instructions: `必须立即调用 message 工具发送图片，不要用 MEDIA: 文本替代：action=send，media=${output}，message="请用同花顺 App 扫一扫扫码登录，120 秒内有效"。确认发送成功后，再调用 ths_qr_login action=poll（传入 qrid=${qrid}）。不要在发送图片前调用 poll。`,
+            instructions: `只调用一次 feishu_send_image(path=${JSON.stringify(output)}) 发送二维码，然后结束本轮并等待用户。不要 poll、不要 check、不要定时器、不要重试、不要重新生成。过期无需处理；用户之后明确说已完成扫码才 action=check qrid=${qrid} 检查一次；用户再次明确要求登录才重新 create。`,
           };
-        } else if (params.action === "poll") {
+        } else if (params.action === "poll" || params.action === "check") {
           if (!params.qrid) return { error: "缺少 qrid 参数（从 create 步骤获取）" };
           assertQrOwner(params.qrid, agentId);
-          const { cookies, authParams, account } = await pollQrLogin(params.qrid);
+          const { cookies, authParams, account } = await pollQrLogin(params.qrid, params.action === "check" ? 0 : 120000);
           const pm = getPm();
           pm.setCredentials(cookies, authParams);
           setCachedCookies(pm.cookieCachePath, agentId, cookies, authParams);
@@ -1935,7 +1934,7 @@ function createScopedTools(api, agentId) {
           log?.info?.(`[${PLUGIN_ID}] QR login success for agent ${agentId}`);
           return {
             status: "ok",
-            action: "poll",
+            action: params.action,
             userid: cookies.userid,
             account,
             message: "扫码登录成功，Cookie 已缓存，后续调用自动复用",
@@ -2325,15 +2324,21 @@ function apply(ctx, config) {
       parameters: t.parameters,
       output: anyJsonOutput,
       async execute(args, exec) {
-        const agentId = normalizeAgentId(exec?.agent?.sessionId ?? exec?.agent?.session?.id ?? "default");
+        const openId = exec?.agent?.larkUser?.openId;
+        if (typeof openId !== "string" || !openId.startsWith("ou_")) {
+          throw new Error("无法确认飞书用户身份，已拒绝访问同花顺自选；请从飞书私聊或群聊重新发起");
+        }
+        // open_id 只在同一飞书应用内稳定；默认应用保留原状态，新应用独立状态。
+        const agentId = `user-${principalKey(openId, exec?.agent?.larkUser?.appId, cfg.defaultAppId)}`;
         const tool = scopedFor(agentId).find((x) => x.name === t.name);
         if (!tool) return { error: `tool ${t.name} unavailable for ${agentId}` };
-        return tool.execute(undefined, args);
+        // DSH output must be lossless JSON; absent quote metadata is omitted, not undefined.
+        return JSON.parse(JSON.stringify(await tool.execute(undefined, args)));
       },
     });
     registered++;
   }
-  ctx.logger.info(`[ths-favorites] active: ${registered} 工具(会话身份隔离) -> ${cfg.stateDir}`);
+  ctx.logger.info(`[ths-favorites] active: ${registered} tools using feishu-principal user identity`);
   return () => {};
 }
 
