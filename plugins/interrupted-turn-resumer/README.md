@@ -38,13 +38,18 @@
     maxScanSessions: 0 # 0 = 全量扫描，避免漏掉目录顺序在 100 名之后的活跃会话
     maxAttempts: 3
     retryDelayMs: 60000
+    maxResumeChain: 1 # 自动续接链深达 1 即停：续接后的轮次再次中断不再自动续接
     ignoredSessionIdPrefixes:
       - lark-
       - feishu-
     stateFile: /data/dsh/home/workspace/.interrupted-turn-resumer-state.json
 ```
 
-`prompt` 可覆盖默认恢复文本。`enabled: false` 可停止事件处理和定时扫描。
+`prompt` 可覆盖默认恢复文本。`enabled: false` 可停止事件处理和定时扫描。`maxResumeChain: 0` 可完全禁用插件自动续接。
+
+## 自循环守卫（v0.3.0）
+
+若被打断的轮次本身就是由本插件的续接消息发起的（典型事故：续接的 agent 又执行了 `systemctl stop dsh-web`，把运行本插件的进程一起杀掉，用户手动 start 后插件又续接 → stop → start → …无限循环），`maxResumeChain`（默认 1）到达后不再自动续接：记 `external / resume-chain-limit:N` 台账并停手，需人工在会话里发消息后才会继续。续接提示同时已加固为"进程中断期间已完成重启/恢复，视为重启已生效，勿再执行 stop/start"。
 
 ## 长期 Goal
 
@@ -56,4 +61,4 @@
 npm test
 ```
 
-覆盖：中断识别、人工停止排除、新输入排除、重复监听去重、第二次独立中断、忙/排队保护、已送达崩溃恢复、未送达重试。
+覆盖：中断识别、人工停止排除、新输入排除、重复监听去重、第二次独立中断、忙/排队保护、已送达崩溃恢复、未送达重试、自循环守卫（续接后的再次中断不再续接 / sendOnce 拒绝重入并记台账）。

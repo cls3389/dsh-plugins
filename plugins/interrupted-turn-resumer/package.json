@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/interrupted-turn-resumer",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
   "main": "./main.js",
   "exports": {

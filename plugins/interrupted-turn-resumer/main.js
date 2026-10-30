@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 const name = 'interrupted-turn-resumer';
 const inject = ['agents', 'sessionQuery', 'sessionController', 'sessionPersistence'];
 const SOURCE_KIND = 'interrupted-turn-resumer';
-const DEFAULT_PROMPT = '继续上次任务。先核对中断时工具调用和文件的实际状态，不要重复执行已完成的操作，再继续完成剩余任务。如果存在长期 Goal，请恢复该 Goal 后继续；若它仍要求人工授权，明确说明并停下等待授权。';
+const DEFAULT_PROMPT = '继续上次任务。进程中断期间已完成重启/恢复，无需再执行任何 systemctl stop/start——如果你此前正在重启服务，视为重启已生效，只需用 systemctl status 或日志核验结果。先核对中断时工具调用和文件的实际状态，不要重复执行已完成的操作（尤其是停止或再次重启服务的命令），再继续完成剩余任务。如果存在长期 Goal，请恢复该 Goal 后继续；若它仍要求人工授权，明确说明并停下等待授权。';
 // 状态文件默认落在 DSH_HOME(未设则 ~/.dsh)下,避免绑定任何特定机器的路径;
 // 显式传 stateFile 配置可覆盖。
 const defaultStateFile = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), '.interrupted-turn-resumer-state.json');
@@ -21,6 +21,9 @@ const DEFAULTS = {
   ignoredSessionIdPrefixes: ['lark-', 'feishu-'],
   stateFile: defaultStateFile,
   prompt: DEFAULT_PROMPT,
+  // 防自循环:一次插件续接后的 turn 若再次中断(典型=续接的 agent 又停掉了宿主进程),
+  // 默认不再自动续接,交给人工处理。设为 0 = 完全禁用插件自动续接。
+  maxResumeChain: 1,
 };
 
 function keyOf(sessionId, seq) { return `${sessionId}:${seq}`; }
@@ -32,6 +35,34 @@ function externallyOwned(error) {
 }
 function positiveInt(value, fallback) {
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+/** How many of the trailing uninterrupted chain links were opened by our own resume prompts. */
+function resumeChainDepth(events, limit = 1) {
+  // Count trailing turns that (a) were started by our resume message and (b) ended interrupted,
+  // with no human input in between. Once a resume chain of `limit` such turns exists, the
+  // interruption we are looking at is the loop-guard boundary: resuming it again would
+  // re-trigger whatever killed the process last time (e.g. `systemctl stop dsh-web`).
+  let depth = 0;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event || !Number.isSafeInteger(event.seq)) return depth;
+    if (event.type === 'turn/end' && event.data?.reason?.kind === 'interrupted') continue;
+    if (event.type === 'user/message' && event.data?.source?.kind === SOURCE_KIND) continue;
+    if (event.type === 'turn/start') {
+      // The interrupted tail belongs to this turn. It is chain-linked only if the turn was
+      // opened by our own resume message (the user/message directly before it).
+      let j = i - 1;
+      while (j >= 0 && events[j]?.type !== 'user/message' && events[j]?.type !== 'turn/end' && events[j]?.type !== 'turn/start') j -= 1;
+      const opener = j >= 0 && events[j]?.type === 'user/message' && events[j]?.data?.source?.kind === SOURCE_KIND
+        ? events[j]
+        : undefined;
+      if (opener && depth < limit) { depth += 1; continue; }
+      return depth;
+    }
+    return depth;
+  }
+  return depth;
 }
 
 /** Fold the latest interruption and whether later input already recovered it. */
@@ -62,11 +93,13 @@ function interruptedTail(events) {
 }
 
 /** Only a terminal interrupted turn with no subsequent input is resumable. */
-function resumableInterruptedEvent(events, { now = Date.now(), maxEventAgeMs = DEFAULTS.maxEventAgeMs } = {}) {
+function resumableInterruptedEvent(events, { now = Date.now(), maxEventAgeMs = DEFAULTS.maxEventAgeMs, maxResumeChain = DEFAULTS.maxResumeChain } = {}) {
   const tail = interruptedTail(events);
   if (tail === undefined || tail.recovered) return undefined;
   const candidate = tail.event;
   if (!Number.isFinite(candidate.time) || now - candidate.time > maxEventAgeMs || candidate.time - now > 60_000) return undefined;
+  if (maxResumeChain <= 0) return undefined; // plugin auto-resume disabled entirely.
+  if (resumeChainDepth(events, maxResumeChain) >= maxResumeChain) return undefined; // self-restart loop guard.
   return candidate;
 }
 
@@ -106,6 +139,7 @@ function apply(ctx, supplied = {}) {
     initialDelayMs: positiveInt(supplied.initialDelayMs, DEFAULTS.initialDelayMs),
     maxEventAgeMs: positiveInt(supplied.maxEventAgeMs, DEFAULTS.maxEventAgeMs),
     maxScanSessions: supplied.maxScanSessions === 0 ? 0 : positiveInt(supplied.maxScanSessions, DEFAULTS.maxScanSessions),
+    maxResumeChain: positiveInt(supplied.maxResumeChain, DEFAULTS.maxResumeChain),
   };
   const lifecycle = new AbortController();
   const queues = new Map();
@@ -203,6 +237,13 @@ function apply(ctx, supplied = {}) {
           return { action: 'already-recovered' };
         }
         if (resumableInterruptedEvent(observation.events, cfg) === undefined) {
+          if (resumeChainDepth(observation.events, cfg.maxResumeChain) >= cfg.maxResumeChain) {
+            // Do not auto-resume into a restart loop: the previous resume's turn got
+            // interrupted again (typically by stopping the very process running this plugin).
+            await mark(key, { sessionId, seq: event.seq, turn: event.data.turn, status: 'external', outcome: `resume-chain-limit:${cfg.maxResumeChain}`, attempts });
+            ctx.logger.warn(`${name}: resume chain limit (${cfg.maxResumeChain}) reached for session ${sessionId}, interrupted turn ${event.data.turn}; requires human input to continue`);
+            return { action: 'resume-chain-limit' };
+          }
           delete state.records[key];
           await persist();
           stats.skipped += 1;
@@ -299,7 +340,7 @@ function apply(ctx, supplied = {}) {
           ctx.logger.warn(`${name}: scan ${snapshot.header.id}: ${String(error)}`);
         }
       }
-      state.runtime = { pluginVersion: '0.2.1', lastScanAt: stats.lastScanAt, scanned, errors: stats.errors };
+      state.runtime = { pluginVersion: '0.3.0', lastScanAt: stats.lastScanAt, scanned, errors: stats.errors };
       await persist();
       return { scanned };
     } finally { scanning = false; }
@@ -344,4 +385,4 @@ function apply(ctx, supplied = {}) {
   };
 }
 
-export { apply, inject, name, resumableInterruptedEvent, recoveryAfter, DEFAULT_PROMPT, SOURCE_KIND };
+export { apply, inject, name, resumableInterruptedEvent, recoveryAfter, resumeChainDepth, DEFAULT_PROMPT, SOURCE_KIND };

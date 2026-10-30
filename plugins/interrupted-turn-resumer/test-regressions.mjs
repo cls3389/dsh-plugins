@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apply, resumableInterruptedEvent, recoveryAfter, SOURCE_KIND } from './main.js';
+import { apply, resumableInterruptedEvent, recoveryAfter, resumeChainDepth, SOURCE_KIND } from './main.js';
 
 const now = Date.now();
 const event = (seq, type, data = {}, time = now) => ({ seq, time, type, data });
@@ -44,6 +44,84 @@ test('durable source and subsequent turn both prove recovery', () => {
   assert.equal(recoveryAfter([interrupted(), accepted], 3), true);
   assert.equal(recoveryAfter([interrupted(), event(4, 'turn/start', { turn: 2 })], 3), true);
   assert.equal(recoveryAfter([accepted, interrupted()], 4), false);
+});
+
+test('a fresh human interruption is still resumable (guard does not over-block)', () => {
+  // Normal case: turn opened by a human message, ended interrupted once.
+  const events = [
+    event(1, 'user/message', { source: { kind: 'user' } }),
+    event(2, 'turn/start', { turn: 1 }),
+    interrupted(3, 1),
+  ];
+  assert.equal(resumeChainDepth(events, 1), 0);
+  assert.equal(resumableInterruptedEvent(events)?.seq, 3);
+});
+
+test('an interrupted resume turn is a loop and is not resumed again', () => {
+  // Loop case: our resume message opened a turn that got interrupted again.
+  const events = [
+    event(1, 'user/message', { source: { kind: 'user' } }),
+    event(2, 'turn/start', { turn: 1 }),
+    interrupted(3, 1),
+    event(4, 'user/message', { source: { kind: SOURCE_KIND } }),
+    event(5, 'turn/start', { turn: 2 }),
+    interrupted(6, 2),
+  ];
+  assert.equal(resumeChainDepth(events, 1), 1);
+  assert.equal(resumableInterruptedEvent(events), undefined);
+});
+
+test('resume chain limit counts consecutive plugin-opened interruptions only', () => {
+  const chain = (n) => {
+    const events = [];
+    let seq = 1;
+    for (let turn = 1; turn <= n; turn += 1) {
+      events.push(event(seq++, 'user/message', { source: { kind: turn === 1 ? 'user' : SOURCE_KIND } }));
+      events.push(event(seq++, 'turn/start', { turn }));
+      events.push(interrupted(seq++, turn));
+    }
+    return events;
+  };
+  // Two consecutive plugin-resumed interruptions exceed the default limit of 1.
+  assert.equal(resumeChainDepth(chain(3), 1), 1);
+  assert.equal(resumableInterruptedEvent(chain(3)), undefined);
+  // maxResumeChain=0 disables plugin auto-resume entirely.
+  assert.equal(resumableInterruptedEvent([interrupted()], { maxResumeChain: 0 }), undefined);
+  // A human reply between interruptions breaks the chain: resumable again.
+  const broken = [
+    event(1, 'user/message', { source: { kind: 'user' } }),
+    event(2, 'turn/start', { turn: 1 }),
+    interrupted(3, 1),
+    event(4, 'user/message', { source: { kind: SOURCE_KIND } }),
+    event(5, 'turn/start', { turn: 2 }),
+    interrupted(6, 2),
+    event(7, 'user/message', { source: { kind: 'user' } }),
+    event(8, 'turn/start', { turn: 3 }),
+    interrupted(9, 3),
+  ];
+  assert.equal(resumeChainDepth(broken, 1), 0);
+  assert.equal(resumableInterruptedEvent(broken)?.seq, 9);
+});
+
+test('sendOnce refuses to re-enter a self-restart loop and records it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'interrupted-resumer-'));
+  try {
+    const f = fixture([
+      event(1, 'user/message', { source: { kind: 'user' } }),
+      event(2, 'turn/start', { turn: 1 }),
+      interrupted(3, 1),
+      event(4, 'user/message', { source: { kind: SOURCE_KIND } }),
+      event(5, 'turn/start', { turn: 2 }),
+      interrupted(6, 2),
+    ]);
+    const controller = apply(f.ctx, { stateFile: join(root, 'state.json'), initialDelayMs: 100000, maxEventAgeMs: 100000 });
+    const result = await controller.sendOnce('fixture', f.store.at(-1));
+    assert.equal(result.action, 'resume-chain-limit');
+    assert.equal(f.sent.length, 0);
+    const record = controller.state().records['fixture:6'];
+    assert.equal(record.status, 'external');
+    assert.match(record.outcome, /resume-chain-limit/);
+  } finally { await new Promise((resolve) => setTimeout(resolve, 10)); await rm(root, { recursive: true, force: true }); }
 });
 
 function fixture(events, options = {}) {
@@ -96,7 +174,9 @@ test('a second interruption has a new key and resumes once', async () => {
   const root = await mkdtemp(join(tmpdir(), 'interrupted-resumer-'));
   try {
     const f = fixture([interrupted()]);
-    const controller = apply(f.ctx, { stateFile: join(root, 'state.json'), initialDelayMs: 100000, maxEventAgeMs: 100000 });
+    // maxResumeChain=2 explicitly allows one chained auto-resume; the default of 1
+    // deliberately stops the chain (see the resume-chain-limit tests above).
+    const controller = apply(f.ctx, { stateFile: join(root, 'state.json'), initialDelayMs: 100000, maxEventAgeMs: 100000, maxResumeChain: 2 });
     await controller.sendOnce('fixture', interrupted());
     f.store.push(event(5, 'turn/start', { turn: 2 }), event(6, 'turn/end', { turn: 2, reason: { kind: 'interrupted' } }));
     await controller.sendOnce('fixture', f.store.at(-1));

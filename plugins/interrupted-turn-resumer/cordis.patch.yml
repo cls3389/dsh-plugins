@@ -1,4 +1,6 @@
 # 完整可见配置；maxScanSessions=0 表示扫描全部会话。
+# maxResumeChain：一次插件续接后的轮次再次中断（典型=续接的 agent 又停掉宿主进程）时，
+# 默认不再自动续接，防止 stop/start 无限循环；设为 0 可完全禁用自动续接。
 - insert:
     - id: interrupted-turn-resumer
       name: '@dsh-friends/interrupted-turn-resumer'
@@ -10,8 +12,9 @@
         maxScanSessions: 0
         maxAttempts: 3
         retryDelayMs: 60000
+        maxResumeChain: 1
         ignoredSessionIdPrefixes:
           - lark-
           - feishu-
         stateFile: /data/dsh/.interrupted-turn-resumer-state.json
-        prompt: 继续上次任务。先核对中断时工具调用和文件的实际状态，不要重复执行已完成的操作，再继续完成剩余任务。如果存在长期 Goal，请恢复该 Goal 后继续；若它仍要求人工授权，明确说明并停下等待授权。
+        prompt: 继续上次任务。进程中断期间已完成重启/恢复，无需再执行任何 systemctl stop/start——如果你此前正在重启服务，视为重启已生效，只需用 systemctl status 或日志核验结果。先核对中断时工具调用和文件的实际状态，不要重复执行已完成的操作（尤其是停止或再次重启服务的命令），再继续完成剩余任务。如果存在长期 Goal，请恢复该 Goal 后继续；若它仍要求人工授权，明确说明并停下等待授权。
