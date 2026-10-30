@@ -79,6 +79,39 @@
       ]
     },
     {
+      "name": "@dsh-friends/document-tools",
+      "title": {
+        "zh": "文档工具",
+        "en": "Document Tools"
+      },
+      "description": {
+        "zh": "基于 @firecrawl/anydoc 将 Office、EPUB、CSV 等文档转换为 Markdown。",
+        "en": "Convert Office, EPUB, CSV, and other documents to Markdown with @firecrawl/anydoc."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/document-tools"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793286542,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "9074f70a618f694dd732129bd331db65afebb384",
+            "path": "plugins/document-tools"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@larksuite/dsh-lark",
       "title": {
         "zh": "飞书渠道",
@@ -172,6 +205,72 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "44c68bfcccd2a9aae5c2428bb42790d1a516edb1",
             "path": "plugins/feishu-keeper"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/feishu-memory",
+      "title": {
+        "zh": "飞书用户级长期记忆",
+        "en": "Feishu Per-User Memory"
+      },
+      "description": {
+        "zh": "每个可信飞书用户独立的长期记忆：主题地图、中英混合检索、行号读取、私有写入与审计，按 senderOpenId 隔离。",
+        "en": "Long-term memory isolated per trusted Feishu senderOpenId: topic shards, bilingual lexical search, line-numbered reads, private writes and audit."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-memory"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793322781,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "7d9562d6c481d0791e7db98823f6230407c0f4e8",
+            "path": "plugins/feishu-memory"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/feishu-principal",
+      "title": {
+        "zh": "飞书用户基座",
+        "en": "Feishu Principal"
+      },
+      "description": {
+        "zh": "统一管理飞书 open_id、用户配置、个人工作区、登录态与业务权限。",
+        "en": "Trusted Feishu identity, complete configuration, personal workspaces, credentials, and permissions."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-principal"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793291737,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "7d9562d6c481d0791e7db98823f6230407c0f4e8",
+            "path": "plugins/feishu-principal"
           },
           "engines": {}
         }
@@ -519,6 +618,45 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
             "path": "plugins/ths-trade"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/zread",
+      "title": {
+        "zh": "Zread 开源仓库阅读",
+        "en": "Zread Repository Reader"
+      },
+      "description": {
+        "zh": "免克隆搜索 GitHub 公开仓库文档、Issue、Commit、目录结构与源码；原生 HTTP 实现，无需 MCP 中间层",
+        "en": "Read public GitHub documentation, issues, commits, repository trees, and source files without cloning; native HTTP with no MCP middleware"
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins/tree/main/plugins/zread#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/zread"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "mcp",
+          "zread",
+          "github",
+          "zhipu"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793271398,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "7d9562d6c481d0791e7db98823f6230407c0f4e8",
+            "path": "plugins/zread"
           },
           "engines": {}
         }
