@@ -512,12 +512,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793119844,
+          "version": "0.1.1",
+          "publishTimestamp": 1793330944,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "4548ebbc83ad3d114015a88df897639520f07122",
+            "commit": "22adb464ae18b16596cfd08a7c02c6a0ee81ddb9",
             "path": "plugins/session-title-keeper"
           },
           "engines": {}
