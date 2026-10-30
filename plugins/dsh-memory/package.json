@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-friends/feishu-memory",
-  "version": "0.2.1",
+  "name": "@dsh-friends/dsh-memory",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "./index.js",
@@ -18,7 +18,7 @@
   "dependencies": {
     "@jipika/dsh-memory": "0.9.2"
   },
-  "description": "飞书用户级长期记忆：主题地图、词法检索、按行读取、私有写入与审计",
+  "description": "用户级长期记忆：主题地图、词法检索、按行读取、私有写入与审计",
   "files": [
     "index.js",
     "README.md",

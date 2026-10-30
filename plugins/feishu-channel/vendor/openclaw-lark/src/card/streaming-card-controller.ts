@@ -521,7 +521,7 @@ export class StreamingCardController {
     await this.ensureCardCreated();
     if (!this.shouldProceed('onToolStart.postCreate')) return;
     if (!this.cardKit.cardMessageId) return;
-    if (!this.text.accumulatedText && this.cardKit.cardKitCardId) {
+    if (this.cardKit.cardKitCardId) {
       await this.throttledToolUseStatusUpdate();
       return;
     }
@@ -537,7 +537,7 @@ export class StreamingCardController {
     await this.ensureCardCreated();
     if (!this.shouldProceed('onToolPayload.postCreate')) return;
     if (!this.cardKit.cardMessageId) return;
-    if (!this.text.accumulatedText && this.cardKit.cardKitCardId) {
+    if (this.cardKit.cardKitCardId) {
       await this.throttledToolUseStatusUpdate();
       return;
     }
@@ -1090,10 +1090,12 @@ export class StreamingCardController {
     if (!this.cardKit.cardKitCardId || this.isTerminalPhase) return;
     try {
       const display = this.computeToolUseDisplay();
+      const resolvedText = this.imageResolver.resolveImages(this.buildDisplayText());
       const card = buildStreamingPreAnswerCard({
         steps: display?.steps,
         elapsedMs: this.visibleToolUseElapsedMs,
         showToolUse: this.shouldDisplayToolUse,
+        text: optimizeMarkdownStyle(resolvedText),
       });
       this.cardKit.cardKitSequence += 1;
       await updateCardKitCard({

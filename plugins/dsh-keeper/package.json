@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-friends/feishu-keeper",
-  "version": "0.2.1",
+  "name": "@dsh-friends/dsh-keeper",
+  "version": "0.3.0",
   "type": "module",
   "exports": {
     ".": "./main.js",
@@ -18,6 +18,6 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "feishu profile 进程保活:容器重启/进程崩溃后自动拉起 dsh --profile feishu",
+  "description": "dsh profile 进程保活:容器重启/进程崩溃后自动拉起 dsh --profile <p>(支持多 profile)",
   "license": "MIT"
 }

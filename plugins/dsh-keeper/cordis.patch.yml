@@ -1,16 +1,20 @@
 # 进程保活配置；bin=dsh 表示使用 PATH 中的命令，也可改为入口脚本绝对路径。
 - insert:
-    - id: feishu-keeper
-      name: '@dsh-friends/feishu-keeper'
+    - id: dsh-keeper
+      name: '@dsh-friends/dsh-keeper'
       config:
         enabled: true
         intervalMs: 60000
         restartBackoffMs: 10000
         restartBackoffMaxMs: 300000
         bin: dsh
-        profile: feishu
+        # 拆分后默认三件套;巡检发现外部实例(systemd/手动)让位,仅二线救援。
+        profiles:
+          - owner
+          - companion
+          - guests
         logFile: /data/dsh/feishu-lark.log
         exitFile: /data/dsh/feishu-process.exit
-        keeperLog: /data/dsh/feishu-keeper.log
+        keeperLog: /data/dsh/dsh-keeper.log
         home: /data/dsh/home
         dshHome: /data/dsh

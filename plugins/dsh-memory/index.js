@@ -1,22 +1,40 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { entryRows, lexicalRequiredMatchCount, lexicalSearchTokens, scanSecrets } from '@jipika/dsh-memory';
-import { assertOpenId, workspaceFor } from '../feishu-principal/index.js';
+import { assertOpenId, identityOf, workspaceFor } from '../feishu-principal/index.js';
 
-export const name = 'feishu-memory';
+export const name = 'dsh-memory';
 export const inject = ['tools'];
 const writeQueues = new Map();
 const output = { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
 
-function rootFor(config, openId, appId) {
+function rootFor(config, openId, appId, agentId) {
   assertOpenId(openId);
+  // 身份中心(2026-10-30):档案根 = agents/<agentId>/users/<userId>(appId 域仍用于身份簇解析)。
+  if (agentId) {
+    if (!config.agentsRoot && !config.workspaceRoot) throw new Error('用户记忆尚未配置身份根目录');
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(agentId)) throw new Error('无效身份目录名');
+    const agentRootPath = path.join(config.agentsRoot ?? config.workspaceRoot, agentId);
+    return path.join(workspaceFor(agentRootPath, openId, appId), '.dsh', 'memory');
+  }
   if (!config.workspaceRoot) throw new Error('飞书用户记忆尚未配置 workspaceRoot');
   if (appId && (!config.appsRoot || !/^cli_[a-z0-9]+$/i.test(appId))) throw new Error('飞书应用身份或记忆根目录无效');
   const appRoot = appId ? path.join(config.appsRoot, appId) : config.workspaceRoot;
-  return path.join(workspaceFor(appRoot, openId), '.dsh', 'memory');
+  return path.join(workspaceFor(appRoot, openId, appId), '.dsh', 'memory');
+}
+// 身份读取双轨(基座化过渡期):优先宿主级 agent.identity,回退兼容 larkUser。
+// identityOf 已含 larkUser 合成分支,这里 larkUser 直读优先仅为避免合成时的
+// userKey 身份簇解析开销;两轨提取的 {openId, appId, agentId} 语义一致。
+function identityFields(agent) {
+  const larkUser = agent?.larkUser;
+  if (larkUser) return { openId: larkUser.openId, appId: larkUser.appId, agentId: larkUser.agentId };
+  const identity = identityOf(agent);
+  if (!identity) return {};
+  return { openId: identity.subjectId, appId: identity.appId, agentId: identity.agentId };
 }
 function agentRoot(config, exec) {
-  return rootFor(config, exec?.agent?.larkUser?.openId, exec?.agent?.larkUser?.appId);
+  const { openId, appId, agentId } = identityFields(exec?.agent);
+  return rootFor(config, openId, appId, agentId);
 }
 function shards(root) {
   const directory = path.join(root, 'topics');
@@ -44,11 +62,11 @@ function memoryMap(root) {
   });
 }
 function prompt(config, context) {
-  const openId = context?.agent?.larkUser?.openId;
+  const { openId, appId, agentId } = identityFields(context?.agent);
   if (!openId) return '';
-  const root = rootFor(config, openId, context?.agent?.larkUser?.appId);
+  const root = rootFor(config, openId, appId, agentId);
   const map = memoryMap(root);
-  return `<!-- 飞书用户级长期记忆 · 仅当前可信 senderOpenId 对应工作区；不读取管理员或其他用户记忆 -->\n${map.length ? map.join('\n') : '当前用户尚无长期记忆。'}\n<!-- 非琐碎任务先用 memory_search 查相关事实，再用 memory_read 按行读取；只把可复用的偏好、结论、坑写入 memory_write，不记过程叙述或任何凭据。 -->`;
+  return `<!-- 用户级长期记忆 · 仅当前可信 senderOpenId 对应工作区；不读取管理员或其他用户记忆 -->\n${map.length ? map.join('\n') : '当前用户尚无长期记忆。'}\n<!-- 非琐碎任务先用 memory_search 查相关事实，再用 memory_read 按行读取；只把可复用的偏好、结论、坑写入 memory_write，不记过程叙述或任何凭据。 -->`;
 }
 
 /** Same lexical relevance model as dsh-memory, restricted to one user's shards. */
@@ -93,7 +111,7 @@ export function searchUserMemory(root, query, limit = 8) {
     if (picked.length === capped) break;
   }
   if (picked.length < capped) for (const result of results) if (!picked.includes(result)) { picked.push(result); if (picked.length === capped) break; }
-  return { ok: true, scope: 'current_feishu_user', totalHits: results.length, results: picked, scanned: { files: shards(root).length, entries: rows.length } };
+  return { ok: true, scope: 'current_user', totalHits: results.length, results: picked, scanned: { files: shards(root).length, entries: rows.length } };
 }
 
 function safeEntry(entry) {
@@ -149,8 +167,8 @@ async function writeMemory(root, args) {
 }
 
 export function apply(ctx, config) {
-  const mountPrompt = (promptCtx) => promptCtx.systemPrompt.section({ name: 'feishu-memory:user-long-term', order: 9500, text: (context) => prompt(config, context) });
-  if (typeof ctx.inject === 'function') ctx.inject(['systemPrompt'], (promptCtx) => { ctx.effect(() => mountPrompt(promptCtx), 'feishu-memory: user memory map'); });
+  const mountPrompt = (promptCtx) => promptCtx.systemPrompt.section({ name: 'dsh-memory:user-long-term', order: 9500, text: (context) => prompt(config, context) });
+  if (typeof ctx.inject === 'function') ctx.inject(['systemPrompt'], (promptCtx) => { ctx.effect(() => mountPrompt(promptCtx), 'dsh-memory: user memory map'); });
   else mountPrompt(ctx);
   ctx.tools.register({
     name: 'memory_search',
@@ -176,5 +194,5 @@ export function apply(ctx, config) {
     parameters: { type: 'object', properties: { topic: { type: 'string', description: '小写主题名，如 preferences/trading' }, keywords: { type: 'string', description: '单行主题关键词，供检索路由' }, entry: { type: 'string', description: '- [YYYY-MM-DD] 一条可复用事实' }, mode: { type: 'string', enum: ['append', 'replace'], description: '默认 append' }, line: { type: 'integer', description: 'replace 时指定旧条目行号' } }, required: ['topic', 'keywords', 'entry'] }, output,
     execute: async (args, exec) => writeMemory(agentRoot(config, exec), args),
   });
-  console.log('[feishu-memory] active: per-user memory_search/memory_read/memory_write');
+  console.log('[dsh-memory] active: per-user memory_search/memory_read/memory_write');
 }

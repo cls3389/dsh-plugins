@@ -1,4 +1,4 @@
-# Feishu Memory（飞书用户级长期记忆）
+# Feishu Memory（用户级长期记忆）
 
 沿用 `@jipika/dsh-memory` 的中文 bigram/英文词法检索、条目行号和凭据扫描；不调用额外模型，不读取 Web 管理员记忆。
 
@@ -24,11 +24,11 @@
 
 ## 配置
 
-在飞书 profile 挂载 `@dsh-friends/feishu-memory`，`workspaceRoot` 必须与飞书应用用户工作区根一致；全局 `agentToolAllow` 加 `memory_*`。
+在飞书 profile 挂载 `@dsh-friends/dsh-memory`，`workspaceRoot` 必须与飞书应用用户工作区根一致；全局 `agentToolAllow` 加 `memory_*`。
 
 ```yaml
-- id: feishu-memory
-  name: '@dsh-friends/feishu-memory'
+- id: dsh-memory
+  name: '@dsh-friends/dsh-memory'
   config:
     workspaceRoot: /data/dsh/home/feishu-apps/<appId>
 ```

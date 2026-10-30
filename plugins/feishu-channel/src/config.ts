@@ -3,6 +3,13 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import z from '@deepseek-ai/schemastery';
 
+/** Identity-manifest fields loaded from agents/<agentId>/manifest.yml. */
+export interface AgentManifest {
+  readonly proto?: 'guest' | 'companion' | 'owner';
+  readonly displayName?: string;
+  readonly model?: { readonly provider?: string; readonly name?: string; readonly reasoningEffort?: string };
+}
+
 /** Clean DSH configuration for the official Lark channel. */
 export interface Config {
   readonly appId?: string;
@@ -13,7 +20,7 @@ export interface Config {
   readonly appSecretEnv?: string;
   readonly domain?: 'feishu' | 'lark';
   readonly defaultCwd?: string;
-  /** Parent directory for per-application working directories. */
+  /** Identity root directory (agents/<agentId> tier); derived from DSH_HOME when omitted. */
   readonly workspaceRoot?: string;
   readonly dataDir?: string;
   readonly provider?: string;
@@ -30,6 +37,10 @@ export interface Config {
   readonly mcpEndpoint?: string;
   /** Additional Feishu applications sharing this DSH runtime; default remains the primary bot. */
   readonly bots?: BotConfig[];
+  /** Identity directory name under the agents root: the config host for tools/persona/model. */
+  readonly agentId?: string;
+  /** Resolved identity manifest (proto/model) loaded during resolveBots. */
+  readonly manifest?: AgentManifest;
   /** Local secret-bearing JSON array used instead of embedding all bot credentials in YAML. */
   readonly botsFile?: string;
   /** Account used by this channel instance; the primary bot uses "default". */
@@ -64,12 +75,14 @@ export const Config: z<Config> = z.object({
   agentToolAllow: z.array(z.string()).required(false),
   mcpEndpoint: z.string().required(false),
   accountId: z.string().required(false),
+  agentId: z.string().required(false),
   botsFile: z.string().required(false),
   bots: z.array(z.object({
     accountId: z.string(),
     appId: z.string(),
     appSecret: z.string(),
     appName: z.string().required(false),
+    agentId: z.string().required(false),
     workspaceRoot: z.string().required(false),
     dataDir: z.string().required(false),
     defaultCwd: z.string().required(false),
@@ -77,14 +90,61 @@ export const Config: z<Config> = z.object({
   })).required(false),
 });
 
+/**
+ * Minimal manifest.yml reader: proto plus an optional three-key model block.
+ * No YAML dependency — the identity manifest format is deliberately tiny.
+ */
+export function readAgentManifest(agentsRoot: string, agentId: string): AgentManifest | undefined {
+  let text: string;
+  try {
+    text = readFileSync(join(agentsRoot, agentId, 'manifest.yml'), 'utf8');
+  } catch {
+    return undefined;
+  }
+  const manifest: { proto?: 'guest' | 'companion' | 'owner'; displayName?: string; model?: Record<string, string> } = {};
+  let inModel = false;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.replace(/\s+#.*$/, '').trimEnd();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    if (/^model:\s*$/.test(trimmed)) { inModel = true; continue; }
+    if (/^\S/.test(trimmed)) inModel = false;
+    if (inModel) {
+      const kv = /^\s+(provider|name|reasoningEffort):\s*(\S+)\s*$/.exec(trimmed);
+      if (kv) {
+        manifest.model ??= {};
+        manifest.model[kv[1] as 'provider' | 'name' | 'reasoningEffort'] = kv[2]!;
+        continue;
+      }
+    }
+    const proto = /^proto:\s*(guest|companion|owner)\s*$/.exec(trimmed);
+    if (proto) manifest.proto = proto[1] as 'guest' | 'companion' | 'owner';
+    else {
+      const name = /^displayName:\s*(\S.*?)\s*$/.exec(trimmed);
+      if (name) manifest.displayName = name[1]!;
+    }
+  }
+  return manifest.proto === undefined && manifest.model === undefined && manifest.displayName === undefined ? undefined : manifest;
+}
+
 /** Resolve independent account/storage/workspace settings without sharing session registries. */
 export function resolveBots(config: Config): Config[] {
   const primary = resolveCredentials(config);
   const { bots: _additional, botsFile, ...base } = config;
-  const bots: Config[] = primary ? [{ ...base, ...primary, accountId: 'default' }] : [];
+  const agentsRoot = base.workspaceRoot ?? agentsRootDefault();
+  const resolveOne = (entry: BotConfig | Config, accountId: string, primaryBot: boolean): Config => {
+    const agentId = entry.agentId;
+    if (!primaryBot && !agentId) {
+      throw new Error(`Feishu bot ${accountId} requires agentId (identity directory under the agents root)`);
+    }
+    const manifest = agentId ? readAgentManifest(agentsRoot, agentId) : undefined;
+    const dataDir = entry.dataDir ?? (primaryBot ? undefined : join(larkBotsRoot(), accountId));
+    const workspaceRoot = agentId ? (entry.workspaceRoot ?? join(agentsRoot, agentId)) : entry.workspaceRoot;
+    return { ...base, ...entry, ...(manifest ? { manifest } : {}), ...(dataDir ? { dataDir } : {}), ...(workspaceRoot ? { workspaceRoot } : {}), accountId };
+  };
+  const bots: Config[] = primary ? [resolveOne({ ...base, ...primary }, 'default', true)] : [];
   const seen = new Set(bots.map((bot) => bot.accountId));
   const appIds = new Set(bots.map((bot) => bot.appId));
-  const dataDirs = new Set(bots.map((bot) => resolve(dataDirectory(bot))));
+  const dataDirs = new Set(bots.map((bot) => bot.dataDir !== undefined ? resolve(dataDirectory(bot)) : '').filter(Boolean));
   let fileBots: BotConfig[] = [];
   if (botsFile) {
     const parsed: unknown = JSON.parse(readFileSync(botsFile, 'utf8'));
@@ -96,16 +156,32 @@ export function resolveBots(config: Config): Config[] {
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(accountId) || accountId === 'default' || seen.has(accountId)) {
       throw new Error(`invalid or duplicate Feishu bot accountId: ${bot.accountId}`);
     }
-    if (!bot.appId || !bot.appSecret || !bot.workspaceRoot || !bot.dataDir) {
-      throw new Error(`Feishu bot ${accountId} requires appId/appSecret/workspaceRoot/dataDir`);
+    if (!bot.appId || !bot.appSecret) {
+      throw new Error(`Feishu bot ${accountId} requires appId/appSecret`);
     }
-    if (appIds.has(bot.appId) || dataDirs.has(resolve(bot.dataDir))) throw new Error(`duplicate Feishu bot appId/dataDir: ${accountId}`);
+    if (bot.agentId !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(bot.agentId)) {
+      throw new Error(`Feishu bot ${accountId} has invalid agentId: ${String(bot.agentId)}`);
+    }
+    const resolved = resolveOne(bot, accountId, false);
+    if (resolved.dataDir === undefined) throw new Error(`Feishu bot ${accountId} requires dataDir`);
+    if (appIds.has(bot.appId) || dataDirs.has(resolve(resolved.dataDir))) throw new Error(`duplicate Feishu bot appId/dataDir: ${accountId}`);
     seen.add(accountId);
     appIds.add(bot.appId);
-    dataDirs.add(resolve(bot.dataDir));
-    bots.push({ ...base, ...bot, accountId });
+    dataDirs.add(resolve(resolved.dataDir));
+    bots.push(resolved);
   }
   return bots;
+}
+
+/** Default per-account storage root: $DSH_HOME/lark/bots/<accountId>. */
+function larkBotsRoot(): string {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'lark', 'bots');
+}
+
+/** Default identity root: $DSH_HOME/home/agents (agents/<agentId>/ tiers). */
+export function agentsRootDefault(): string {
+  const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+  return join(dshHome, 'home', 'agents');
 }
 
 export interface Credentials {

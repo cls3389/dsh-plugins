@@ -15,7 +15,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import iconv from "iconv-lite";
-import { principalKey, stateForKey } from "../feishu-principal/index.js";
+import { identityOf, principalKey, stateForKey } from "../feishu-principal/index.js";
 
 const PLUGIN_ID = "ths-favorite";
 
@@ -1748,8 +1748,10 @@ function normalizeAgentId(agentId) {
 
 function getAgentCookieCachePath(config, agentId) {
   const key = normalizeAgentId(agentId);
-  if (!key.startsWith("user-") || !/^[a-f0-9]{32}$/.test(key.slice(5))) throw new Error("非法用户状态目录");
-  return path.join(stateForKey(String(config.stateDir || DEFAULT_STATE_DIR), key.slice(5), "ths-favorite"), "cookies.json");
+  // 兼容两代用户键:旧 openId-hash(32 hex)与身份簇 userId(u_xxx,2026-10-30 起默认)。
+  const raw = key.slice(5);
+  if (!key.startsWith("user-") || !(/^[a-f0-9]{32}$/.test(raw) || /^u_[a-z0-9][a-z0-9_-]{1,63}$/.test(raw))) throw new Error("非法用户状态目录");
+  return path.join(stateForKey(String(config.stateDir || DEFAULT_STATE_DIR), raw, "ths-favorite"), "cookies.json");
 }
 
 function scopedManagerConfig(config, agentId) {
@@ -2324,12 +2326,15 @@ function apply(ctx, config) {
       parameters: t.parameters,
       output: anyJsonOutput,
       async execute(args, exec) {
-        const openId = exec?.agent?.larkUser?.openId;
+        // 身份读取双轨(基座化过渡):agent.identity 优先,回退兼容 larkUser。
+        // identityOf 无双载体时返回 undefined,回退分支保持原 ou_ 守卫不变。
+        const identity = identityOf(exec?.agent);
+        const openId = exec?.agent?.larkUser?.openId ?? identity?.subjectId;
         if (typeof openId !== "string" || !openId.startsWith("ou_")) {
           throw new Error("无法确认飞书用户身份，已拒绝访问同花顺自选；请从飞书私聊或群聊重新发起");
         }
         // open_id 只在同一飞书应用内稳定；默认应用保留原状态，新应用独立状态。
-        const agentId = `user-${principalKey(openId, exec?.agent?.larkUser?.appId, cfg.defaultAppId)}`;
+        const agentId = `user-${principalKey(openId, exec?.agent?.larkUser?.appId ?? identity?.appId, cfg.defaultAppId)}`;
         const tool = scopedFor(agentId).find((x) => x.name === t.name);
         if (!tool) return { error: `tool ${t.name} unavailable for ${agentId}` };
         // DSH output must be lossless JSON; absent quote metadata is omitted, not undefined.

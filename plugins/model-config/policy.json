@@ -65,7 +65,12 @@
           "openrouter": "deepseek/deepseek-v4.1-flash",
           "upstreamDefaultEffort": "high",
           "contextWindow": 400000,
-          "maxTokens": 20480
+          "maxTokens": 20480,
+          "input": [
+            "text",
+            "image"
+          ],
+          "notes": "2026-10-30 网关实测支持图像输入(纯红PNG问答通过),目录未声明,按实测覆盖;glm-5.3v 同为 400k/20480。"
         },
         {
           "id": "mimo-v2.6-flash",

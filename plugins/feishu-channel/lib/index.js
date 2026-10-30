@@ -4,11 +4,12 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:
 import * as os from "node:os";
 import { homedir, tmpdir } from "node:os";
 import * as path$1 from "node:path";
-import path, { basename, dirname, join, resolve } from "node:path";
+import path, { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { URLSearchParams as URLSearchParams$1, fileURLToPath } from "node:url";
 import * as fs$1 from "node:fs";
-import fs, { createReadStream, readFileSync } from "node:fs";
+import fs, { createReadStream, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { readUsers, userKey, workspaceFor } from "@dsh-friends/feishu-principal";
 import * as fsPromises from "node:fs/promises";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as dns from "node:dns/promises";
@@ -19,7 +20,6 @@ import { Type } from "@sinclair/typebox";
 import z from "@deepseek-ai/schemastery";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
-import { readUsers, userKey, workspaceFor } from "@dsh-friends/feishu-principal";
 import { imageSize } from "image-size";
 //#region vendor/openclaw-lark/dist/messaging/inbound/user-name-cache-store.js
 /**
@@ -1008,9 +1008,26 @@ function getResolvedConfig(fallback) {
 }
 //#endregion
 //#region src/agent-resolver.ts
+/**
+* 双写身份载体:larkUser(兼容期保留)+ identity(基座契约)。
+* userId 经 feishu-principal userKey 解析身份簇(读写 $DSH_HOME/identities.json)。
+*/
 function bindUserIdentity(agent, extras) {
 	const user = extras.userForSession?.(agent.session.id);
-	if (user) agent.larkUser = user;
+	if (!user) return;
+	const bound = agent;
+	bound.larkUser = user;
+	bound.identity = {
+		channel: "feishu",
+		...user.agentId !== void 0 ? { agentId: user.agentId } : {},
+		...user.appId !== void 0 ? { appId: user.appId } : {},
+		subjectId: user.openId,
+		userId: userKey(user.openId, user.appId),
+		context: {
+			chatId: user.chatId,
+			...user.accountId !== void 0 ? { accountId: user.accountId } : {}
+		}
+	};
 }
 async function syncWorkingDirectory(ctx, agent, cwd) {
 	const service = ctx.get("workingDirectory");
@@ -1018,20 +1035,123 @@ async function syncWorkingDirectory(ctx, agent, cwd) {
 }
 function agentOptions(config, ctx) {
 	const selection = ctx.get("agentDefaultModel")?.currentSelection();
-	const provider = config.provider ?? selection?.provider;
-	const model = config.model ?? selection?.model;
+	const manifestModel = config.manifest?.model;
+	const provider = config.provider ?? manifestModel?.provider ?? selection?.provider;
+	const model = config.model ?? manifestModel?.name ?? selection?.model;
+	const effort = config.reasoningEffort ?? manifestModel?.reasoningEffort;
 	return {
 		...provider ? { provider } : {},
 		...model ? { model } : {},
-		...config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}
+		...effort ? { reasoningEffort: effort } : {}
 	};
 }
+/** Filesystem tools whose path-like arguments must stay inside the user workspace. */
+const FENCED_FS_TOOLS = new Set([
+	"read",
+	"write",
+	"edit",
+	"grep",
+	"glob",
+	"read_image"
+]);
+/** Argument keys that carry a filesystem path, per fenced tool. */
+const FENCED_PATH_ARGS = {
+	read: ["file_path"],
+	write: ["file_path"],
+	edit: ["file_path"],
+	read_image: ["file_path"],
+	grep: ["path"],
+	glob: ["path"]
+};
+/**
+* Deny filesystem tools whose path arguments escape the sender's workspace.
+* The workspace root comes from the trusted binding cwd (principal-derived),
+* never from model-controlled input; subagents inherit this guard through the
+* parent scope chain, so delegation cannot widen the fence.
+*/
+function fenceUserWorkspace(exec, root) {
+	if (!FENCED_FS_TOOLS.has(exec.name)) return void 0;
+	const keys = FENCED_PATH_ARGS[exec.name];
+	if (keys === void 0) return void 0;
+	const args = exec.arguments;
+	if (args === void 0) return void 0;
+	for (const key of keys) {
+		const raw = args[key];
+		if (typeof raw !== "string" || raw.length === 0) continue;
+		const relative$1 = relative(root, resolve(root, raw));
+		if (relative$1 === void 0 || relative$1.startsWith(`..${sep}`) || relative$1 === "..") return `tool "${exec.name}" is fenced to the Feishu user workspace ${root} by the business channel`;
+	}
+}
 const restrictedAgents = /* @__PURE__ */ new WeakMap();
+/**
+* Proto tool sets per identity archetype (agents/<agentId>/manifest.yml proto).
+* A bot with no explicit agentToolAllow inherits its proto set instead of the
+* patch baseline; an explicit agentToolAllow still wins (backwards compatible).
+* The owner archetype follows the patch baseline (self-use bot with trading).
+*/
+const AGENT_PROTO_ALLOW = {
+	guest: [
+		"web_search",
+		"web_fetch",
+		"browser_*",
+		"asr_*",
+		"image_generate",
+		"image_edit",
+		"doc_to_markdown",
+		"zread_*",
+		"memory_*",
+		"feishu_send_image",
+		"schedule_*",
+		"subagent",
+		"subagent_fork",
+		"workflow",
+		"present",
+		"ask_user_question",
+		"ths_search",
+		"ths_quote",
+		"ths_klines",
+		"ths_level2",
+		"ths_sec_kline",
+		"ths_wencai",
+		"ths_market_pulse",
+		"ths_move_detail",
+		"ths_margin_collateral"
+	],
+	companion: [
+		"web_search",
+		"web_fetch",
+		"browser_*",
+		"asr_*",
+		"image_generate",
+		"image_edit",
+		"doc_to_markdown",
+		"zread_*",
+		"memory_*",
+		"feishu_send_image",
+		"schedule_*",
+		"subagent",
+		"subagent_fork",
+		"workflow",
+		"present",
+		"ask_user_question",
+		"skill",
+		"read",
+		"grep",
+		"glob"
+	]
+};
+/** Effective allowlist: explicit bot config wins; otherwise the identity manifest proto set; otherwise the patch baseline. */
+function effectiveAllowPatterns(config) {
+	if (config.agentToolAllow !== void 0) return config.agentToolAllow;
+	const proto = config.manifest?.proto;
+	return (proto !== void 0 ? AGENT_PROTO_ALLOW[proto] : void 0) ?? config.agentToolAllow;
+}
 /** Inherit shared tools, add sender extras, and recalculate on group speaker changes. */
 function restrictChannelTools(ctx, config, agent) {
 	const openId = agent.larkUser?.openId;
 	const principal = ctx.get("feishuPrincipal");
-	const patterns = openId && principal ? principal.toolsFor(openId, config.agentToolAllow, agent.larkUser?.appId) : config.agentToolAllow;
+	const base = effectiveAllowPatterns(config);
+	const patterns = openId && principal ? principal.toolsFor(openId, base, agent.larkUser?.appId) : base;
 	const key = `${agent.larkUser?.appId ?? ""}:${openId ?? ""}:${(patterns ?? []).join("\0")}`;
 	const previous = restrictedAgents.get(agent);
 	if (previous?.key === key) return;
@@ -1042,7 +1162,15 @@ function restrictChannelTools(ctx, config, agent) {
 	if (!tools) throw new Error("DSH tools service is unavailable");
 	const allow = tools.schemas(agent).map((tool) => tool.name).filter((name) => patterns.some((pattern) => toolNameMatches(name, pattern)));
 	const removeRestriction = tools.restrict({ allow });
-	const removeGuard = tools.guard(({ name }) => patterns.some((pattern) => toolNameMatches(name, pattern)) ? void 0 : `tool "${name}" is not available through the Feishu business channel`);
+	const bindingRoot = bindingCwdOf(ctx, agent);
+	const removeGuard = tools.guard((exec) => {
+		const denied = patterns.some((pattern) => toolNameMatches(exec.name, pattern)) ? void 0 : `tool "${exec.name}" is not available through the Feishu business channel`;
+		if (denied !== void 0) return denied;
+		if (bindingRoot !== void 0) {
+			const fenced = fenceUserWorkspace(exec, bindingRoot);
+			if (fenced !== void 0) return fenced;
+		}
+	});
 	restrictedAgents.set(agent, {
 		key,
 		dispose: () => {
@@ -1050,6 +1178,10 @@ function restrictChannelTools(ctx, config, agent) {
 			removeGuard();
 		}
 	});
+}
+/** Trusted per-session workspace root from the workingDirectory service. */
+function bindingCwdOf(ctx, agent) {
+	return ctx.get("workingDirectory")?.get(agent.session);
 }
 function toolNameMatches(name, pattern) {
 	const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
@@ -1147,10 +1279,13 @@ var MessageDedup = class {
 	store = /* @__PURE__ */ new Map();
 	ttlMs;
 	maxEntries;
+	persistence;
 	sweepTimer;
 	constructor(opts = {}) {
 		this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS$1;
 		this.maxEntries = opts.maxEntries ?? DEFAULT_MAX_ENTRIES;
+		this.persistence = opts.persistence;
+		this.sweep();
 		this.sweepTimer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
 		this.sweepTimer.unref();
 	}
@@ -1164,7 +1299,7 @@ var MessageDedup = class {
 	tryRecord(id, scope) {
 		const key = scope ? `${scope}:${id}` : id;
 		const now = Date.now();
-		const existing = this.store.get(key);
+		const existing = this.store.get(key) ?? this.persistence?.get(key);
 		if (existing !== void 0) {
 			if (now - existing < this.ttlMs) return false;
 			this.store.delete(key);
@@ -1174,6 +1309,8 @@ var MessageDedup = class {
 			if (oldest !== void 0) this.store.delete(oldest);
 		}
 		this.store.set(key, now);
+		this.persistence?.set(key, now);
+		this.persistence?.persist();
 		return true;
 	}
 	/** Current number of tracked entries (for diagnostics). */
@@ -1185,9 +1322,10 @@ var MessageDedup = class {
 		clearInterval(this.sweepTimer);
 		this.store.clear();
 	}
-	/** Stop the periodic sweep timer and clear all tracked entries. */
+	/** Stop the timer and flush message IDs; durable entries survive disposal. */
 	dispose() {
 		clearInterval(this.sweepTimer);
+		this.persistence?.persist();
 		this.store.clear();
 	}
 	/**
@@ -1201,6 +1339,7 @@ var MessageDedup = class {
 			if (now - ts < this.ttlMs) break;
 			this.store.delete(key);
 		}
+		this.persistence?.sweep?.(now - this.ttlMs, this.maxEntries);
 	}
 };
 //#endregion
@@ -8805,6 +8944,211 @@ async function handleInvokeErrorWithAutoAuth(err, cfg) {
 	return json$1({ error: formatLarkError(err) });
 }
 //#endregion
+//#region src/config.ts
+const Config = z.object({
+	appId: z.string().required(false),
+	appName: z.string().required(false),
+	appSecret: z.string().required(false),
+	appSecretEnv: z.string().required(false),
+	domain: z.union([z.const("feishu"), z.const("lark")]).required(false),
+	defaultCwd: z.string().required(false),
+	workspaceRoot: z.string().required(false),
+	dataDir: z.string().required(false),
+	provider: z.string().required(false),
+	model: z.string().required(false),
+	reasoningEffort: z.string().required(false),
+	allowedChats: z.array(z.string()).required(false),
+	allowedUsers: z.array(z.string()).required(false),
+	groupMentionMode: z.union([
+		z.const("always"),
+		z.const("never"),
+		z.const("ambient")
+	]).required(false),
+	replyMode: z.const("streaming").required(false),
+	tools: z.object({ deny: z.array(z.string()).required(false) }).required(false),
+	agentToolAllow: z.array(z.string()).required(false),
+	mcpEndpoint: z.string().required(false),
+	accountId: z.string().required(false),
+	agentId: z.string().required(false),
+	botsFile: z.string().required(false),
+	bots: z.array(z.object({
+		accountId: z.string(),
+		appId: z.string(),
+		appSecret: z.string(),
+		appName: z.string().required(false),
+		agentId: z.string().required(false),
+		workspaceRoot: z.string().required(false),
+		dataDir: z.string().required(false),
+		defaultCwd: z.string().required(false),
+		domain: z.union([z.const("feishu"), z.const("lark")]).required(false)
+	})).required(false)
+});
+/**
+* Minimal manifest.yml reader: proto plus an optional three-key model block.
+* No YAML dependency — the identity manifest format is deliberately tiny.
+*/
+function readAgentManifest(agentsRoot, agentId) {
+	let text;
+	try {
+		text = readFileSync(join(agentsRoot, agentId, "manifest.yml"), "utf8");
+	} catch {
+		return;
+	}
+	const manifest = {};
+	let inModel = false;
+	for (const line of text.split(/\r?\n/)) {
+		const trimmed = line.replace(/\s+#.*$/, "").trimEnd();
+		if (trimmed === "" || trimmed.startsWith("#")) continue;
+		if (/^model:\s*$/.test(trimmed)) {
+			inModel = true;
+			continue;
+		}
+		if (/^\S/.test(trimmed)) inModel = false;
+		if (inModel) {
+			const kv = /^\s+(provider|name|reasoningEffort):\s*(\S+)\s*$/.exec(trimmed);
+			if (kv) {
+				manifest.model ??= {};
+				manifest.model[kv[1]] = kv[2];
+				continue;
+			}
+		}
+		const proto = /^proto:\s*(guest|companion|owner)\s*$/.exec(trimmed);
+		if (proto) manifest.proto = proto[1];
+		else {
+			const name = /^displayName:\s*(\S.*?)\s*$/.exec(trimmed);
+			if (name) manifest.displayName = name[1];
+		}
+	}
+	return manifest.proto === void 0 && manifest.model === void 0 && manifest.displayName === void 0 ? void 0 : manifest;
+}
+/** Resolve independent account/storage/workspace settings without sharing session registries. */
+function resolveBots(config) {
+	const primary = resolveCredentials(config);
+	const { bots: _additional, botsFile, ...base } = config;
+	const agentsRoot = base.workspaceRoot ?? agentsRootDefault();
+	const resolveOne = (entry, accountId, primaryBot) => {
+		const agentId = entry.agentId;
+		if (!primaryBot && !agentId) throw new Error(`Feishu bot ${accountId} requires agentId (identity directory under the agents root)`);
+		const manifest = agentId ? readAgentManifest(agentsRoot, agentId) : void 0;
+		const dataDir = entry.dataDir ?? (primaryBot ? void 0 : join(larkBotsRoot(), accountId));
+		const workspaceRoot = agentId ? entry.workspaceRoot ?? join(agentsRoot, agentId) : entry.workspaceRoot;
+		return {
+			...base,
+			...entry,
+			...manifest ? { manifest } : {},
+			...dataDir ? { dataDir } : {},
+			...workspaceRoot ? { workspaceRoot } : {},
+			accountId
+		};
+	};
+	const bots = primary ? [resolveOne({
+		...base,
+		...primary
+	}, "default", true)] : [];
+	const seen = new Set(bots.map((bot) => bot.accountId));
+	const appIds = new Set(bots.map((bot) => bot.appId));
+	const dataDirs = new Set(bots.map((bot) => bot.dataDir !== void 0 ? resolve(dataDirectory(bot)) : "").filter(Boolean));
+	let fileBots = [];
+	if (botsFile) {
+		const parsed = JSON.parse(readFileSync(botsFile, "utf8"));
+		if (!Array.isArray(parsed)) throw new Error("Feishu botsFile must contain a JSON array");
+		fileBots = parsed;
+	}
+	for (const bot of [...fileBots, ...config.bots ?? []]) {
+		const accountId = bot.accountId.toLowerCase();
+		if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(accountId) || accountId === "default" || seen.has(accountId)) throw new Error(`invalid or duplicate Feishu bot accountId: ${bot.accountId}`);
+		if (!bot.appId || !bot.appSecret) throw new Error(`Feishu bot ${accountId} requires appId/appSecret`);
+		if (bot.agentId !== void 0 && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(bot.agentId)) throw new Error(`Feishu bot ${accountId} has invalid agentId: ${String(bot.agentId)}`);
+		const resolved = resolveOne(bot, accountId, false);
+		if (resolved.dataDir === void 0) throw new Error(`Feishu bot ${accountId} requires dataDir`);
+		if (appIds.has(bot.appId) || dataDirs.has(resolve(resolved.dataDir))) throw new Error(`duplicate Feishu bot appId/dataDir: ${accountId}`);
+		seen.add(accountId);
+		appIds.add(bot.appId);
+		dataDirs.add(resolve(resolved.dataDir));
+		bots.push(resolved);
+	}
+	return bots;
+}
+/** Default per-account storage root: $DSH_HOME/lark/bots/<accountId>. */
+function larkBotsRoot() {
+	return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark", "bots");
+}
+/** Default identity root: $DSH_HOME/home/agents (agents/<agentId>/ tiers). */
+function agentsRootDefault() {
+	return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "home", "agents");
+}
+function resolveCredentials(config) {
+	const appId = config.appId ?? process.env.FEISHU_APP_ID;
+	const appSecret = config.appSecret ?? (config.appSecretEnv ? resolveSecretRef(config.appSecretEnv) : void 0) ?? process.env.FEISHU_APP_SECRET;
+	return appId && appSecret ? {
+		appId,
+		appSecret
+	} : void 0;
+}
+/**
+* appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
+* (feishu profile 下 credentials 服务未挂载;与 media-tools 同款兜底,只匹配 refs 段内缩进行)。
+*/
+function resolveSecretRef(ref) {
+	const fromEnv = process.env[ref];
+	if (fromEnv) return fromEnv;
+	try {
+		const text = readFileSync(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml"), "utf8");
+		const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		let inRefs = false;
+		for (const line of text.split(/\r?\n/)) {
+			if (/^refs:\s*$/.test(line)) {
+				inRefs = true;
+				continue;
+			}
+			if (!inRefs) continue;
+			if (/^\S/.test(line)) break;
+			const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
+			if (match?.[1] && !match[1].startsWith("\"")) return match[1];
+		}
+	} catch {}
+}
+function dataDirectory(config) {
+	return config.dataDir ?? join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark");
+}
+//#endregion
+//#region src/dedup-store.ts
+/** JSON backing file for Feishu message IDs; contains no message content. */
+var DedupStore = class {
+	values = /* @__PURE__ */ new Map();
+	constructor(path) {
+		this.path = path;
+		try {
+			const parsed = JSON.parse(readFileSync(path, "utf8"));
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+			for (const [id, seenAt] of Object.entries(parsed)) if (typeof seenAt === "number" && Number.isFinite(seenAt)) this.values.set(id, seenAt);
+		} catch {}
+	}
+	get(id) {
+		return this.values.get(id);
+	}
+	set(id, seenAt) {
+		this.values.set(id, seenAt);
+	}
+	delete(id) {
+		this.values.delete(id);
+	}
+	sweep(expiresBefore, maxEntries) {
+		for (const [id, seenAt] of this.values) if (seenAt < expiresBefore || this.values.size > maxEntries) this.values.delete(id);
+		else break;
+		this.persist();
+	}
+	persist() {
+		const temporary = `${this.path}.${process.pid}.tmp`;
+		try {
+			writeFileSync(temporary, `${JSON.stringify(Object.fromEntries(this.values))}\n`, { mode: 384 });
+			renameSync(temporary, this.path);
+		} catch {
+			rmSync(temporary, { force: true });
+		}
+	}
+};
+//#endregion
 //#region vendor/openclaw-lark/dist/core/shutdown-hooks.js
 /**
 * Process-level graceful shutdown hook registry.
@@ -9779,7 +10123,7 @@ function buildStreamingThinkingCard(showToolUse = true) {
 * Used both for the initial card and for live updates during tool calls.
 */
 function buildStreamingPreAnswerCard(params) {
-	const { steps, elapsedMs, showToolUse = true } = params;
+	const { steps, elapsedMs, showToolUse = true, text = "" } = params;
 	const hasSteps = Boolean(steps?.length);
 	const elements = [];
 	if (showToolUse && hasSteps && steps) elements.push(buildStreamingToolUseActivePanel({
@@ -9788,7 +10132,7 @@ function buildStreamingPreAnswerCard(params) {
 	}));
 	elements.push({
 		tag: "markdown",
-		content: "",
+		content: text,
 		text_align: "left",
 		text_size: "normal_v2",
 		margin: "0px 0px 0px 0px",
@@ -10904,7 +11248,7 @@ var StreamingCardController = class {
 		await this.ensureCardCreated();
 		if (!this.shouldProceed("onToolStart.postCreate")) return;
 		if (!this.cardKit.cardMessageId) return;
-		if (!this.text.accumulatedText && this.cardKit.cardKitCardId) {
+		if (this.cardKit.cardKitCardId) {
 			await this.throttledToolUseStatusUpdate();
 			return;
 		}
@@ -10917,7 +11261,7 @@ var StreamingCardController = class {
 		await this.ensureCardCreated();
 		if (!this.shouldProceed("onToolPayload.postCreate")) return;
 		if (!this.cardKit.cardMessageId) return;
-		if (!this.text.accumulatedText && this.cardKit.cardKitCardId) {
+		if (this.cardKit.cardKitCardId) {
 			await this.throttledToolUseStatusUpdate();
 			return;
 		}
@@ -11334,10 +11678,13 @@ var StreamingCardController = class {
 	async updateToolUseStatus() {
 		if (!this.cardKit.cardKitCardId || this.isTerminalPhase) return;
 		try {
+			const display = this.computeToolUseDisplay();
+			const resolvedText = this.imageResolver.resolveImages(this.buildDisplayText());
 			const card = buildStreamingPreAnswerCard({
-				steps: this.computeToolUseDisplay()?.steps,
+				steps: display?.steps,
 				elapsedMs: this.visibleToolUseElapsedMs,
-				showToolUse: this.shouldDisplayToolUse
+				showToolUse: this.shouldDisplayToolUse,
+				text: optimizeMarkdownStyle(resolvedText)
 			});
 			this.cardKit.cardKitSequence += 1;
 			await updateCardKitCard({
@@ -11505,7 +11852,7 @@ var OfficialTurnStream = class {
 //#region src/channel.ts
 /** Official Lark events directly driving DSH agents and official streaming cards. */
 var LarkChannel = class {
-	dedup = new MessageDedup();
+	dedup;
 	abort = new AbortController();
 	activeByChat = /* @__PURE__ */ new Map();
 	activeBySession = /* @__PURE__ */ new Map();
@@ -11513,16 +11860,20 @@ var LarkChannel = class {
 	client;
 	constructor(options) {
 		this.options = options;
+		this.dedup = new MessageDedup({ persistence: new DedupStore(join(dataDirectory(options.config), "message-dedup.json")) });
 	}
 	async start() {
 		await this.options.sessions.load();
 		const client = LarkClient.fromCfg(this.options.officialConfig, this.options.config.accountId ?? "default");
 		this.client = client;
 		const probe = await client.probe();
-		if (client.account.appId) {
-			this.options.sessions.setAppIdentity(client.account.appId, this.options.config.appName ?? probe.botName);
+		if (client.account.appId || this.options.config.agentId) {
+			const identityName = this.options.config.manifest?.displayName ?? this.options.config.appName ?? probe.botName ?? this.options.config.agentId;
+			const botName = this.options.config.appName ?? probe.botName;
+			this.options.sessions.setAgentIdentity(this.options.config.agentId, identityName, client.account.appId ?? this.options.config.appId, botName);
+			this.options.sessions.rebindCwd();
 			await this.options.sessions.save();
-			this.options.logger.info(`workspace identity app=${client.account.appId} name=${this.options.config.appName ?? probe.botName ?? "飞书应用"}`);
+			this.options.logger.info(`workspace identity agent=${this.options.config.agentId ?? "(unset)"} app=${client.account.appId ?? this.options.config.appId ?? "?"} name=${this.options.config.appName ?? probe.botName ?? "飞书应用"}`);
 		}
 		await client.startWS({
 			handlers: {
@@ -11548,7 +11899,10 @@ var LarkChannel = class {
 	}
 	/** Parse and queue one raw Feishu message; exposed for offline contract tests. */
 	async receive(event) {
-		if (!this.dedup.tryRecord(event.message.message_id)) return;
+		if (!this.dedup.tryRecord(event.message.message_id, this.options.config.accountId ?? "default")) {
+			this.options.logger.info(`duplicate inbound message suppressed: ${event.message.message_id}`);
+			return;
+		}
 		const message = await parseMessageEvent(event, this.client?.botOpenId, {
 			cfg: this.options.officialConfig,
 			accountId: this.options.config.accountId ?? "default"
@@ -11827,112 +12181,6 @@ function extension(contentType) {
 }
 function errorMessage(error) {
 	return error instanceof Error ? error.message : String(error);
-}
-//#endregion
-//#region src/config.ts
-const Config = z.object({
-	appId: z.string().required(false),
-	appName: z.string().required(false),
-	appSecret: z.string().required(false),
-	appSecretEnv: z.string().required(false),
-	domain: z.union([z.const("feishu"), z.const("lark")]).required(false),
-	defaultCwd: z.string().required(false),
-	workspaceRoot: z.string().required(false),
-	dataDir: z.string().required(false),
-	provider: z.string().required(false),
-	model: z.string().required(false),
-	reasoningEffort: z.string().required(false),
-	allowedChats: z.array(z.string()).required(false),
-	allowedUsers: z.array(z.string()).required(false),
-	groupMentionMode: z.union([
-		z.const("always"),
-		z.const("never"),
-		z.const("ambient")
-	]).required(false),
-	replyMode: z.const("streaming").required(false),
-	tools: z.object({ deny: z.array(z.string()).required(false) }).required(false),
-	agentToolAllow: z.array(z.string()).required(false),
-	mcpEndpoint: z.string().required(false),
-	accountId: z.string().required(false),
-	botsFile: z.string().required(false),
-	bots: z.array(z.object({
-		accountId: z.string(),
-		appId: z.string(),
-		appSecret: z.string(),
-		appName: z.string().required(false),
-		workspaceRoot: z.string().required(false),
-		dataDir: z.string().required(false),
-		defaultCwd: z.string().required(false),
-		domain: z.union([z.const("feishu"), z.const("lark")]).required(false)
-	})).required(false)
-});
-/** Resolve independent account/storage/workspace settings without sharing session registries. */
-function resolveBots(config) {
-	const primary = resolveCredentials(config);
-	const { bots: _additional, botsFile, ...base } = config;
-	const bots = primary ? [{
-		...base,
-		...primary,
-		accountId: "default"
-	}] : [];
-	const seen = new Set(bots.map((bot) => bot.accountId));
-	const appIds = new Set(bots.map((bot) => bot.appId));
-	const dataDirs = new Set(bots.map((bot) => resolve(dataDirectory(bot))));
-	let fileBots = [];
-	if (botsFile) {
-		const parsed = JSON.parse(readFileSync(botsFile, "utf8"));
-		if (!Array.isArray(parsed)) throw new Error("Feishu botsFile must contain a JSON array");
-		fileBots = parsed;
-	}
-	for (const bot of [...fileBots, ...config.bots ?? []]) {
-		const accountId = bot.accountId.toLowerCase();
-		if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(accountId) || accountId === "default" || seen.has(accountId)) throw new Error(`invalid or duplicate Feishu bot accountId: ${bot.accountId}`);
-		if (!bot.appId || !bot.appSecret || !bot.workspaceRoot || !bot.dataDir) throw new Error(`Feishu bot ${accountId} requires appId/appSecret/workspaceRoot/dataDir`);
-		if (appIds.has(bot.appId) || dataDirs.has(resolve(bot.dataDir))) throw new Error(`duplicate Feishu bot appId/dataDir: ${accountId}`);
-		seen.add(accountId);
-		appIds.add(bot.appId);
-		dataDirs.add(resolve(bot.dataDir));
-		bots.push({
-			...base,
-			...bot,
-			accountId
-		});
-	}
-	return bots;
-}
-function resolveCredentials(config) {
-	const appId = config.appId ?? process.env.FEISHU_APP_ID;
-	const appSecret = config.appSecret ?? (config.appSecretEnv ? resolveSecretRef(config.appSecretEnv) : void 0) ?? process.env.FEISHU_APP_SECRET;
-	return appId && appSecret ? {
-		appId,
-		appSecret
-	} : void 0;
-}
-/**
-* appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
-* (feishu profile 下 credentials 服务未挂载;与 media-tools 同款兜底,只匹配 refs 段内缩进行)。
-*/
-function resolveSecretRef(ref) {
-	const fromEnv = process.env[ref];
-	if (fromEnv) return fromEnv;
-	try {
-		const text = readFileSync(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml"), "utf8");
-		const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		let inRefs = false;
-		for (const line of text.split(/\r?\n/)) {
-			if (/^refs:\s*$/.test(line)) {
-				inRefs = true;
-				continue;
-			}
-			if (!inRefs) continue;
-			if (/^\S/.test(line)) break;
-			const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
-			if (match?.[1] && !match[1].startsWith("\"")) return match[1];
-		}
-	} catch {}
-}
-function dataDirectory(config) {
-	return config.dataDir ?? join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark");
 }
 //#endregion
 //#region src/console-exporter.ts
@@ -12261,36 +12509,61 @@ var SessionStore = class {
 	bindings = /* @__PURE__ */ new Map();
 	path;
 	workspacePath;
-	workspaceRoot;
+	agentsRoot;
 	cwd;
 	userNames = /* @__PURE__ */ new Map();
 	recoveredUsers = /* @__PURE__ */ new Map();
 	identity;
 	loaded = false;
-	constructor(dataDir, defaultCwd, workspaceRoot = join(defaultCwd, "feishu")) {
+	constructor(dataDir, defaultCwd, agentsRoot = join(defaultCwd, "agents")) {
 		this.path = join(dataDir, "sessions.json");
 		this.workspacePath = join(dataDir, "workspace.json");
-		this.workspaceRoot = workspaceRoot;
+		this.agentsRoot = agentsRoot;
 		this.cwd = defaultCwd;
 	}
-	/** Set the application identity and working directory shared with Web. */
-	setAppIdentity(appId, appName) {
-		const path = join(this.workspaceRoot, appId);
+	/** Set the identity (agent) tier; user archives live under agents/<agentId>/users/<userId>. */
+	setAgentIdentity(agentId, displayName, appId, botName) {
+		if (!agentId) {
+			this.identity = void 0;
+			return;
+		}
+		const path = join(this.agentsRoot, agentId);
 		this.identity = {
+			agentId,
 			appId,
-			appName: appName?.trim() || "飞书应用",
+			appName: displayName?.trim() || agentId,
+			...botName?.trim() ? { botName: botName.trim() } : {},
 			path
 		};
 		this.cwd = path;
+	}
+	/**
+	* Identity-center rebind (2026-10-30): after setAgentIdentity, remap every
+	* openId-bound session cwd to the current identity path — bindings loaded
+	* from pre-migration files keep stale app-era paths otherwise, and save()
+	* alone would just persist them back.
+	*/
+	rebindCwd() {
+		if (!this.identity) return;
+		for (const [chatId, binding] of this.bindings) {
+			if (!binding.openId) continue;
+			const cwd = this.cwdFor(binding.openId);
+			if (cwd !== binding.cwd) this.bindings.set(chatId, {
+				...binding,
+				cwd
+			});
+		}
 	}
 	async load() {
 		try {
 			const data = JSON.parse(await readFile(this.path, "utf8"));
 			for (const [chatId, binding] of Object.entries(data)) if (typeof binding.sessionId === "string" && typeof binding.cwd === "string") {
 				const openId = binding.openId;
-				if (openId) this.userNames.set(openId, binding.displayName?.trim() || `用户 ${userKey(openId).slice(0, 8)}`);
-				else {
-					const match = /\/users\/([a-f0-9]{24})$/.exec(binding.cwd);
+				if (openId) {
+					const configured = this.configuredDisplayName(openId);
+					this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${userKey(openId, this.identity?.appId).slice(0, 12)}`);
+				} else {
+					const match = /\/users\/((?:[a-f0-9]{24})|(?:u_[a-z0-9_-]{1,63}))$/.exec(binding.cwd);
 					if (match) this.recoveredUsers.set(match[1], binding.cwd);
 				}
 				this.bindings.set(chatId, {
@@ -12306,12 +12579,19 @@ var SessionStore = class {
 		}
 		this.loaded = true;
 	}
+	/** Admin-configured display name: top-level domain, or the applications.<appId> tier. */
+	configuredDisplayName(openId) {
+		if (!openId) return void 0;
+		const appId = this.identity?.appId;
+		const users = readUsers(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark", "user-connections.json"));
+		return (appId ? users.applications?.[appId] : void 0)?.[openId]?.displayName?.trim() || users[openId]?.displayName?.trim();
+	}
 	cwdFor(openId) {
 		if (!openId || !this.identity) return this.cwd;
-		return workspaceFor(this.identity.path, openId);
+		return workspaceFor(this.identity.path, openId, this.identity.appId);
 	}
 	get(chatId, openId, displayName) {
-		const resolvedName = displayName?.trim() || this.userNames.get(openId ?? "") || (openId ? `用户 ${userKey(openId).slice(0, 8)}` : void 0);
+		const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? "") || (openId ? `用户 ${userKey(openId).slice(0, 8)}` : void 0);
 		if (openId) this.userNames.set(openId, resolvedName);
 		const cwd = this.cwdFor(openId);
 		const existing = this.bindings.get(chatId);
@@ -12391,11 +12671,14 @@ var SessionStore = class {
 			const registry = {
 				version: 2,
 				...this.identity,
+				...this.identity.appId ? { appId: this.identity.appId } : {},
 				sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === this.identity?.path).map((binding) => binding.sessionId),
 				users: Object.fromEntries([...[...this.userNames].map(([openId, displayName]) => {
-					const path = workspaceFor(this.identity.path, openId);
-					return [userKey(openId), {
-						displayName,
+					const path = workspaceFor(this.identity.path, openId, this.identity.appId);
+					const effective = this.configuredDisplayName(openId) || displayName;
+					const suffix = this.identity.botName && !effective?.includes(this.identity.botName) ? ` · ${this.identity.botName}` : "";
+					return [userKey(openId, this.identity.appId), {
+						displayName: `${effective}${suffix}`,
 						path,
 						sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId)
 					}];
@@ -19332,10 +19615,20 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 //#region src/index.ts
 const name = "feishu";
 /** One Agent runtime, one WebSocket per Feishu application, isolated session stores. */
+/** Resolve the shared agents root: the first bot's derived identity directory minus its agentId tier. */
+function resolveAgentsRoot(config, bots) {
+	if (config.workspaceRoot) return config.workspaceRoot;
+	const first = bots.find((bot) => bot.agentId && bot.workspaceRoot);
+	if (first && first.agentId && first.workspaceRoot?.endsWith(first.agentId)) return first.workspaceRoot.slice(0, -first.agentId.length - 1);
+	return agentsRootDefault();
+}
 function apply(ctx, config) {
 	ctx.logger.exporter(consoleExporter());
 	const bots = resolveBots(config);
-	const credentials = resolveCredentials(config);
+	const credentials = resolveCredentials(config) ?? (bots.find((bot) => bot.accountId !== "default") && bots[0]?.appId && bots[0]?.appSecret ? {
+		appId: bots[0].appId,
+		appSecret: bots[0].appSecret
+	} : void 0);
 	if (!credentials) {
 		ctx.logger.warn("[lark] appId/appSecret are required; channel not started");
 		return;
@@ -19353,25 +19646,32 @@ function apply(ctx, config) {
 	const disposeTools = registerOfficialTools(ctx, config, credentials, toolContexts, upstream);
 	const selections = new ModelSelectionRegistry();
 	const appForAccount = new Map(bots.map((bot) => [bot.accountId ?? "default", bot.appId]));
+	const agentForAccount = new Map(bots.map((bot) => [bot.accountId ?? "default", bot.agentId]));
 	const userForSession = (sessionId) => {
 		const ticket = toolContexts.get(sessionId);
 		return ticket?.senderOpenId ? {
 			openId: ticket.senderOpenId,
 			chatId: ticket.chatId,
 			accountId: ticket.accountId,
-			appId: appForAccount.get(ticket.accountId)
+			appId: appForAccount.get(ticket.accountId),
+			agentId: agentForAccount.get(ticket.accountId)
 		} : void 0;
 	};
 	const channels = [];
+	let registeredController = false;
+	const agentsRoot = resolveAgentsRoot(config, bots);
 	for (const bot of bots) {
-		const sessions = new SessionStore(dataDirectory(bot), bot.defaultCwd ?? process.cwd(), bot.workspaceRoot);
+		const sessions = new SessionStore(dataDirectory(bot), bot.defaultCwd ?? process.cwd(), agentsRoot);
 		const extras = {
 			selections,
 			modelOverride: (sessionId) => sessions.overrideFor(sessionId),
 			userForSession
 		};
 		const resolveBound = (sessionId, cwd) => resolveAgent(ctx, bot, sessionId, cwd, extras);
-		if (bot.accountId === "default") registerSessionController(ctx, bot, bot.defaultCwd ?? process.cwd(), extras);
+		if (bot.accountId === "default" || !registeredController) {
+			registeredController = true;
+			registerSessionController(ctx, bot, bot.defaultCwd ?? process.cwd(), extras);
+		}
 		const models = new ModelCommands({
 			getLlm: () => ctx.get("llm"),
 			getDefaultModel: () => ctx.get("agentDefaultModel"),

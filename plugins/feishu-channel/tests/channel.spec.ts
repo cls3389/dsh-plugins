@@ -84,6 +84,35 @@ function inbound(text: string) {
 }
 
 describe('official Lark channel to DSH', () => {
+  it('rejects a redelivered message after the channel restarts', async () => {
+    const dir = await mkdtemp(join(process.cwd(), '_dev', 'dedup-'));
+    temporary.push(dir);
+    const sessions = new SessionStore(dir, dir);
+    await sessions.load();
+    const resolveAgent = vi.fn();
+    const makeChannel = () => new LarkChannel({
+      config: { dataDir: dir },
+      officialConfig: { channels: { feishu: {} } },
+      sessions,
+      toolContexts: new OfficialToolContexts(),
+      resolveAgent,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+    const first = makeChannel();
+    const dispatch = vi
+      .spyOn(first as unknown as { dispatch: (message: unknown) => Promise<void> }, 'dispatch')
+      .mockResolvedValue(undefined);
+
+    await first.receive(inbound('Only once'));
+    await first.stop();
+    const restarted = makeChannel();
+    await restarted.receive(inbound('Only once'));
+    await restarted.stop();
+
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(resolveAgent).not.toHaveBeenCalled();
+  });
+
   it('drives one DSH turn through the official controller without legacy cards', async () => {
     const dir = await mkdtemp(join(process.cwd(), '_dev', 'channel-'));
     temporary.push(dir);
@@ -130,7 +159,7 @@ describe('official Lark channel to DSH', () => {
       cancel: vi.fn(),
     } as unknown as Agent;
     channel = new LarkChannel({
-      config: { replyMode: 'streaming' },
+      config: { replyMode: 'streaming', dataDir: dir },
       officialConfig: {
         channels: { feishu: { appId: 'cli_test', appSecret: 'secret' } },
       },
@@ -197,7 +226,7 @@ describe('official Lark channel to DSH', () => {
       cancel: vi.fn(),
     } as unknown as Agent;
     channel = new LarkChannel({
-      config: {},
+      config: { dataDir: dir },
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
@@ -225,7 +254,7 @@ describe('official Lark channel to DSH', () => {
     const official = { ...controller(), ensureCardCreated: vi.fn(() => cardCreated) };
     const agent = { followup: vi.fn(), cancel: vi.fn() } as unknown as Agent;
     const channel = new LarkChannel({
-      config: {},
+      config: { dataDir: dir },
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
@@ -256,7 +285,7 @@ describe('official Lark channel to DSH', () => {
     const resolveAgent = vi.fn();
     const models = { handle: vi.fn(async () => '模型列表') };
     const channel = new LarkChannel({
-      config: {},
+      config: { dataDir: dir },
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),

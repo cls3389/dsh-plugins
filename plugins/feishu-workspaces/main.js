@@ -1,5 +1,5 @@
 import { watch } from 'node:fs';
-import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -12,8 +12,6 @@ export async function readRegistry(path) {
   const value = JSON.parse(await readFile(path, 'utf8'));
   if (
     value?.version !== 2 ||
-    typeof value.appId !== 'string' ||
-    !value.appId.trim() ||
     typeof value.path !== 'string' ||
     !isAbsolute(value.path) ||
     !Array.isArray(value.sessionIds) ||
@@ -21,12 +19,15 @@ export async function readRegistry(path) {
   ) {
     throw new Error(`invalid Lark workspace registry: ${path}`);
   }
+  // 身份中心(2026-10-30):agentId 为主键,appId 变兼容展示字段;users 键兼容簇 userId(u_xxx)与旧 hex。
+  const appId = typeof value.appId === 'string' && value.appId.trim() ? value.appId.trim() : '';
+  const agentId = typeof value.agentId === 'string' && value.agentId.trim() ? value.agentId.trim() : appId;
   return {
-    appId: value.appId.trim(),
-    appName: typeof value.appName === 'string' && value.appName.trim() ? value.appName.trim() : '飞书应用',
+    appId: agentId,
+    appName: typeof value.appName === 'string' && value.appName.trim() ? value.appName.trim() : (agentId || '飞书应用'),
     path: value.path,
     sessionIds: [...new Set(value.sessionIds)],
-    users: Object.fromEntries(Object.entries(value.users ?? {}).filter(([key, user]) => /^[a-f0-9]{24}(?:[a-f0-9]{8})?$/.test(key) && typeof user?.path === 'string' && isAbsolute(user.path) && Array.isArray(user.sessionIds)).map(([key, user]) => [key, {
+    users: Object.fromEntries(Object.entries(value.users ?? {}).filter(([key, user]) => (/^[a-f0-9]{24}(?:[a-f0-9]{8})?$/.test(key) || /^u_[a-z0-9][a-z0-9_-]{1,63}$/.test(key)) && typeof user?.path === 'string' && isAbsolute(user.path) && Array.isArray(user.sessionIds)).map(([key, user]) => [key, {
       displayName: typeof user.displayName === 'string' && user.displayName.trim() ? user.displayName.trim() : `用户 ${key.slice(0, 8)}`,
       path: user.path,
       sessionIds: [...new Set(user.sessionIds.filter((id) => typeof id === 'string'))],
@@ -67,10 +68,21 @@ export async function syncRegistries(ctx, files) {
   if (!registries.length) return [];
   const known = await knownSessions(ctx);
 
-  // URI groups were an interim presentation-only implementation. Deleting the
-  // registration preserves every session; historical sessions stay ungrouped.
+  // Identity-center prune (2026-10-30): any registered workspace whose directory
+  // no longer exists and which owns no live-session cwd is dead weight from past
+  // migrations — drop it so the GUI tree matches the real tree. Hand-created
+  // workspaces are safe: they only survive while their directory exists.
+  const liveCwds = new Set([...known.values()].filter((cwd) => typeof cwd === 'string'));
   for (const workspace of ctx.workspaceRegistry.list()) {
-    if (workspace.path.startsWith('lark://')) await ctx.workspaceRegistry.delete(workspace.id);
+    if (workspace.path.startsWith('lark://')) { await ctx.workspaceRegistry.delete(workspace.id); continue; }
+    let directoryExists = true;
+    try { await access(workspace.path); } catch { directoryExists = false; }
+    if (!directoryExists) {
+      const attached = (workspace.sessionIds ?? []).map(String);
+      if (attached.every((id) => !liveCwds.has(known.get(id)))) {
+        await ctx.workspaceRegistry.delete(workspace.id);
+      }
+    }
   }
 
   const owned = new Set(ctx.workspaceRegistry.list().flatMap((workspace) => workspace.sessionIds.map(String)));

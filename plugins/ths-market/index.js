@@ -10,6 +10,7 @@
 
 import fsModule from 'node:fs';
 import { connectionForExecution, connectionForOpenId } from '../../lib/user-connections.js';
+import { identityOf } from '../feishu-principal/index.js';
 
 const name = 'ths-market';
 const inject = ['tools'];
@@ -47,6 +48,8 @@ const MARKETS = {
 	HK: 'USHK', 港: 'USHK', 香港: 'USHK',
 	SHJ: 'USHJ', 沪基: 'USHJ', SHF: 'USHJ',
 	SZJ: 'USZJ', 深基: 'USZJ', SZF: 'USZJ',
+	SHI: 'USHI', SZI: 'USZI',
+	USHI: 'USHI', USZI: 'USZI',
 };
 
 /** 按代码前缀推断 FQGate 市场(实测校准:510300/588000/511990→USHJ,159915→USZJ) */
@@ -56,6 +59,8 @@ function inferMarket(code) {
 		if (/^8[38]/.test(code)) return 'USJB';  // 83/87 北交
 		if (/^[45]/.test(code)) return 'USHJ';   // 50/51/56/58 沪市基金/ETF
 		if (/^1[56]/.test(code)) return 'USZJ';  // 15/16/18 深市基金/ETF
+		if (/^000\d{3}$/.test(code)) return 'USHI'; // 000xxx 纯数字为沪市指数;000xxx 含 A-F 的是深市股票
+		if (/^399/.test(code)) return 'USZI';             // 399xxx 深市指数
 		if (/^[69]/.test(code)) return 'USHA';   // 60/68 沪股、90 B股
 		if (/^[023]/.test(code)) return 'USZA';  // 00/30 深股、20 B股
 		return 'USHA';
@@ -65,14 +70,34 @@ function inferMarket(code) {
 	return 'USHA';
 }
 
-/** 规范化证券标识:支持 "600519"、"SH600519"、"沪600519" 等输入 */
+/** 数字指数代码转 FQGate 内部代码;完整 1A/1B 代码原样保留。 */
+function normalizeCode(market, code) {
+	if (market === 'USHI' && /^000\d{3}$/.test(code)) return code === '000001' ? '1A0001' : `1B0${code.slice(3)}`;
+	if (market === 'USZI' && /^\d{6}$/.test(code)) return `399${code.slice(3)}`;
+	return code;
+}
+
+/**
+ * 规范化证券标识:支持股票代码、市场前缀和 ths_search 返回的完整 ths_code。
+ * FQGate 的 SH/SZ 是交易所前缀,不等于个股市场;指数必须使用 USHI/USZI。
+ */
 function parseSecurity(input) {
 	if (typeof input !== 'string' || !input.trim()) throw new Error('证券代码不能为空');
 	const raw = input.trim().toUpperCase();
-	const m = raw.match(/^(SH|SHA|SZ|SZA|BJ|USJB|HK|USHA|USZA|USHK|沪|深|北|港|上海|深圳|北交|香港)?(\d{4,6})$/);
-	if (!m) throw new Error(`无法识别的证券代码: ${input}`);
+	if (/^1[AB][0-9A-F]{4}$/.test(raw)) return { market: 'USHI', code: raw };
+	let m = raw.match(/^(USHA|USZA|USJB|USHJ|USZJ|USHI|USZI|USHK)([0-9A-Z]+)$/);
+	if (m) return { market: m[1], code: normalizeCode(m[1], m[2]) };
+	m = raw.match(/^(SHI|SZI)([0-9A-Z]+)$/);
+	if (m) return { market: MARKETS[m[1]], code: normalizeCode(MARKETS[m[1]], m[2]) };
+	m = raw.match(/^(SH|SHA|SZ|SZA|BJ|HK|沪|深|北|港|上海|深圳|北交|香港)?([0-9A-F]{4,6})$/);
+	if (!m) throw new Error(`无法识别的证券代码: ${input};指数请使用 ths_search 返回的完整代码(如 USHI1A0001、USZI399001)`);
 	const alias = m[1] ?? '';
 	let code = m[2];
+	// SH/SZ 在指数语境是交易所;完整 USHA/USZA 才显式指定个股市场。
+	if (/^(SH|SHA|SHI|沪|上海)$/.test(alias) && code === '000001') return { market: 'USHI', code: '1A0001' };
+	if (/^(SH|SHA|SHI|沪|上海)$/.test(alias) && /^000[0-9A-F]{3}$/.test(code)) return { market: 'USHI', code: `1B0${code.slice(3)}` };
+	if (/^(SZ|SZA|SZI|深|深圳)$/.test(alias) && /^399/.test(code)) return { market: 'USZI', code };
+	if (['USHI', 'USZI'].includes(MARKETS[alias] ?? inferMarket(code))) return { market: inferMarket(code), code: normalizeCode(inferMarket(code), code) };
 	const market = MARKETS[alias] ?? inferMarket(code);
 	// 港股前导零按需剥(1 位 ticker);A 股前导零是代码的一部分,必须保留
 	if (market === 'USHK') code = code.replace(/^0+(?=\d)/, '');
@@ -265,11 +290,11 @@ function apply(ctx, config) {
 	};
 	register({
 		name: 'ths_quote',
-		description: '查询单只或多只证券实时行情(FQGate)。支持股票/ETF/指数/债券,返回价格、涨跌幅、成交量额、换手率等。securities 支持形如 "600519"、"SH600519"、"SZ000001" 的代码。',
+		description: '查询单只或多只证券实时行情(FQGate)。支持股票/ETF/指数/债券,返回价格、涨跌幅、成交量额、换手率等。securities 支持形如 "600519"、"SH600519"、"SZ000001" 的代码;指数优先用 ths_search 返回的完整代码,如 "USHI1A0001"(上证)、"USZI399001"(深证成指)、"USZI399006"(创业板指),也支持 "SH000001"、"SZ399001"。',
 		parameters: {
 			type: 'object',
 			properties: {
-				securities: { type: 'array', items: { type: 'string' }, description: '证券代码列表,如 ["600519","SZ000001"]' },
+				securities: { type: 'array', items: { type: 'string' }, description: '证券代码列表,如 ["600519","SZ000001","USHI1A0001"];指数用 ths_search 返回的完整 ths_code' },
 				fields: { type: 'array', items: { type: 'integer' }, description: `可选,自选字段编号。常用:${Object.entries(FQ_FIELDS).map(([k, v]) => `${k}=${v}`).join(', ')}。省略返回全部常用字段` },
 			},
 			required: ['securities'],
@@ -305,17 +330,20 @@ function apply(ctx, config) {
 					results[code] = row;
 				}
 			}
-			return { quotes: results };
+			const unavailable = secs
+				.filter(({ code }) => !results[code])
+				.map(({ market, code }) => ({ symbol: `${market}${code}`, reason: '上游未返回行情,请用 ths_search 核对完整代码' }));
+			return { quotes: results, unavailable };
 		},
 	});
 
 	register({
 		name: 'ths_klines',
-		description: '查询证券历史 K 线(FQGate)。interval 枚举:1m/5m/15m/30m/60m/120m/day/week/month/quarter/year;adjust 枚举:None/forward(前复权)/backward(后复权)。count 与 start_date/end_date 二选一。',
+		description: '查询证券历史 K 线(FQGate)。interval 枚举:1m/5m/15m/30m/60m/120m/day/week/month/quarter/year;adjust 枚举:None/forward(前复权)/backward(后复权)。count 与 start_date/end_date 二选一。指数代码同 ths_quote,如 USHI1A0001。',
 		parameters: {
 			type: 'object',
 			properties: {
-				code: { type: 'string', description: '证券代码,如 600519' },
+				code: { type: 'string', description: '证券代码,如 600519;指数用完整代码 USHI1A0001 / USZI399001' },
 				interval: { type: 'string', description: 'K 线周期:1m/5m/15m/30m/60m/120m/day/week/month/quarter/year' },
 				count: { type: 'integer', description: '返回最近 N 根(与日期范围二选一)' },
 				start_date: { type: 'string', description: 'YYYYMMDD(与 count 二选一)' },
@@ -669,15 +697,18 @@ function apply(ctx, config) {
 					if (args.action[key] != null && (!Number.isFinite(args.action[key]) || args.action[key] <= 0)) throw new Error(`${key} 必须是正数`);
 				}
 			}
-			if (args.action && !xd && !exec.agent?.larkUser?.openId) {
+			// 身份读取双轨(基座化过渡):larkUser 直读优先,回退 identityOf 合成 agent.identity。
+			// 仅用于本工具面展示;fqFor/dcFor 已走 lib 壳 identityOf 双读。
+			const ownerOpenId = exec.agent?.larkUser?.openId ?? identityOf(exec.agent)?.subjectId;
+			if (args.action && !xd && !ownerOpenId) {
 				ctx.logger.warn('ths-market: action 规则已降级为提醒型(交易后端不可用:未安装 ths-trade 或未配 xiadanApiKey)');
 				args = { ...args, action: undefined };
 			}
-			if (args.action && exec.agent?.larkUser?.openId) {
-				connectionForOpenId(exec.agent.larkUser.openId, cfg, 'trading', exec.agent.larkUser.appId);
+			if (args.action && ownerOpenId) {
+				connectionForOpenId(ownerOpenId, cfg, 'trading', exec.agent?.larkUser?.appId ?? identityOf(exec.agent)?.appId);
 			}
 			const rule = watch.addRule(args, exec.agent);
-			return { rule, active: watch.status(exec.agent?.larkUser?.openId) };
+			return { rule, active: watch.status(ownerOpenId) };
 		},
 	});
 
@@ -687,7 +718,7 @@ function apply(ctx, config) {
 		parameters: { type: 'object', properties: {} },
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			return watch.status(exec.agent?.larkUser?.openId);
+			return watch.status(exec.agent?.larkUser?.openId ?? identityOf(exec.agent)?.subjectId);
 		},
 	});
 
@@ -703,7 +734,7 @@ function apply(ctx, config) {
 		},
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			const removed = watch.removeRule(args.id, exec.agent?.larkUser?.openId);
+			const removed = watch.removeRule(args.id, exec.agent?.larkUser?.openId ?? identityOf(exec.agent)?.subjectId);
 			if (!removed) throw new Error(`规则不存在或不属于当前用户: ${args.id}`);
 			return { removed };
 		},
@@ -1001,7 +1032,7 @@ function createWatchEngine(ctx, cfg, { xd }) {
 		let tradeXd = xd;
 		if (rule.ownerOpenId) {
 			try {
-				tradeCfg = connectionForOpenId(rule.ownerOpenId, cfg, 'trading');
+				tradeCfg = connectionForOpenId(rule.ownerOpenId, cfg, 'trading', rule.ownerAppId);
 				tradeXd = xiadanClient(ctx, tradeCfg);
 			} catch (error) {
 				const blocked = { at: nowMs(), ruleId: rule.id, code: rule.code, status: 'blocked', reason: String(error?.message ?? error) };
@@ -1127,7 +1158,7 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			const rule = rules.get(ruleId);
 			let dealsByHtbh;
 			try {
-				const fillXd = rule?.ownerOpenId ? xiadanClient(ctx, connectionForOpenId(rule.ownerOpenId, cfg, 'trading')) : xd;
+				const fillXd = rule?.ownerOpenId ? xiadanClient(ctx, connectionForOpenId(rule.ownerOpenId, cfg, 'trading', rule.ownerAppId)) : xd;
 				if (!fillXd) continue;
 				const dealsData = await fillXd.get('/api/v1/account/deals');
 				dealsByHtbh = dealsData?.result?.data?.deal ?? dealsData?.result?.data?.deals ?? {};
@@ -1185,7 +1216,11 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			// registry 显式查找(ctx.get('agents')),web/feishu 双 profile 通用。
 			const resolved = await resolveAgentFromRegistry(ctx, sessionId);
 			if ('error' in resolved) throw new Error(`resolveAgent: ${JSON.stringify(resolved.error)}`);
-			if (rule.ownerOpenId) resolved.agent.larkUser = { openId: rule.ownerOpenId };
+			if (rule.ownerOpenId) {
+				resolved.agent.larkUser = { openId: rule.ownerOpenId, ...(rule.ownerAppId ? { appId: rule.ownerAppId } : {}) };
+				// 基座化双载体:触发链唤醒时同步回注 identity(合成形态,channel 绑定补全 context)。
+				resolved.agent.identity = { channel: 'feishu', subjectId: rule.ownerOpenId, ...(rule.ownerAppId ? { appId: rule.ownerAppId } : {}) };
+			}
 			const message = {
 				id: `ths-watch-${rule.id}-${nowMs()}`,
 				role: 'user',
@@ -1466,7 +1501,15 @@ function createWatchEngine(ctx, cfg, { xd }) {
 				...(Array.isArray(args.and) && args.and.length ? { and: args.and } : {}),
 				...(args.action ? { action: args.action } : {}),
 				oneShot: args.oneShot !== false,
-				...(agent?.larkUser?.openId ? { ownerOpenId: agent.larkUser.openId } : {}),
+				// 身份读取双轨(基座化过渡):larkUser 直读优先,回退 identityOf 合成 agent.identity。
+				...(() => {
+					const ownerOpenId = agent?.larkUser?.openId ?? identityOf(agent)?.subjectId;
+					return ownerOpenId ? {
+						ownerOpenId,
+						// 触发链身份快照:带 appId 域,防止非默认 app 规则触发时错误解析到默认应用的交易连接(P0-2)。
+						ownerAppId: agent?.larkUser?.appId ?? identityOf(agent)?.appId,
+					} : {};
+				})(),
 				createdAt: nowMs(),
 			};
 			rules.set(id, rule);
@@ -1597,4 +1640,4 @@ function createWatchEngine(ctx, cfg, { xd }) {
 }
 
 
-export { apply, inject, name, createWatchEngine, isTradingHours, matchRule };
+export { apply, inject, name, createWatchEngine, isTradingHours, matchRule, parseSecurity };

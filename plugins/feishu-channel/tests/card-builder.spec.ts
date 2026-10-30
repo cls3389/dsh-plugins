@@ -56,4 +56,13 @@ describe('official card tool-use visibility', () => {
       expect(JSON.stringify(card)).not.toContain('暂无工具步骤');
     }
   });
+
+  it('preserves streamed answer text when refreshing the live tool panel', () => {
+    const card = buildStreamingPreAnswerCard({ steps: [step], text: 'Already streamed answer' });
+    const cardElements = elements(card);
+    expect(cardElements.some((item) => item.tag === 'collapsible_panel')).toBe(true);
+    expect(cardElements.find((item) => item.element_id === 'streaming_content')?.content).toBe(
+      'Already streamed answer',
+    );
+  });
 });

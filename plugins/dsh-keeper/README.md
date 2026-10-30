@@ -1,4 +1,4 @@
-# @dsh-friends/feishu-keeper
+# @dsh-friends/dsh-keeper
 
 `dsh --profile feishu` 进程保活：装在**主 profile**（web）里，发现飞书渠道进程缺失就自动拉起；崩溃按 backoff 重启（10s 起步、上限 5 分钟）；检测到手动启动的存量进程会主动让位，不产生双实例。
 

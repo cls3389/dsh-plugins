@@ -1,0 +1,7 @@
+# 必填：agentsRoot(身份根)。用户记忆写在 agents/<agentId>/users/<userId>/.dsh/memory。
+- insert:
+    - id: dsh-memory
+      name: '@dsh-friends/dsh-memory'
+      config:
+        agentsRoot: /data/dsh/home/agents
+        workspaceRoot: /data/dsh/home/agents

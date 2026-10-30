@@ -24,7 +24,7 @@ const CONFIG_DEFAULTS = {
 	apiKeyEnv: 'CPA_API_KEY',
 	imageDir: '/data/dsh/tmp/media-images',
 	allowedPathPrefixes: ['/tmp/', '/data/dsh/', '/home/'],
-	requestTimeoutMs: 60_000,
+	requestTimeoutMs: 180_000,
 };
 
 const anyJsonOutput = {
@@ -133,6 +133,29 @@ const SIZE_MAP = {
 const VALID_ASPECT_RATIOS = Object.keys(SIZE_MAP);
 const VALID_OUTPUT_FORMATS = ['png', 'jpeg', 'webp'];
 const EDIT_MIME_BY_FORMAT = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
+
+/* 本地参考图解析:前缀白名单 + 魔数探测。
+ * 2026-10-30 修复:原实现调用未定义的 readImageWithMagic 导致 image_edit 本地路径必报
+ * "readImageWithMagic is not defined"(line 352 唯一引用处);内联重写,行为对齐。 */
+async function readImageWithMagic(value, allowedPathPrefixes) {
+	const raw = String(value ?? '').trim();
+	if (!raw) throw new Error('empty path');
+	const resolved = raw.startsWith('~/') ? path.join(homedir(), raw.slice(2)) : path.resolve(raw);
+	const posix = resolved.replace(/\\/g, '/');
+	const allowed = (allowedPathPrefixes || []).some((prefix) => {
+		const p = prefix.replace(/\\/g, '/').replace(/\/+$/, '');
+		return posix === p || posix.startsWith(`${p}/`);
+	});
+	if (!allowed) throw new Error(`path not allowed: ${raw}`);
+	const stat = await fs.promises.stat(resolved);
+	if (!stat.isFile()) throw new Error(`not a file: ${raw}`);
+	const buf = Buffer.alloc(32);
+	const fh = await fs.promises.open(resolved, 'r');
+	try { await fh.read(buf, 0, 32, 0); } finally { await fh.close(); }
+	const magic = probeImage(buf);
+	if (!magic) throw new Error(`not a PNG/JPEG/WebP image: ${raw}`);
+	return { resolved, info: { ...magic, size: stat.size } };
+}
 
 const GEN_SMALL_TIMEOUT_MS = 30_000;
 const GEN_LARGE_TIMEOUT_MS = 60_000;
@@ -351,7 +374,7 @@ export function apply(ctx, config) {
 				try {
 					const { resolved, info } = await readImageWithMagic(value, cfg.allowedPathPrefixes);
 					if (info.size > 10 * 1024 * 1024) return { error: `images[${index}] 超过 10MB` };
-					images.push(`data:${MIME_BY_FORMAT[info.format]};base64,${(await fs.readFile(resolved)).toString('base64')}`);
+					images.push(`data:${EDIT_MIME_BY_FORMAT[info.format]};base64,${(await fs.readFile(resolved)).toString('base64')}`);
 				} catch (error) {
 					return { error: `images[${index}]: ${error.message}` };
 				}
@@ -363,7 +386,7 @@ export function apply(ctx, config) {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
 				body: JSON.stringify(payload),
-			}, 180_000);
+			}, cfg.requestTimeoutMs);
 			if (!resp.ok) return { error: `HTTP ${resp.status}: ${(await resp.text()).slice(0, 500)}` };
 			const data = await resp.json();
 			if (!Array.isArray(data?.data) || data.data.length === 0) return { error: '上游返回成功但没有图片数据' };

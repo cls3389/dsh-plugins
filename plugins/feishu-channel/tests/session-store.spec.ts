@@ -9,7 +9,7 @@ describe('SessionStore workspace registry', () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-lark-workspace-'));
     const store = new SessionStore(directory, '/workspace', join(directory, 'apps'));
     await store.load();
-    store.setAppIdentity('cli_example', 'Test Bot');
+    store.setAgentIdentity('goutoujunshi', 'Test Bot', 'cli_example');
     const first = store.get('chat-one');
     const second = store.get('chat-two');
 
@@ -20,21 +20,22 @@ describe('SessionStore workspace registry', () => {
     ) as Record<string, unknown>;
     expect(registry).toMatchObject({
       version: 2,
+      agentId: 'goutoujunshi',
       appId: 'cli_example',
       appName: 'Test Bot',
-      path: join(directory, 'apps', 'cli_example'),
+      path: join(directory, 'apps', 'goutoujunshi'),
       sessionIds: [first.sessionId, second.sessionId],
     });
     expect(registry).not.toHaveProperty('appSecret');
-    expect(first.cwd).toBe(join(directory, 'apps', 'cli_example'));
-    expect(second.cwd).toBe(join(directory, 'apps', 'cli_example'));
+    expect(first.cwd).toBe(join(directory, 'apps', 'goutoujunshi'));
+    expect(second.cwd).toBe(join(directory, 'apps', 'goutoujunshi'));
   });
 
   it('uses a visible fallback app name and includes reset sessions', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-lark-workspace-'));
     const store = new SessionStore(directory, '/workspace', join(directory, 'apps'));
     await store.load();
-    store.setAppIdentity('cli_example', '  ');
+    store.setAgentIdentity('goutoujunshi', '  ', 'cli_example');
     const replacement = store.reset('chat-one');
 
     await store.save();
@@ -43,7 +44,7 @@ describe('SessionStore workspace registry', () => {
       appName: string;
       sessionIds: string[];
     };
-    expect(registry.appName).toBe('飞书应用');
+    expect(registry.appName).toBe('goutoujunshi');
     expect(registry.sessionIds).toEqual([replacement.sessionId]);
   });
 
@@ -51,7 +52,7 @@ describe('SessionStore workspace registry', () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-lark-workspace-'));
     const store = new SessionStore(directory, '/workspace', join(directory, 'apps'));
     await store.load();
-    store.setAppIdentity('cli_example', 'Test Bot');
+    store.setAgentIdentity('goutoujunshi', 'Test Bot', 'cli_example');
     const a = store.get('shared-chat', 'ou_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     const b = store.get('shared-chat', 'ou_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
     const aAgain = store.get('shared-chat', 'ou_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
@@ -71,7 +72,7 @@ describe('SessionStore workspace registry', () => {
     const store = new SessionStore(directory, '/workspace', join(directory, 'apps'));
     await store.load();
     const historical = store.get('chat-one');
-    store.setAppIdentity('cli_example', 'Test Bot');
+    store.setAgentIdentity('goutoujunshi', 'Test Bot', 'cli_example');
 
     await store.save();
 

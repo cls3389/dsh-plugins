@@ -10,6 +10,16 @@ const A = `ou_${'a'.repeat(32)}`;
 const B = `ou_${'b'.repeat(32)}`;
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
 
+// 隔离 DSH_HOME:rootFor → workspaceFor → userKey 会写 $DSH_HOME/identities.json,
+// 测试绝不能碰真实环境。进程级 mkdtemp 在所有测试前生效,退出时清理。
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-memory-home-'));
+const previousHome = process.env.DSH_HOME;
+process.env.DSH_HOME = testHome;
+process.on('exit', () => {
+  if (previousHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previousHome;
+  fs.rmSync(testHome, { recursive: true, force: true });
+});
+
 test('Feishu memory is private, searchable, readable, and writable per user', async (t) => {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'feishu-user-memory-'));
   t.after(() => fs.rmSync(workspaceRoot, { recursive: true }));
@@ -72,4 +82,24 @@ test('denied memory_write leaves a reason in audit.log', async (t) => {
   assert.match(audit[0].reason, /记忆格式/);
   assert.equal(audit[0].topic, 'preferences');
   assert.ok(!fs.existsSync(path.join(userRoot, 'topics')) || fs.readdirSync(path.join(userRoot, 'topics')).length === 0, 'no topic file written on denial');
+});
+
+test('memory identity reads agent.identity first and falls back to larkUser', async (t) => {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-memory-identity-'));
+  t.after(() => fs.rmSync(workspaceRoot, { recursive: true }));
+  const tools = new Map();
+  const sections = [];
+  apply({ tools: { register: (definition) => tools.set(definition.name, definition) }, systemPrompt: { section: (definition) => { sections.push(definition); return () => {}; } }, effect: (setup) => setup() }, { workspaceRoot });
+  const identity = { channel: 'feishu', subjectId: A, userId: 'u_identity_track' };
+  const write = await tools.get('memory_write').execute({ topic: 'preferences', keywords: '身份双读', entry: `- [${today}] identity 载体写入。` }, { agent: { identity } });
+  assert.equal(write.written, true);
+  // 只有 identity 载体也能检索回来(基座化新链路)
+  const hit = await tools.get('memory_search').execute({ query: '载体' }, { agent: { identity } });
+  assert.equal(hit.results.length, 1);
+  assert.match(hit.results[0].text, /identity 载体/);
+  // prompt 装载同样双读:identity 载体可见
+  assert.match(sections[0].text({ agent: { identity } }), /preferences/);
+  // larkUser 旧载体照旧(兼容期)
+  const legacy = await tools.get('memory_search').execute({ query: '载体' }, { agent: { larkUser: { openId: A } } });
+  assert.equal(legacy.results.length, 1);
 });

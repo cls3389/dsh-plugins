@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { identityOf } from '../feishu-principal/index.js';
 
 const name = 'feishu-messages';
 const READ_MESSAGE_SCOPES = ['im:chat:read', 'im:message:readonly', 'im:message.group_msg:get_as_user', 'im:message.p2p_msg:get_as_user'];
@@ -622,7 +623,17 @@ export function apply(ctx, config) {
 	}
 	const bots = cfg.botsFile ? JSON.parse(fs.readFileSync(cfg.botsFile, 'utf8')) : [];
 	const forExecution = (exec) => {
-		const user = exec?.agent?.larkUser;
+		// 身份读取双轨(基座化过渡):larkUser 直读优先,回退 identityOf 合成 agent.identity
+		// (subjectId→openId、context.chatId/accountId 补全旧字段形态)。
+		const larkUser = exec?.agent?.larkUser;
+		const identity = identityOf(exec?.agent);
+		const user = larkUser ?? (identity ? {
+			openId: identity.subjectId,
+			...(identity.context?.chatId !== undefined ? { chatId: identity.context.chatId } : {}),
+			...(identity.context?.accountId !== undefined ? { accountId: identity.context.accountId } : {}),
+			...(identity.context?.chatType !== undefined ? { chatType: identity.context.chatType } : {}),
+			...(identity.appId !== undefined ? { appId: identity.appId } : {}),
+		} : undefined);
 		const bot = user?.accountId && user.accountId !== 'default' ? bots.find((entry) => entry.accountId === user.accountId) : undefined;
 		if (user?.accountId && user.accountId !== 'default' && (!bot || bot.appId !== user.appId || !bot.appSecret)) throw new Error('当前飞书应用未配置独立消息读取凭据，已拒绝回退默认应用');
 		return { ...cfg, ...(bot ? { appId: bot.appId, appSecret: bot.appSecret } : {}), userOpenId: user?.openId, currentChatId: user?.chatId, currentChatType: user?.chatType };

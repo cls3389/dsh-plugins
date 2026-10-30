@@ -5,6 +5,7 @@ import {
   OfficialTurnStream,
 } from '../src/streaming.js';
 import { getToolUseTraceSteps } from '../vendor/openclaw-lark/dist/card/tool-use-trace-store.js';
+import { StreamingCardController } from '../vendor/openclaw-lark/dist/card/streaming-card-controller.js';
 
 function fakeController() {
   return {
@@ -93,5 +94,36 @@ describe('official CardKit turn stream', () => {
     expect(controller.onToolStart).toHaveBeenCalledWith({ name: 'read', phase: 'start' });
     expect(controller.onToolPayload).toHaveBeenCalledOnce();
     expect(controller.abortCard).toHaveBeenCalledOnce();
+  });
+
+  it('refreshes CardKit tool status even after answer streaming has started', async () => {
+    const controller = new StreamingCardController({
+      cfg: { channels: { feishu: {} } },
+      accountId: undefined,
+      replyToMessageId: 'om_inbound',
+      sessionKey: 'session-live-tools',
+      toolUseDisplay: { showToolUse: true },
+    } as unknown as ConstructorParameters<typeof StreamingCardController>[0]);
+    const internal = controller as unknown as {
+      phase: string;
+      cardKit: { cardMessageId: string | null; cardKitCardId: string | null };
+      text: { accumulatedText: string };
+      ensureCardCreated: () => Promise<void>;
+      throttledToolUseStatusUpdate: () => Promise<void>;
+      throttledCardUpdate: () => Promise<void>;
+    };
+    internal.phase = 'streaming';
+    internal.cardKit.cardMessageId = 'om_card';
+    internal.cardKit.cardKitCardId = 'card_id';
+    internal.text.accumulatedText = 'Already streamed answer';
+    internal.ensureCardCreated = vi.fn(async () => {});
+    internal.throttledToolUseStatusUpdate = vi.fn(async () => {});
+    internal.throttledCardUpdate = vi.fn(async () => {});
+
+    await controller.onToolStart({ name: 'read', phase: 'start' });
+    await controller.onToolPayload({ text: '' });
+
+    expect(internal.throttledToolUseStatusUpdate).toHaveBeenCalledTimes(2);
+    expect(internal.throttledCardUpdate).not.toHaveBeenCalled();
   });
 });

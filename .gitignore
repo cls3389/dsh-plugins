@@ -9,3 +9,5 @@ pnpm-lock.yaml
 plugins/feishu-channel/node_modules/
 plugins/feishu-channel/_dev/
 plugins/media-tools/*.bak-*
+
+plugins/model-config/policy.json.bak-*

@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { readUsers, userKey, workspaceFor } from '@dsh-friends/feishu-principal';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -13,11 +14,16 @@ interface SessionBinding {
   readonly displayName?: string | undefined;
 }
 
-/** Public, secret-free application identity consumed by Web workspace grouping. */
+/** Public, secret-free identity registry consumed by Web workspace grouping. */
 export interface LarkWorkspaceRegistry {
   readonly version: 2;
-  readonly appId: string;
-  readonly appName: string;
+  /** Identity directory name (agents/<agentId>); the config host. */
+  readonly agentId?: string | undefined;
+  /** Feishu application id kept for display/back-compat when known. */
+  readonly appId?: string | undefined;
+  /** Bot display name serving this registry (the cli tier under an aggregate identity). */
+  readonly botName?: string | undefined;
+  readonly appName?: string | undefined;
   readonly path: string;
   readonly sessionIds: readonly string[];
   readonly users?: Readonly<Record<string, { readonly displayName: string; readonly path: string; readonly sessionIds: readonly string[] }>>;
@@ -29,25 +35,45 @@ export class SessionStore {
   private readonly bindings = new Map<string, SessionBinding>();
   private readonly path: string;
   private readonly workspacePath: string;
-  private readonly workspaceRoot: string;
+  private readonly agentsRoot: string;
   private cwd: string;
   private readonly userNames = new Map<string, string>();
   private readonly recoveredUsers = new Map<string, string>();
-  private identity?: { readonly appId: string; readonly appName: string; readonly path: string };
+  private identity?: { readonly agentId?: string | undefined; readonly appId?: string | undefined; readonly appName?: string | undefined; readonly botName?: string | undefined; readonly path: string } | undefined;
   private loaded = false;
 
-  constructor(dataDir: string, defaultCwd: string, workspaceRoot = join(defaultCwd, 'feishu')) {
+  constructor(dataDir: string, defaultCwd: string, agentsRoot = join(defaultCwd, 'agents')) {
     this.path = join(dataDir, 'sessions.json');
     this.workspacePath = join(dataDir, 'workspace.json');
-    this.workspaceRoot = workspaceRoot;
+    this.agentsRoot = agentsRoot;
     this.cwd = defaultCwd;
   }
 
-  /** Set the application identity and working directory shared with Web. */
-  setAppIdentity(appId: string, appName?: string): void {
-    const path = join(this.workspaceRoot, appId);
-    this.identity = { appId, appName: appName?.trim() || '飞书应用', path };
+  /** Set the identity (agent) tier; user archives live under agents/<agentId>/users/<userId>. */
+  setAgentIdentity(agentId: string | undefined, displayName?: string, appId?: string, botName?: string): void {
+    if (!agentId) {
+      this.identity = undefined;
+      return;
+    }
+    const path = join(this.agentsRoot, agentId);
+    this.identity = { agentId, appId, appName: displayName?.trim() || agentId, ...(botName?.trim() ? { botName: botName.trim() } : {}), path };
     this.cwd = path;
+  }
+
+
+  /**
+   * Identity-center rebind (2026-10-30): after setAgentIdentity, remap every
+   * openId-bound session cwd to the current identity path — bindings loaded
+   * from pre-migration files keep stale app-era paths otherwise, and save()
+   * alone would just persist them back.
+   */
+  rebindCwd(): void {
+    if (!this.identity) return;
+    for (const [chatId, binding] of this.bindings) {
+      if (!binding.openId) continue;
+      const cwd = this.cwdFor(binding.openId);
+      if (cwd !== binding.cwd) this.bindings.set(chatId, { ...binding, cwd });
+    }
   }
 
   async load(): Promise<void> {
@@ -56,9 +82,13 @@ export class SessionStore {
       for (const [chatId, binding] of Object.entries(data)) {
         if (typeof binding.sessionId === 'string' && typeof binding.cwd === 'string') {
           const openId = binding.openId;
-          if (openId) this.userNames.set(openId, binding.displayName?.trim() || `用户 ${userKey(openId).slice(0, 8)}`);
+          if (openId) {
+            const configured = this.configuredDisplayName(openId);
+            this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${userKey(openId, this.identity?.appId).slice(0, 12)}`);
+          }
           else {
-            const match = /\/users\/([a-f0-9]{24})$/.exec(binding.cwd);
+            // 兼容两代目录名:旧 openId-hash(24 hex)与身份簇 userId(u_xxx)。
+            const match = /\/users\/((?:[a-f0-9]{24})|(?:u_[a-z0-9_-]{1,63}))$/.exec(binding.cwd);
             if (match) this.recoveredUsers.set(match[1]!, binding.cwd);
           }
           this.bindings.set(chatId, {
@@ -76,13 +106,28 @@ export class SessionStore {
     this.loaded = true;
   }
 
+  /** Admin-configured display name: top-level domain, or the applications.<appId> tier. */
+  private configuredDisplayName(openId?: string): string | undefined {
+    if (!openId) return undefined;
+    const appId = this.identity?.appId;
+    type UserEntry = { displayName?: string };
+    type UsersFile = Record<string, UserEntry> & { applications?: Record<string, Record<string, UserEntry>> };
+    // usersFile 标准位置=$DSH_HOME/lark/user-connections.json(与 principal 一致;dataDir 下无此文件)。
+    const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+    const users = readUsers(join(dshHome, 'lark', 'user-connections.json')) as UsersFile;
+    const appIdUsers = appId ? users.applications?.[appId] : undefined;
+    return appIdUsers?.[openId]?.displayName?.trim() || users[openId]?.displayName?.trim();
+  }
+
   private cwdFor(openId?: string): string {
     if (!openId || !this.identity) return this.cwd;
-    return workspaceFor(this.identity.path, openId);
+    // 身份带 app 域:userId 解析按 (feishu, appId, openId) 查身份簇,bind 合并后档案跟随簇。
+    return workspaceFor(this.identity.path, openId, this.identity.appId);
   }
 
   get(chatId: string, openId?: string, displayName?: string): SessionBinding {
-    const resolvedName = displayName?.trim() || this.userNames.get(openId ?? '') || (openId ? `用户 ${userKey(openId).slice(0, 8)}` : undefined);
+    // 显示名优先级:管理员配置(usersFile) > 渠道实时名(如飞书昵称) > 历史记录 > hash 兜底。
+    const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? '') || (openId ? `用户 ${userKey(openId).slice(0, 8)}` : undefined);
     if (openId) this.userNames.set(openId, resolvedName!);
     const cwd = this.cwdFor(openId);
     const existing = this.bindings.get(chatId);
@@ -145,13 +190,19 @@ export class SessionStore {
       const registry: LarkWorkspaceRegistry = {
         version: 2,
         ...this.identity,
+        // Web 注册表兼容字段:appId/appName 保留展示,path 指向身份目录。
+        ...(this.identity.appId ? { appId: this.identity.appId } : {}),
         sessionIds: [...this.bindings.values()]
           .filter((binding) => binding.cwd === this.identity?.path)
           .map((binding) => binding.sessionId),
         users: Object.fromEntries([
           ...[...this.userNames].map(([openId, displayName]) => {
-            const path = workspaceFor(this.identity!.path, openId);
-            return [userKey(openId), { displayName, path, sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId) }];
+            const path = workspaceFor(this.identity!.path, openId, this.identity!.appId);
+            // 管理员配置名在 save 时兜底校正(load 先于 setAppIdentity,applications 域当时不可见)。
+            const effective = this.configuredDisplayName(openId) || displayName;
+            // 聚合身份(user 条目名不带 bot 语境)时补 bot 后缀,GUI 树可辨「哪个 cli 在服务」。
+            const suffix = this.identity!.botName && !effective?.includes(this.identity!.botName) ? ` · ${this.identity!.botName}` : '';
+            return [userKey(openId, this.identity!.appId), { displayName: `${effective}${suffix}`, path, sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId) }];
           }),
           ...[...this.recoveredUsers].map(([hash, path]) => {
             const configuredName = Object.entries(readUsers(join(dirname(this.path), 'user-connections.json'))).find(([openId]) => userKey(openId).startsWith(hash))?.[1]?.displayName;

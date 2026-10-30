@@ -16,6 +16,8 @@ import type {
 } from '../vendor/openclaw-lark/dist/messaging/types.js';
 import { handleCardAction } from '../vendor/openclaw-lark/dist/tools/auto-auth.js';
 import type { Config } from './config.js';
+import { dataDirectory } from './config.js';
+import { DedupStore } from './dedup-store.js';
 import type { LarkRuntimeConfig } from './runtime-config.js';
 import type { SessionStore } from './session-store.js';
 import { type OfficialTurnControllerFactory, OfficialTurnStream } from './streaming.js';
@@ -59,28 +61,41 @@ export interface LarkChannelOptions {
 
 /** Official Lark events directly driving DSH agents and official streaming cards. */
 export class LarkChannel {
-  private readonly dedup = new MessageDedup();
+  private readonly dedup: MessageDedup;
   private readonly abort = new AbortController();
   private readonly activeByChat = new Map<string, ActiveTurn>();
   private readonly activeBySession = new Map<string, ActiveTurn>();
   private readonly queues = new Map<string, Promise<void>>();
   private client?: LarkClient;
 
-  constructor(private readonly options: LarkChannelOptions) {}
+  constructor(private readonly options: LarkChannelOptions) {
+    this.dedup = new MessageDedup({
+      persistence: new DedupStore(join(dataDirectory(options.config), 'message-dedup.json')),
+    });
+  }
 
   async start(): Promise<void> {
     await this.options.sessions.load();
     const client = LarkClient.fromCfg(this.options.officialConfig, this.options.config.accountId ?? 'default');
     this.client = client;
     const probe = await client.probe();
-    if (client.account.appId) {
-      this.options.sessions.setAppIdentity(
-        client.account.appId,
-        this.options.config.appName ?? probe.botName,
+    if (client.account.appId || this.options.config.agentId) {
+      // 身份显示名:manifest.displayName(身份的稳定名,聚合身份必备) > bot 名 > agentId。
+      // guests 等 12 bot 共享身份时,身份条目名恒为 manifest 名,不随首个 bot 漂移。
+      const identityName = this.options.config.manifest?.displayName
+        ?? this.options.config.appName ?? probe.botName
+        ?? this.options.config.agentId;
+      const botName = this.options.config.appName ?? probe.botName;
+      this.options.sessions.setAgentIdentity(
+        this.options.config.agentId,
+        identityName,
+        client.account.appId ?? this.options.config.appId,
+        botName,
       );
+      this.options.sessions.rebindCwd();
       await this.options.sessions.save();
       this.options.logger.info(
-        `workspace identity app=${client.account.appId} name=${this.options.config.appName ?? probe.botName ?? '飞书应用'}`,
+        `workspace identity agent=${this.options.config.agentId ?? '(unset)'} app=${client.account.appId ?? this.options.config.appId ?? '?'} name=${this.options.config.appName ?? probe.botName ?? '飞书应用'}`,
       );
     }
     await client.startWS({
@@ -117,7 +132,10 @@ export class LarkChannel {
 
   /** Parse and queue one raw Feishu message; exposed for offline contract tests. */
   async receive(event: FeishuMessageEvent): Promise<void> {
-    if (!this.dedup.tryRecord(event.message.message_id)) return;
+    if (!this.dedup.tryRecord(event.message.message_id, this.options.config.accountId ?? 'default')) {
+      this.options.logger.info(`duplicate inbound message suppressed: ${event.message.message_id}`);
+      return;
+    }
     const message = await parseMessageEvent(event, this.client?.botOpenId, {
       cfg: this.options.officialConfig,
       accountId: this.options.config.accountId ?? 'default',

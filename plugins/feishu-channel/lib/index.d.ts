@@ -4,6 +4,16 @@ import { Context } from "@deepseek-ai/cordis";
 import { SessionEvent } from "@deepseek-ai/dsh-session";
 
 //#region src/config.d.ts
+/** Identity-manifest fields loaded from agents/<agentId>/manifest.yml. */
+interface AgentManifest {
+  readonly proto?: 'guest' | 'companion' | 'owner';
+  readonly displayName?: string;
+  readonly model?: {
+    readonly provider?: string;
+    readonly name?: string;
+    readonly reasoningEffort?: string;
+  };
+}
 /** Clean DSH configuration for the official Lark channel. */
 interface Config {
   readonly appId?: string;
@@ -14,7 +24,7 @@ interface Config {
   readonly appSecretEnv?: string;
   readonly domain?: 'feishu' | 'lark';
   readonly defaultCwd?: string;
-  /** Parent directory for per-application working directories. */
+  /** Identity root directory (agents/<agentId> tier); derived from DSH_HOME when omitted. */
   readonly workspaceRoot?: string;
   readonly dataDir?: string;
   readonly provider?: string;
@@ -33,6 +43,10 @@ interface Config {
   readonly mcpEndpoint?: string;
   /** Additional Feishu applications sharing this DSH runtime; default remains the primary bot. */
   readonly bots?: BotConfig[];
+  /** Identity directory name under the agents root: the config host for tools/persona/model. */
+  readonly agentId?: string;
+  /** Resolved identity manifest (proto/model) loaded during resolveBots. */
+  readonly manifest?: AgentManifest;
   /** Local secret-bearing JSON array used instead of embedding all bot credentials in YAML. */
   readonly botsFile?: string;
   /** Account used by this channel instance; the primary bot uses "default". */
@@ -115,22 +129,31 @@ interface SessionBinding {
   readonly openId?: string;
   readonly displayName?: string | undefined;
 }
-/** Public, secret-free application identity consumed by Web workspace grouping. */
+/** Public, secret-free identity registry consumed by Web workspace grouping. */
 /** Durable one-chat-to-one-DSH-session registry, independent of legacy state. */
 declare class SessionStore {
   private readonly bindings;
   private readonly path;
   private readonly workspacePath;
-  private readonly workspaceRoot;
+  private readonly agentsRoot;
   private cwd;
   private readonly userNames;
   private readonly recoveredUsers;
   private identity?;
   private loaded;
-  constructor(dataDir: string, defaultCwd: string, workspaceRoot?: string);
-  /** Set the application identity and working directory shared with Web. */
-  setAppIdentity(appId: string, appName?: string): void;
+  constructor(dataDir: string, defaultCwd: string, agentsRoot?: string);
+  /** Set the identity (agent) tier; user archives live under agents/<agentId>/users/<userId>. */
+  setAgentIdentity(agentId: string | undefined, displayName?: string, appId?: string, botName?: string): void;
+  /**
+   * Identity-center rebind (2026-10-30): after setAgentIdentity, remap every
+   * openId-bound session cwd to the current identity path — bindings loaded
+   * from pre-migration files keep stale app-era paths otherwise, and save()
+   * alone would just persist them back.
+   */
+  rebindCwd(): void;
   load(): Promise<void>;
+  /** Admin-configured display name: top-level domain, or the applications.<appId> tier. */
+  private configuredDisplayName;
   private cwdFor;
   get(chatId: string, openId?: string, displayName?: string): SessionBinding;
   reset(chatId: string, openId?: string): SessionBinding;
@@ -306,7 +329,6 @@ declare class LarkChannel {
 //#endregion
 //#region src/index.d.ts
 declare const name = "feishu";
-/** One Agent runtime, one WebSocket per Feishu application, isolated session stores. */
 declare function apply(ctx: Context, config: Config): void;
 //#endregion
 export { Config, LarkChannel, OfficialTurnStream, apply, name };

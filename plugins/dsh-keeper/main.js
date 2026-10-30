@@ -1,5 +1,5 @@
 /**
- * @dsh-friends/feishu-keeper — feishu profile 进程保活插件
+ * @dsh-friends/dsh-keeper — dsh profile 进程保活插件(多 profile)
  *
  * 背景:
  *   dsh --profile feishu 是一个独立的 node 后台进程(setsid 启动,日志重定向到
@@ -27,7 +27,7 @@ import { openSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const name = 'feishu-keeper';
+const name = 'dsh-keeper';
 // 不 inject 任何服务:纯进程托管,避免阻塞加载。
 const inject = [];
 
@@ -47,12 +47,11 @@ const CONFIG_DEFAULTS = {
 	restartBackoffMaxMs: 300_000,
 	/** dsh 入口:默认宿主进程自己的入口脚本;或 PATH 上的 `dsh` */
 	bin: defaultDshBin,
-	/** 要保活的 profile 名 */
-	profile: 'feishu',
-	/** 子进程运行日志 / 退出轨迹 / keeper 自身日志(默认都在 DSH_HOME 下) */
-	logFile: join(defaultDshHome, 'feishu-lark.log'),
-	exitFile: join(defaultDshHome, 'feishu-process.exit'),
-	keeperLog: join(defaultDshHome, 'feishu-keeper.log'),
+	/** 要保活的 profile 列表(2026-10-30 拆分后默认三件套;单 profile 字段仍兼容) */
+	profiles: ['owner', 'companion', 'guests'],
+	/** 按 profile 派生日志文件(单 profile 字段 logFile/exitFile 兼容旧配置) */
+	logFileFor: (profile) => join(defaultDshHome, `${profile.replace(/^feishu-?(?!$)/, '')}-lark.log`),
+	exitFileFor: (profile) => join(defaultDshHome, `${profile.replace(/^feishu-?(?!$)/, '')}-process.exit`),
 	/** 子进程环境 */
 	home: process.env.HOME ?? homedir(),
 	dshHome: defaultDshHome,
@@ -64,7 +63,7 @@ function nowIso() {
 
 function logLine(cfg, msg) {
 	try {
-		appendFileSync(cfg.keeperLog, `[${nowIso()}] [feishu-keeper] ${msg}\n`);
+		appendFileSync(cfg.keeperLog, `[${nowIso()}] [dsh-keeper] ${msg}\n`);
 	} catch {
 		// 日志写不进就算了,不让保活挂掉
 	}
@@ -101,94 +100,109 @@ async function findFeishuPid(excludePid, profile) {
 export async function apply(ctx, config) {
 	const cfg = { ...CONFIG_DEFAULTS, ...(config ?? {}) };
 	if (cfg.enabled === false) {
-		ctx.logger.info('[feishu-keeper] disabled by config');
+		ctx.logger.info('[dsh-keeper] disabled by config');
 		return;
 	}
+	// 多 profile 兼容:旧配置的 profile 单值归入 profiles 列表。
+	const profiles = Array.isArray(cfg.profiles) && cfg.profiles.length
+		? cfg.profiles
+		: (cfg.profile ? [cfg.profile] : CONFIG_DEFAULTS.profiles);
 
-	let child = null; // 本插件托管的子进程
-	let childPid = 0;
-	let backoff = cfg.restartBackoffMs;
+	// 每 profile 一份守护状态(日志/退出文件按 profile 派生;旧 logFile/exitFile 单值兼容)。
+	const states = profiles.map((profile) => ({
+		profile,
+		child: null,
+		childPid: 0,
+		backoff: cfg.restartBackoffMs,
+		logFd: openSync(cfg.logFileFor ? cfg.logFileFor(profile) : cfg.logFile, 'a'),
+		exitFile: cfg.exitFileFor ? cfg.exitFileFor(profile) : cfg.exitFile,
+	}));
+
 	let stopping = false;
 	let timer = null;
 
-	const logFd = openSync(cfg.logFile, 'a');
-
-	function writeExitFile(line) {
+	function logLineFor(state, msg) {
 		try {
-			appendFileSync(cfg.exitFile, `${line}\n`);
+			appendFileSync(cfg.keeperLog, `[${nowIso()}] [dsh-keeper:${state.profile}] ${msg}\n`);
 		} catch {}
 	}
 
-	function spawnManaged(reason) {
+	function writeExitFile(state, line) {
+		try {
+			appendFileSync(state.exitFile, `${line}\n`);
+		} catch {}
+	}
+
+	function spawnManaged(state, reason) {
 		if (stopping) return;
-		logLine(cfg, `spawning feishu profile (${reason})`);
-		writeExitFile(`keeper_spawn started=${nowIso()} reason=${reason}`);
+		logLineFor(state, `spawning (${reason})`);
+		writeExitFile(state, `keeper_spawn started=${nowIso()} reason=${reason}`);
 		// bin 是 .js 入口 → 用当前 node 跑;否则(如 PATH 上的 `dsh`)直接执行
 		const viaNode = /\.(?:js|mjs|cjs)$/i.test(cfg.bin);
-		child = viaNode
-			? spawn(process.execPath, [cfg.bin, `--profile`, cfg.profile], {
+		state.child = viaNode
+			? spawn(process.execPath, [cfg.bin, `--profile`, state.profile], {
 				env: { ...process.env, HOME: cfg.home, DSH_HOME: cfg.dshHome },
-				stdio: ['ignore', logFd, logFd],
+				stdio: ['ignore', state.logFd, state.logFd],
 				detached: false,
 				cwd: cfg.home,
 			})
-			: spawn(cfg.bin, [`--profile`, cfg.profile], {
+			: spawn(cfg.bin, [`--profile`, state.profile], {
 				env: { ...process.env, HOME: cfg.home, DSH_HOME: cfg.dshHome },
-				stdio: ['ignore', logFd, logFd],
+				stdio: ['ignore', state.logFd, state.logFd],
 				detached: false,
 				cwd: cfg.home,
 			});
-		childPid = child.pid;
-		logLine(cfg, `spawned pid=${childPid}`);
-		child.on('exit', (code, signal) => {
-			writeExitFile(`keeper_child pid=${childPid} exit=${code ?? signal} ended=${nowIso()}`);
+		state.childPid = state.child.pid;
+		logLineFor(state, `spawned pid=${state.childPid}`);
+		state.child.on('exit', (code, signal) => {
+			writeExitFile(state, `keeper_child pid=${state.childPid} exit=${code ?? signal} ended=${nowIso()}`);
 			if (stopping) return;
-			// 崩溃/被杀 → backoff 重启
-			logLine(cfg, `child pid=${childPid} exited (code=${code ?? signal}), restart in ${backoff}ms`);
-			const wait = backoff;
-			backoff = Math.min(backoff * 2, cfg.restartBackoffMaxMs);
+			logLineFor(state, `pid=${state.childPid} exited (code=${code ?? signal}), restart in ${state.backoff}ms`);
+			const wait = state.backoff;
+			state.backoff = Math.min(state.backoff * 2, cfg.restartBackoffMaxMs);
 			setTimeout(() => {
-				// 重启前再探一次:可能 keeper 之外有人手动拉起了
-				ensureRunning(`restart-after-exit`).catch(() => {});
+				ensureRunning(state, 'restart-after-exit').catch(() => {});
 			}, wait);
-			child = null;
-			childPid = 0;
+			state.child = null;
+			state.childPid = 0;
 		});
 	}
 
-	async function ensureRunning(reason) {
+	async function ensureRunning(state, reason) {
 		if (stopping) return;
-		if (child && child.exitCode === null) return; // 自己的还活着
-		const external = await findFeishuPid(process.pid, cfg.profile);
+		if (state.child && state.child.exitCode === null) return;
+		const external = await findFeishuPid(process.pid, state.profile);
 		if (external) {
-			// 有别人(手动/旧 wrapper)的实例在跑,让位不重复起
-			child = null;
-			childPid = 0;
-			backoff = cfg.restartBackoffMs;
+			// 有别人(systemd/手动)的实例在跑,让位不重复起
+			state.child = null;
+			state.childPid = 0;
+			state.backoff = cfg.restartBackoffMs;
 			return;
 		}
-		spawnManaged(reason);
+		spawnManaged(state, reason);
 	}
 
 	timer = setInterval(() => {
-		ensureRunning('patrol').catch((e) => logLine(cfg, `patrol error: ${e}`));
+		for (const state of states) ensureRunning(state, 'patrol').catch((e) => logLineFor(state, `patrol error: ${e}`));
 	}, cfg.intervalMs);
 	timer.unref?.();
 
-	await ensureRunning('plugin-activate');
-	ctx.logger.info('[feishu-keeper] active: feishu profile supervised');
+	for (const state of states) await ensureRunning(state, 'plugin-activate');
+	ctx.logger.info(`[dsh-keeper] active: profiles [${profiles.join(', ')}] supervised`);
 
 	return () => {
 		stopping = true;
 		if (timer) clearInterval(timer);
-		if (child) {
-			logLine(cfg, `plugin dispose: terminating managed child pid=${childPid}`);
+		for (const state of states) {
+			if (state.child) {
+				logLineFor(state, `plugin dispose: terminating managed child pid=${state.childPid}`);
+				try {
+					state.child.kill('SIGTERM');
+				} catch {}
+			}
 			try {
-				child.kill('SIGTERM');
+				closeSync(state.logFd);
 			} catch {}
 		}
-		try {
-			closeSync(logFd);
-		} catch {}
 	};
 }

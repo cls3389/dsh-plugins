@@ -21,6 +21,14 @@ export interface MessageDedupOpts {
   ttlMs?: number;
   /** Maximum number of tracked entries (default: 10 000). */
   maxEntries?: number;
+  /** Optional synchronous JSON ledger, preserving message IDs across restarts. */
+  persistence?: {
+    get(id: string): number | undefined;
+    set(id: string, seenAt: number): void;
+    delete(id: string): void;
+    sweep?(expiresBefore: number, maxEntries: number): void;
+    persist(): void;
+  };
 }
 
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -56,11 +64,14 @@ export class MessageDedup {
   private readonly store = new Map<string, number>();
   private readonly ttlMs: number;
   private readonly maxEntries: number;
+  private readonly persistence?: MessageDedupOpts['persistence'];
   private readonly sweepTimer: ReturnType<typeof setInterval>;
 
   constructor(opts: MessageDedupOpts = {}) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
     this.maxEntries = opts.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    this.persistence = opts.persistence;
+    this.sweep();
 
     // Periodic sweep — relies on FIFO ordering so we can break early.
     this.sweepTimer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
@@ -78,7 +89,7 @@ export class MessageDedup {
     const key = scope ? `${scope}:${id}` : id;
     const now = Date.now();
 
-    const existing = this.store.get(key);
+    const existing = this.store.get(key) ?? this.persistence?.get(key);
     if (existing !== undefined) {
       // Entry exists — check TTL.
       if (now - existing < this.ttlMs) {
@@ -98,6 +109,8 @@ export class MessageDedup {
     }
 
     this.store.set(key, now);
+    this.persistence?.set(key, now);
+    this.persistence?.persist();
     return true;
   }
 
@@ -112,9 +125,10 @@ export class MessageDedup {
     this.store.clear();
   }
 
-  /** Stop the periodic sweep timer and clear all tracked entries. */
+  /** Stop the timer and flush message IDs; durable entries survive disposal. */
   dispose(): void {
     clearInterval(this.sweepTimer);
+    this.persistence?.persist();
     this.store.clear();
   }
 
@@ -133,5 +147,6 @@ export class MessageDedup {
       if (now - ts < this.ttlMs) break;
       this.store.delete(key);
     }
+    this.persistence?.sweep?.(now - this.ttlMs, this.maxEntries);
   }
 }
