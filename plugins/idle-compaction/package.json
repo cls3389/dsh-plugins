@@ -1,0 +1,37 @@
+{
+  "name": "@dsh-friends/idle-compaction",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "test-idle-compaction.mjs"
+  ],
+  "description": "Compact idle sessions automatically; event-driven idle detection works for every session host in the profile",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "cordis",
+    "compaction",
+    "context",
+    "feishu",
+    "session"
+  ],
+  "scripts": {
+    "test": "node --test test-idle-compaction.mjs"
+  }
+}

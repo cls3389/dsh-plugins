@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Idle Session Auto-Compaction",
+    "description": "Compacts idle sessions in the background so the next message starts from a small context; event-driven idle detection works for every session host in the profile."
+  }
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: idle-compaction
+      name: '@dsh-friends/idle-compaction'
