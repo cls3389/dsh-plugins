@@ -8,6 +8,9 @@
  * 工具面收窄:toolDeny/toolAllow(通配符,deny 优先)。
  */
 
+import fsModule from 'node:fs';
+import { connectionForExecution, connectionForOpenId } from '../../lib/user-connections.js';
+
 const name = 'ths-market';
 const inject = ['tools'];
 
@@ -229,7 +232,7 @@ function apply(ctx, config) {
 		if (toolAllowed(def.name)) ctx.tools.register(def);
 		else ctx.logger.info?.(`[ths-market] ${def.name}: skipped (toolDeny/toolAllow)`);
 	};
-	const fq = fqgateClient(ctx, cfg);
+	const fqFor = (exec) => fqgateClient(ctx, connectionForExecution(exec, cfg, 'market'));
 	// 自动执行双门禁:ths-trade 在场(ctx.tools 探测)+ xiadanApiKey 已配
 	const tradeToolAvailable = () => ctx.tools.get?.('ths_order_submit') !== undefined;
 	const xd = cfg.xiadanApiKey && tradeToolAvailable() ? xiadanClient(ctx, cfg) : null;
@@ -239,27 +242,26 @@ function apply(ctx, config) {
 	const watch = createWatchEngine(ctx, cfg, { xd });
 
 
-	const dc = {
-		get: (path) => request(ctx, cfg.dataCenterBaseUrl, path, {
-			headers: { 'X-API-Key': cfg.dataCenterApiKey },
-			timeoutMs: cfg.requestTimeoutMs,
-		}).then((envelope) => {
-			if (!envelope || envelope.ok === false) {
-				throw new Error(`data-center: ${envelope?.error ?? 'unknown error'}`);
-			}
-			return envelope.data ?? envelope;
-		}),
-		post: (path, body) => request(ctx, cfg.dataCenterBaseUrl, path, {
-			method: 'POST',
-			headers: { 'X-API-Key': cfg.dataCenterApiKey, 'Content-Type': 'application/json' },
-			body: body ?? {}, // request() 内部统一 JSON.stringify,这里传原始对象
-			timeoutMs: Math.max(cfg.requestTimeoutMs ?? 10000, 30000), // 问财 AI 摘要生成较慢
-		}).then((envelope) => {
-			if (!envelope || envelope.ok === false) {
-				throw new Error(`data-center: ${envelope?.error ?? 'unknown error'}`);
-			}
-			return envelope.data ?? envelope;
-		})
+	const dcFor = (exec) => {
+		const userCfg = connectionForExecution(exec, cfg, 'market');
+		return {
+			get: (path) => request(ctx, userCfg.dataCenterBaseUrl, path, {
+				headers: { 'X-API-Key': userCfg.dataCenterApiKey },
+				timeoutMs: userCfg.requestTimeoutMs,
+			}).then((envelope) => {
+				if (!envelope || envelope.ok === false) throw new Error(`data-center: ${envelope?.error ?? 'unknown error'}`);
+				return envelope.data ?? envelope;
+			}),
+			post: (path, body) => request(ctx, userCfg.dataCenterBaseUrl, path, {
+				method: 'POST',
+				headers: { 'X-API-Key': userCfg.dataCenterApiKey, 'Content-Type': 'application/json' },
+				body: body ?? {},
+				timeoutMs: Math.max(userCfg.requestTimeoutMs ?? 10000, 30000),
+			}).then((envelope) => {
+				if (!envelope || envelope.ok === false) throw new Error(`data-center: ${envelope?.error ?? 'unknown error'}`);
+				return envelope.data ?? envelope;
+			}),
+		};
 	};
 	register({
 		name: 'ths_quote',
@@ -288,7 +290,7 @@ function apply(ctx, config) {
 					securities: codes.map((code) => ({ market, code })),
 					fields: args.fields?.length ? args.fields : DEFAULT_QUOTE_FIELDS,
 				};
-				const raw = await fq.post('/v1/market/realtime/quote', body);
+				const raw = await fqFor(exec).post('/v1/market/realtime/quote', body);
 				const rows = decodeRows(raw?.data);
 				for (const row of rows) {
 					const code = String(row.code ?? '').replace(/^[A-Z]+/, '');
@@ -330,7 +332,7 @@ function apply(ctx, config) {
 			if (args.start_date) body.start_date = args.start_date;
 			if (args.end_date) body.end_date = args.end_date;
 			if (args.adjust) body.adjust = args.adjust;
-			const raw = await fq.post('/v1/market/history/klines', body);
+			const raw = await fqFor(exec).post('/v1/market/history/klines', body);
 			return { klines: raw?.data ?? raw };
 		},
 	});
@@ -347,7 +349,7 @@ function apply(ctx, config) {
 		},
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			const raw = await fq.post('/v1/market/catalog/search-symbols', { pattern: args.pattern });
+			const raw = await fqFor(exec).post('/v1/market/catalog/search-symbols', { pattern: args.pattern });
 			return { symbols: raw?.data ?? raw };
 		},
 	});
@@ -367,14 +369,14 @@ function apply(ctx, config) {
 		async execute(args, exec) {
 			// 优先数据中心 cookie 版:AI 摘要 + 富列(涨停原因/几天几板/封单额/首板时间…)
 			try {
-				const data = await dc.post('/api/wencai/query2data', {
+				const data = await dcFor(exec).post('/api/wencai/query2data', {
 					query: args.condition,
 					limit: args.limit ?? 20,
 				});
 				return { source: 'data-center', answer: data?.answer ?? '', tables: data?.tables ?? [] };
 			} catch (err) {
 				// 回退 FQGate wencai-nlp(列较少,无 AI 摘要)
-				const raw = await fq.post('/v1/market/selection/wencai-nlp', { condition: args.condition });
+				const raw = await fqFor(exec).post('/v1/market/selection/wencai-nlp', { condition: args.condition });
 				return { source: 'fqgate-fallback', result: raw?.data ?? raw, fallbackReason: String(err?.message ?? err) };
 			}
 		},
@@ -396,19 +398,28 @@ function apply(ctx, config) {
 		async execute(args, exec) {
 			const { market, code } = parseSecurity(args.code);
 			if (args.kind === 'depth') {
-				const raw = await fq.post('/v1/market/level2/depth', { securities: [{ market, code }] });
+				const raw = await fqFor(exec).post('/v1/market/level2/depth', { securities: [{ market, code }] });
 				return { depth: raw?.data ?? raw };
 			}
 			if (args.kind === 'transactions') {
-				const body = { market, code, fields: ['price', 'volume', 'side', 'trade_time', 'volclass', 'transaction_count'] };
-				if (args.count != null) body.count = args.count;
-				const raw = await fq.post('/v1/market/level2/transactions', body);
+				const body = {
+					market, code,
+					fields: ['price', 'volume', 'side', 'trade_time', 'volclass', 'transaction_count'],
+					count: args.count ?? 50,
+					end_time: 0,
+				};
+				const raw = await fqFor(exec).post('/v1/market/level2/transactions', body);
 				return { transactions: raw?.data ?? raw };
 			}
 			if (args.kind === 'orders') {
-				const body = { market, code, fields: ['order_no', 'price', 'side', 'volume', 'amount', 'order_time'] };
-				if (args.count != null) body.count = args.count;
-				const raw = await fq.post('/v1/market/level2/orders', body);
+				const body = {
+					market, code,
+					fields: ['order_no', 'price', 'side', 'volume', 'amount', 'order_time'],
+					range: { count: args.count ?? 50, end: 0, mode: 'recent' },
+					require_data: true,
+					semantic: true,
+				};
+				const raw = await fqFor(exec).post('/v1/market/level2/orders', body);
 				return { orders: raw?.data ?? raw };
 			}
 			throw new Error(`未知的 level2 kind: ${args.kind}`);
@@ -434,9 +445,9 @@ function apply(ctx, config) {
 				plates: args?.withHotPlates !== false,
 			};
 			const [dist, effect, avg] = await Promise.all([
-				dc.get('/api/market/change-distribution').catch((e) => ({ error: String(e?.message ?? e) })),
-				dc.get('/api/market/money-effect').catch((e) => ({ error: String(e?.message ?? e) })),
-				dc.get('/api/market/average-increase').catch((e) => ({ error: String(e?.message ?? e) })),
+				dcFor(exec).get('/api/market/change-distribution').catch((e) => ({ error: String(e?.message ?? e) })),
+				dcFor(exec).get('/api/market/money-effect').catch((e) => ({ error: String(e?.message ?? e) })),
+				dcFor(exec).get('/api/market/average-increase').catch((e) => ({ error: String(e?.message ?? e) })),
 			]);
 			const pulse = {
 				timestamp: new Date().toISOString(),
@@ -450,11 +461,11 @@ function apply(ctx, config) {
 			if (want.limits) {
 				const today = new Date(Date.now() + (8 * 60 + new Date().getTimezoneOffset()) * 60000);
 				const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-				pulse.limitStocks = await dc.get(`/api/market/limit-stocks?date=${dateStr}`)
+				pulse.limitStocks = await dcFor(exec).get(`/api/market/limit-stocks?date=${dateStr}`)
 					.catch((e) => ({ error: String(e?.message ?? e) }));
 			}
 			if (want.plates) {
-				pulse.hotPlates = await dc.get('/api/market/hot-plates?days=10&filter=no_filter')
+				pulse.hotPlates = await dcFor(exec).get('/api/market/hot-plates?days=10&filter=no_filter')
 					.catch((e) => ({ error: String(e?.message ?? e) }));
 			}
 			return { pulse };
@@ -478,7 +489,7 @@ function apply(ctx, config) {
 		async execute(args, exec) {
 			const period = args.time_period ?? 'sec_10';
 			const count = args.count ?? 120;
-			const data = await dc.get(`/api/market/sec-kline?market=${args.market}&code=${args.code}&time_period=${period}&count=${count}&end_time=0`);
+			const data = await dcFor(exec).get(`/api/market/sec-kline?market=${args.market}&code=${args.code}&time_period=${period}&count=${count}&end_time=0`);
 			return { secKline: data, fields: '1=时间, 7/8/9/11=开高低收, 13=量, 19=额' };
 		},
 	});
@@ -489,55 +500,12 @@ function apply(ctx, config) {
 		parameters: { type: 'object', properties: {} },
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			const data = await dc.get('/api/market/move-detail');
+			const data = await dcFor(exec).get('/api/market/move-detail');
 			return { moves: data };
 		},
 	});
 
-	/* ── 自选股管理(数据中心 REST /api/favorites/*,与手机同花顺自选同源)── */
-
-	/** groups 列表瘦身:丢 items 明细,只留分组骨架(agent 需要明细时再点开) */
-	function slimGroups(payload) {
-		if (!Array.isArray(payload?.items)) return payload;
-		const out = { ok: payload.ok, count: payload.count, groups: [] };
-		if (payload.version != null) out.version = payload.version;
-		for (const g of payload.items) {
-			out.groups.push({
-				name: g.name, group_id: g.group_id, readonly: g.readonly, is_self: g.is_self,
-				stocks: (g.items ?? []).length,
-			});
-		}
-		return out;
-	}
-
-	/** 自选列表瘦身:保留关键行情字段,丢市场码冗余(undefined 一律不设键,避免 lossless JSON 校验失败) */
-	function slimStocks(payload, { withQuote = true } = {}) {
-		if (!Array.isArray(payload?.items)) return payload;
-		const out = { ok: payload.ok, count: payload.count, stocks: [] };
-		if (payload.version != null) out.version = payload.version; // self 接口无 version,勿塞 undefined
-		for (const s of payload.items) {
-			if (!s.code) continue;
-			const row = { code: s.code };
-			if (s.name) row.name = s.name;
-			if (withQuote && s.price != null && s.price !== '' && Number.isFinite(s.price)) {
-				row.price = s.price;
-				if (s.change_percent != null && Number.isFinite(s.change_percent)) row.chgPct = s.change_percent;
-				if (s.high != null && Number.isFinite(s.high)) row.high = s.high;
-				if (s.low != null && Number.isFinite(s.low)) row.low = s.low;
-				if (s.open != null && Number.isFinite(s.open)) row.open = s.open;
-			}
-			out.stocks.push(row);
-		}
-		return out;
-	}
-
-	/** 上游 ok:false 抛错(REST 约定:200 + ok:false 是业务失败) */
-	function favGuard(env) {
-		if (!env || env.ok === false) {
-			throw new Error(`favorites: ${env?.error ?? env?.message ?? 'unknown error'}`);
-		}
-		return env;
-	}
+	/* 自选不属于公共行情：由 ths-favorites 提供每用户独立扫码登录与登录态。 */
 
 	/* ── 华宝证券可充抵保证金证券查询(2026-10-29 自 OpenClaw cnhb-margin-collateral 移植) ── */
 
@@ -650,7 +618,7 @@ function apply(ctx, config) {
 
 	register({
 		name: 'ths_watch_add',
-		description: '添加盯盘规则(FQGate WS 实时推送匹配)。类型:①阈值型 price_above/price_below/change_above/change_below;②拐点型 pullback_sell(回落卖出)/rebound_buy(反弹买入)——跟踪极值,从最高回落 threshold% 卖出或从最低反弹 threshold% 买入,confirmSeconds 连续确认(默认3秒,新极值重置);③big_order(大单)。两类行为:提醒型(无 action,触发唤醒 Agent 自动复核决策,不再等待用户确认)/条件单型(带 action,触发直接实盘下单)。默认 oneShot=true,成功委托后停止;需循环执行显式 oneShot:false,每次触发独立幂等键。护栏:单笔/当日限额、价格偏离、涨跌停保护。示例:移动止损→ {code:"003021",type:"pullback_sell",threshold:2,confirmSeconds:3,action:{side:"sell",quantityPercent:100}};固定止损→ {code:"003021",type:"price_below",threshold:90,action:{side:"sell",all:true}};反弹买入→ {code:"510300",type:"rebound_buy",threshold:1,anchorPrice:3.75,action:{side:"buy",amount:50000}}。复合条件 and 全命中才触发。',
+		description: '添加行情监控规则(FQGate WS 实时推送)：price_above/price_below/change_above/change_below 阈值、pullback_sell/rebound_buy 拐点、big_order 大单；and 为全部命中的复合条件。默认不填 action，仅触发行情提醒与 Agent 复核，不是买入/卖出建议，不要主动引导交易。仅当前用户已明确配置交易且明确要求条件单时才可填 action，触发将实盘执行。oneShot 默认 true。',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -701,22 +669,25 @@ function apply(ctx, config) {
 					if (args.action[key] != null && (!Number.isFinite(args.action[key]) || args.action[key] <= 0)) throw new Error(`${key} 必须是正数`);
 				}
 			}
-			if (args.action && !xd) {
+			if (args.action && !xd && !exec.agent?.larkUser?.openId) {
 				ctx.logger.warn('ths-market: action 规则已降级为提醒型(交易后端不可用:未安装 ths-trade 或未配 xiadanApiKey)');
 				args = { ...args, action: undefined };
 			}
+			if (args.action && exec.agent?.larkUser?.openId) {
+				connectionForOpenId(exec.agent.larkUser.openId, cfg, 'trading', exec.agent.larkUser.appId);
+			}
 			const rule = watch.addRule(args, exec.agent);
-			return { rule, active: watch.status() };
+			return { rule, active: watch.status(exec.agent?.larkUser?.openId) };
 		},
 	});
 
 	register({
 		name: 'ths_watch_list',
-		description: '列出当前全部盯盘规则与引擎状态(连接、订阅、最近触发、自动交易台账与限额余量)。',
+		description: '查看当前用户的行情监控引擎状态与本人规则(连接、行情、最近触发)。未配置交易的用户仅使用监控提醒，不展示下单能力或交易限额；只有明确配置交易的用户才显示条件单台账与限额。',
 		parameters: { type: 'object', properties: {} },
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			return watch.status();
+			return watch.status(exec.agent?.larkUser?.openId);
 		},
 	});
 
@@ -732,8 +703,8 @@ function apply(ctx, config) {
 		},
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			const removed = watch.removeRule(args.id);
-			if (!removed) throw new Error(`规则不存在: ${args.id}`);
+			const removed = watch.removeRule(args.id, exec.agent?.larkUser?.openId);
+			if (!removed) throw new Error(`规则不存在或不属于当前用户: ${args.id}`);
 			return { removed };
 		},
 	});
@@ -1026,7 +997,20 @@ function createWatchEngine(ctx, cfg, { xd }) {
 
 	/** 条件单自动执行(带护栏);返回执行结果(never throws) */
 	async function executeAutoTrade(rule, quote, hitText) {
-		if (!xd) return { blocked: true, reason: '交易后端不可用(未安装 ths-trade 或未配 xiadanApiKey),本条不执行' };
+		let tradeCfg = cfg;
+		let tradeXd = xd;
+		if (rule.ownerOpenId) {
+			try {
+				tradeCfg = connectionForOpenId(rule.ownerOpenId, cfg, 'trading');
+				tradeXd = xiadanClient(ctx, tradeCfg);
+			} catch (error) {
+				const blocked = { at: nowMs(), ruleId: rule.id, code: rule.code, status: 'blocked', reason: String(error?.message ?? error) };
+				ledger.push(blocked);
+				scheduleSave();
+				return blocked;
+			}
+		}
+		if (!tradeXd) return { blocked: true, reason: '交易后端不可用(未安装 ths-trade 或未配 xiadanApiKey),本条不执行' };
 		const entry = {
 			at: nowMs(), ruleId: rule.id, code: rule.code, side: rule.action.side,
 			status: 'blocked', reason: '', hit: hitText, price: quote.price,
@@ -1039,7 +1023,7 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			if (qty == null && amount == null) {
 				if (rule.action.quantityPercent != null || rule.action.all) {
 					// 实时查持仓算股数
-					const posData = await xd.get('/api/v1/account/positions');
+					const posData = await tradeXd.get('/api/v1/account/positions');
 					const positions = posData?.result?.data?.position ?? {};
 					const pos = positions[rule.code];
 					const available = Number(pos?.kyye ?? 0);
@@ -1058,18 +1042,21 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			const orderPrice = resolveAutoOrderPrice(rule, quote);
 			// 1) 单笔限额
 			const estValue = qty != null ? qty * orderPrice : amount;
-			if (estValue > cfg.autoTradeMaxOrderValue) {
-				throw new Error(`单笔金额 ${estValue} 超限额 ${cfg.autoTradeMaxOrderValue}`);
+			if (estValue > tradeCfg.autoTradeMaxOrderValue) {
+				throw new Error(`单笔金额 ${estValue} 超限额 ${tradeCfg.autoTradeMaxOrderValue}`);
 			}
-			// 2) 当日累计限额
-			if (dailyAutoValue + estValue > cfg.autoTradeDailyMaxValue) {
-				throw new Error(`当日累计 ${dailyAutoValue + estValue} 将超限额 ${cfg.autoTradeDailyMaxValue}`);
+			// 2) 当日累计限额（用户规则只累计本人台账，不挤占也不共享别人的额度）
+			const usedToday = rule.ownerOpenId
+				? ledger.filter((item) => item.ownerOpenId === rule.ownerOpenId && item.status === 'submitted' && shanghaiDateKey(item.at) === dailyAutoDate).reduce((sum, item) => sum + (Number.isFinite(item.value) ? item.value : 0), 0)
+				: dailyAutoValue;
+			if (usedToday + estValue > tradeCfg.autoTradeDailyMaxValue) {
+				throw new Error(`当日累计 ${usedToday + estValue} 将超限额 ${tradeCfg.autoTradeDailyMaxValue}`);
 			}
 			// 3) 价格偏离保护(限 price 类规则):现价相对阈值偏离过大 → 转人工
 			if (rule.type === 'price_above' || rule.type === 'price_below') {
 				const deviation = Math.abs((quote.price - rule.threshold) / rule.threshold) * 100;
-				if (deviation > cfg.autoTradeMaxDeviationPercent) {
-					throw new Error(`现价 ${quote.price} 偏离阈值 ${rule.threshold} 达 ${round4(deviation)}%(> ${cfg.autoTradeMaxDeviationPercent}%),跳空过大转人工`);
+				if (deviation > tradeCfg.autoTradeMaxDeviationPercent) {
+					throw new Error(`现价 ${quote.price} 偏离阈值 ${rule.threshold} 达 ${round4(deviation)}%(> ${tradeCfg.autoTradeMaxDeviationPercent}%),跳空过大转人工`);
 				}
 			}
 			// 4) 涨跌停保护:委托价接近当日涨跌停(按昨收 ±10% 估算)不追
@@ -1089,14 +1076,14 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			if (qty != null) body.quantity = qty;
 			if (amount != null) body.amount = amount;
 			if (rule.action.reduceOnly) body.reduce_only = true;
-			const result = await request(ctx, cfg.xiadanBaseUrl, '/api/v1/trading/orders', {
+			const result = await request(ctx, tradeCfg.xiadanBaseUrl, '/api/v1/trading/orders', {
 				method: 'POST', body,
 				headers: {
-					Authorization: `Bearer ${cfg.xiadanApiKey}`,
+					Authorization: `Bearer ${tradeCfg.xiadanApiKey}`,
 					'X-Xiadan-Intent': 'real-trade',
 					'X-Xiadan-Idempotency-Key': idem,
 				},
-				timeoutMs: cfg.requestTimeoutMs,
+				timeoutMs: tradeCfg.requestTimeoutMs,
 			}).then((env) => unwrapXiadan(env, 'auto/orders'));
 			entry.status = 'submitted';
 			entry.orderId = result?.orderId ?? null;
@@ -1106,9 +1093,10 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			entry.errorCode = result?.errorCode ?? null;
 			entry.orderPrice = orderPrice;
 			entry.quantity = qty ?? null;
-			dailyAutoValue += estValue;
+			if (!rule.ownerOpenId) dailyAutoValue += estValue;
 			stats.autoTrades += 1;
 			entry.value = estValue;
+			if (rule.ownerOpenId) entry.ownerOpenId = rule.ownerOpenId;
 			// 成交回报跟踪:30s/2m/5m 三次查当日成交更新台账
 			if (entry.htbh) trackFill(rule.id, String(entry.htbh));
 		} catch (error) {
@@ -1132,15 +1120,18 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			if (fillTimer) { clearInterval(fillTimer); fillTimer = null; }
 			return;
 		}
-		let dealsByHtbh;
-		try {
-			const dealsData = await xd.get('/api/v1/account/deals');
-			dealsByHtbh = dealsData?.result?.data?.deal ?? dealsData?.result?.data?.deals ?? {};
-		} catch { return; } // 查询失败下次再试
 		for (const [ruleId, watcher] of [...fillWatchers]) {
 			const elapsed = nowMs() - watcher.startedAt;
 			if (elapsed > 310000) { fillWatchers.delete(ruleId); continue; } // 超时停止跟踪
 			if (elapsed < watcher.checks[0]) continue;
+			const rule = rules.get(ruleId);
+			let dealsByHtbh;
+			try {
+				const fillXd = rule?.ownerOpenId ? xiadanClient(ctx, connectionForOpenId(rule.ownerOpenId, cfg, 'trading')) : xd;
+				if (!fillXd) continue;
+				const dealsData = await fillXd.get('/api/v1/account/deals');
+				dealsByHtbh = dealsData?.result?.data?.deal ?? dealsData?.result?.data?.deals ?? {};
+			} catch { continue; } // 查询失败下次再试；绝不切换到其他用户账户
 			// 找该合同号的成交
 			let found = null;
 			for (const [code, list] of Object.entries(dealsByHtbh ?? {})) {
@@ -1168,20 +1159,25 @@ function createWatchEngine(ctx, cfg, { xd }) {
 		}
 	}
 
-	/** 唤醒 agent:优先规则归属会话,回退最新会话 */
+	/** 唤醒规则原会话；用户规则绝不回退到其他用户的最新会话。 */
 	async function wakeAgent(rule, text) {
 		try {
+			// 2026-10-30 修复:ctx.sessionQuery 未注入(agent 宿主重构后),旧实现
+			// 每次触发都抛 "cannot get property sessionQuery without inject" 进
+			// catch 丢弃。改为:归属会话直接经 agents registry resume(owners 表
+			// 里的 sessionId resume 不存在即回退);无归属旧规则回退 registry 最近
+			// 常驻 agent。两者都不依赖未注入服务。
 			let sessionId = ruleOwners.get(rule.id);
-			if (sessionId) {
-				// 确认归属会话仍存在,不存在则回退最新活跃会话
-				const records = await ctx.sessionQuery.listSessions();
-				if (!records.some((r) => r.header.id === sessionId)) sessionId = undefined;
+			if (!sessionId && rule.ownerOpenId) {
+				ctx.logger.warn(`ths-watch: 用户规则的归属会话不可用,触发丢弃 rule=${rule.id}`);
+				return;
 			}
 			if (!sessionId) {
-				const records = await ctx.sessionQuery.listSessions();
-				const live = records.filter((r) => r.live);
+				const agents = ctx.get('agents');
+				const fallback = typeof agents?.live === 'function' ? agents.live() : (typeof agents?.list === 'function' ? agents.list() : []);
+				const live = Array.isArray(fallback) ? fallback : [];
 				if (live.length === 0) { ctx.logger.warn('ths-watch: 无活跃会话,触发丢弃'); return; }
-				sessionId = live[0].header.id;
+				sessionId = live[live.length - 1].session?.id ?? live[live.length - 1].sessionId ?? live[live.length - 1].id;
 			}
 			// 注意:不要访问 ctx.sessionController——它不在 inject 声明里,Cordis 对
 			// 未注入属性的访问直接抛 "cannot get property ... without inject",
@@ -1189,6 +1185,7 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			// registry 显式查找(ctx.get('agents')),web/feishu 双 profile 通用。
 			const resolved = await resolveAgentFromRegistry(ctx, sessionId);
 			if ('error' in resolved) throw new Error(`resolveAgent: ${JSON.stringify(resolved.error)}`);
+			if (rule.ownerOpenId) resolved.agent.larkUser = { openId: rule.ownerOpenId };
 			const message = {
 				id: `ths-watch-${rule.id}-${nowMs()}`,
 				role: 'user',
@@ -1196,7 +1193,12 @@ function createWatchEngine(ctx, cfg, { xd }) {
 				source: { kind: 'schedule' },
 			};
 			resolved.agent.followup(message);
-			await ctx.sessions.flush(resolved.agent.session);
+			// ctx.sessions 同样未注入(2026-10-30 二次修复):flush 走 agent 自身的
+			// scoped ctx 拿 sessions 服务,宿主无关。
+			try {
+				const agentSessions = resolved.agent.ctx?.get?.('sessions');
+				if (agentSessions?.flush) await agentSessions.flush(resolved.agent.session);
+			} catch { /* flush 失败不影响唤醒本身;followup 已入队 */ }
 			stats.fired += 1;
 		} catch (error) {
 			ctx.logger.warn(`ths-watch wake: ${error?.message ?? error}`);
@@ -1464,6 +1466,7 @@ function createWatchEngine(ctx, cfg, { xd }) {
 				...(Array.isArray(args.and) && args.and.length ? { and: args.and } : {}),
 				...(args.action ? { action: args.action } : {}),
 				oneShot: args.oneShot !== false,
+				...(agent?.larkUser?.openId ? { ownerOpenId: agent.larkUser.openId } : {}),
 				createdAt: nowMs(),
 			};
 			rules.set(id, rule);
@@ -1476,9 +1479,9 @@ function createWatchEngine(ctx, cfg, { xd }) {
 		testEvaluate(code, row) {
 			evaluateRules(code, row, { forceTrading: true });
 		},
-		removeRule(id) {
+		removeRule(id, openId) {
 			const rule = rules.get(id);
-			if (!rule) return null;
+			if (!rule || (openId && rule.ownerOpenId !== openId)) return null;
 			rules.delete(id);
 			ruleOwners.delete(id);
 			conditionStates.delete(id);
@@ -1488,30 +1491,39 @@ function createWatchEngine(ctx, cfg, { xd }) {
 			scheduleSave();
 			return rule;
 		},
-		status() {
+		status(openId) {
 			ensureDailyWindow();
+			let canTrade = Boolean(xd);
+			if (openId) {
+				try { connectionForOpenId(openId, cfg, 'trading'); canTrade = true; }
+				catch { canTrade = false; }
+			}
+			const ownedRuleIds = new Set([...rules.values()].filter((rule) => !openId || rule.ownerOpenId === openId).map((rule) => rule.id));
 			return {
+				engine: '行情监控引擎',
+				mode: canTrade ? 'monitor_and_conditional_orders' : 'market_monitor',
+				description: canTrade ? '行情监控与条件单引擎；仅在规则明确带 action 时执行交易' : '行情监控与提醒；当前用户未配置交易连接，不执行下单',
+				canTrade,
 				enabled: cfg.watchEnabled && watchIsMaster,
 				connected: stats.connectedAt !== null,
 				connectedAt: stats.connectedAt,
 				reconnects: stats.reconnects,
 				pushes: stats.pushes,
 				fired: stats.fired,
-				autoTrades: stats.autoTrades,
-				autoBlocked: stats.autoBlocked,
+				...(canTrade ? { autoTrades: stats.autoTrades, autoBlocked: stats.autoBlocked } : {}),
 				lastError: stats.lastError,
 				tradingHours: isTradingHours(),
 				tradingDay,
-				rules: [...rules.values()],
-				recentFires: firedHistory.slice(-10),
-				ledger: ledger.slice(-20),
-				autoTradeGuardrails: {
+				rules: [...rules.values()].filter((rule) => ownedRuleIds.has(rule.id)),
+				recentFires: firedHistory.filter((fire) => ownedRuleIds.has(fire.ruleId)).slice(-10),
+				ledger: ledger.filter((entry) => ownedRuleIds.has(entry.ruleId)).slice(-20),
+				...(canTrade ? { autoTradeGuardrails: {
 					maxOrderValue: cfg.autoTradeMaxOrderValue,
 					dailyMaxValue: cfg.autoTradeDailyMaxValue,
 					dailyUsedValue: dailyAutoValue,
 					maxDeviationPercent: cfg.autoTradeMaxDeviationPercent,
 					haltGuardPercent: cfg.autoTradeHaltGuardPercent,
-				},
+				} } : {}),
 				// price 兜底:WS 初始快照可能缺 price(undefined 会让工具输出 lossless 校验失败)
 				lastQuotes: [...lastQuotes.entries()].map(([code, q]) => ({ code, price: q.price ?? null, at: q.at })),
 			};
