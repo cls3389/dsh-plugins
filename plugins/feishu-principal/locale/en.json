@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Feishu Principal",
-    "description": "Trusted Feishu identity, complete configuration, personal workspaces, credentials, and permissions."
+    "title": "Feishu Principal (identity & permissions)",
+    "description": "Resolves open_id→user hash, personal workspace paths, login state, tools.extra and business permissions; install in the feishu profile. Hard dependency of the channel, per-user memory and favorites sync; the GUI tree is rendered by feishu-workspaces."
   }
 }

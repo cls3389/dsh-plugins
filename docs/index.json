@@ -236,7 +236,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "7d9562d6c481d0791e7db98823f6230407c0f4e8",
+            "commit": "94dcfda34ce1735bfc820bf9bbb3738bb35d4a9f",
             "path": "plugins/feishu-memory"
           },
           "engines": {}
@@ -246,12 +246,12 @@
     {
       "name": "@dsh-friends/feishu-principal",
       "title": {
-        "zh": "飞书用户基座",
-        "en": "Feishu Principal"
+        "zh": "飞书用户基座（身份与权限层）",
+        "en": "Feishu Principal (identity & permissions)"
       },
       "description": {
-        "zh": "统一管理飞书 open_id、用户配置、个人工作区、登录态与业务权限。",
-        "en": "Trusted Feishu identity, complete configuration, personal workspaces, credentials, and permissions."
+        "zh": "open_id→用户哈希、个人工作区路径、登录态、tools.extra 与业务权限的统一解析，装在飞书 profile，是渠道/用户记忆/自选同步的硬依赖；GUI 工作区树由「飞书应用工作区」呈现。",
+        "en": "Resolves open_id→user hash, personal workspace paths, login state, tools.extra and business permissions; install in the feishu profile. Hard dependency of the channel, per-user memory and favorites sync; the GUI tree is rendered by feishu-workspaces."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -264,8 +264,8 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793291737,
+          "version": "0.1.1",
+          "publishTimestamp": 1793323870,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -279,12 +279,12 @@
     {
       "name": "@dsh-friends/feishu-workspaces",
       "title": {
-        "zh": "飞书应用工作区",
-        "en": "Feishu App Workspaces"
+        "zh": "飞书应用工作区（GUI 展示层）",
+        "en": "Feishu App Workspaces (GUI view)"
       },
       "description": {
-        "zh": "按飞书应用名称和 App ID 把 Lark 会话归组到只读工作区目录。",
-        "en": "Groups Lark sessions into read-only workspace directories by Feishu app name and App ID."
+        "zh": "把飞书 app×用户 工作区聚合成「飞书应用」树注册进 Web GUI，装在 web profile；身份与权限由「飞书用户基座」负责（装在飞书 profile），两者配套构成完整飞书栈。",
+        "en": "Aggregates Feishu app×user workspaces into the GUI workspace tree; install in the web profile. Identity and permissions live in feishu-principal (feishu profile) — the two pair up for the full Feishu stack."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -297,8 +297,8 @@
       },
       "versions": [
         {
-          "version": "0.2.0",
-          "publishTimestamp": 1793142324,
+          "version": "0.2.1",
+          "publishTimestamp": 1793323870,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -550,7 +550,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "commit": "94dcfda34ce1735bfc820bf9bbb3738bb35d4a9f",
             "path": "plugins/ths-favorites"
           },
           "engines": {}

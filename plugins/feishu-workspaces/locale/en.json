@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Feishu App Workspaces",
-    "description": "Groups Lark sessions into read-only workspace directories by Feishu app name and App ID."
+    "title": "Feishu App Workspaces (GUI view)",
+    "description": "Aggregates Feishu app×user workspaces into the GUI workspace tree; install in the web profile. Identity and permissions live in feishu-principal (feishu profile) — the two pair up for the full Feishu stack."
   }
 }

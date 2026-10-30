@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,6 +16,9 @@ function entity(path, title, sessionIds = []) {
     },
     async attachSession(id) {
       if (!this.sessionIds.includes(id)) this.sessionIds.unshift(id);
+    },
+    async detachSession(id) {
+      this.sessionIds = this.sessionIds.filter((sessionId) => sessionId !== id);
     },
   };
 }
@@ -35,6 +38,7 @@ test('readRegistry validates and normalizes a real directory workspace', async (
     appName: 'Bot',
     path: join(directory, 'app'),
     sessionIds: ['lark-1'],
+    users: {},
   });
 });
 
@@ -47,8 +51,11 @@ test('syncRegistries creates the directory and adopts only listed same-cwd sessi
     appId: 'cli_app',
     appName: 'Bot',
     path: appPath,
-    sessionIds: ['lark-current', 'lark-old'],
+    sessionIds: ['lark-current'],
+    users: { aaaaaaaaaaaaaaaaaaaaaaaa: { displayName: 'Alice', path: join(directory, 'app', 'users', 'user-hash'), sessionIds: ['lark-user'] } },
   }));
+  const userPath = join(appPath, 'users', 'user-hash');
+  await mkdir(userPath, { recursive: true });
   const legacy = entity('lark://cli_app', 'Bot', ['lark-old']);
   const ordinary = entity('/repo', 'Repo', ['session-web']);
   const workspaces = [legacy, ordinary];
@@ -69,6 +76,7 @@ test('syncRegistries creates the directory and adopts only listed same-cwd sessi
       list: async () => [
         { header: { id: 'session-web', cwd: '/repo' } },
         { header: { id: 'lark-current', cwd: appPath } },
+        { header: { id: 'lark-user', cwd: userPath } },
         { header: { id: 'lark-old', cwd: '/legacy' } },
         { header: { id: 'lark-unlisted', cwd: appPath } },
       ],
@@ -81,11 +89,22 @@ test('syncRegistries creates the directory and adopts only listed same-cwd sessi
   assert.equal(result.workspaceId, await realpath(appPath));
   assert.equal(result.path, await realpath(appPath));
   assert.deepEqual(result.sessionIds, ['lark-current']);
+  const canonicalUserPath = await realpath(userPath);
+  const userWorkspace = workspaces.find((workspace) => workspace.path === canonicalUserPath);
+  assert.equal(userWorkspace.title, 'Alice');
+  assert.deepEqual(userWorkspace.sessionIds, ['lark-user']);
   assert.equal(workspaces.some((workspace) => workspace.path.startsWith('lark://')), false);
   assert.deepEqual(ordinary.sessionIds, ['session-web']);
-  assert.equal(workspaces[1].title, 'cli_app');
+  const appWorkspace = workspaces.find((workspace) => workspace.path === result.path);
+  assert.equal(appWorkspace.title, 'Bot');
+  const canonicalDirectory = await realpath(directory);
+  const parentWorkspace = workspaces.find((workspace) => workspace.path === canonicalDirectory);
+  assert.equal(parentWorkspace.title, '飞书应用');
+  assert.deepEqual(parentWorkspace.sessionIds, []);
 
-  workspaces[1].title = 'My custom name';
+  appWorkspace.title = 'My custom name';
+  const count = workspaces.length;
   await syncRegistries(ctx, [registryPath]);
-  assert.equal(workspaces[1].title, 'My custom name');
+  assert.equal(appWorkspace.title, 'My custom name');
+  assert.equal(workspaces.length, count);
 });

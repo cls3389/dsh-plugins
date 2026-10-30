@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "飞书应用工作区",
-    "description": "按飞书应用名称和 App ID 把 Lark 会话归组到只读工作区目录。"
+    "title": "飞书应用工作区（GUI 展示层）",
+    "description": "把飞书 app×用户 工作区聚合成「飞书应用」树注册进 Web GUI，装在 web profile；身份与权限由「飞书用户基座」负责（装在飞书 profile），两者配套构成完整飞书栈。"
   }
 }
