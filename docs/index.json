@@ -99,12 +99,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793329263,
+          "version": "0.1.2",
+          "publishTimestamp": 1793332872,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
+            "commit": "5078cf3ebfe4f3c1a38900e40db7e5034806db62",
             "path": "plugins/document-tools"
           },
           "engines": {}
@@ -132,12 +132,12 @@
       },
       "versions": [
         {
-          "version": "0.3.1",
-          "publishTimestamp": 1793326163,
+          "version": "0.3.2",
+          "publishTimestamp": 1793332872,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "bd6f67b88f6b37139454b808681d5795c556cb9b",
+            "commit": "5078cf3ebfe4f3c1a38900e40db7e5034806db62",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -264,12 +264,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793323870,
+          "version": "0.1.2",
+          "publishTimestamp": 1793332872,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "5857e284510f4f6a0b70b9143719e2956df7c571",
+            "commit": "5078cf3ebfe4f3c1a38900e40db7e5034806db62",
             "path": "plugins/feishu-principal"
           },
           "engines": {}
