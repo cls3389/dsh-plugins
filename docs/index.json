@@ -132,12 +132,12 @@
       },
       "versions": [
         {
-          "version": "0.3.0",
-          "publishTimestamp": 1793324232,
+          "version": "0.3.1",
+          "publishTimestamp": 1793326163,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "6e7df48badd4755db94d32c556132ac5f12a4805",
+            "commit": "bd6f67b88f6b37139454b808681d5795c556cb9b",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
