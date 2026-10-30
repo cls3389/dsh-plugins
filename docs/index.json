@@ -578,12 +578,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793246487,
+          "version": "0.1.1",
+          "publishTimestamp": 1793327684,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "commit": "fc35b27e7d4704e225434631433173e4334bdec8",
             "path": "plugins/ths-market"
           },
           "engines": {}
