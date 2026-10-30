@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "媒体工具",
-    "description": "SenseNova 文生图/图生图(经 CPA 网关)与文档转 Markdown(docx/pptx/xlsx/csv 等,毫秒级本地转换)。"
+    "description": "腾讯混元文生图/图生图(经 CPA 网关)，支持多图输出与本地参考图。"
   }
 }

@@ -306,7 +306,14 @@ function registerTool(ctx, client, { name, description, parameters }) {
     description,
     parameters,
     output: stringOutput,
-    execute: async (args, exec) => client.callTool(name, args, exec.signal),
+    execute: async (args, exec) => {
+      try {
+        return await client.callTool(name, args, exec.signal);
+      } catch (error) {
+        ctx.logger?.warn?.(`zread ${name} failed: ${error?.message ?? error}`);
+        throw error;
+      }
+    },
   });
 }
 

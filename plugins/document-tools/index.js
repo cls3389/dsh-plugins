@@ -47,6 +47,7 @@ export function apply(ctx, config) {
     },
     output: anyJsonOutput,
     async execute(args) {
+      try {
       const filePath = String(args.file_path || '').trim();
       if (!filePath) return { error: 'file_path 不能为空' };
       const resolved = path.resolve(filePath);
@@ -73,6 +74,10 @@ export function apply(ctx, config) {
       }
       ctx.logger.info?.(`[document-tools] converted ${resolved} (${format}, ${markdown.length} chars)`);
       return { status: 'ok', format, markdown, charCount: markdown.length, truncated };
+      } catch (error) {
+        ctx.logger?.warn?.(`doc_to_markdown failed: ${error?.message ?? error}`);
+        throw error;
+      }
     },
   });
   ctx.logger.info('[document-tools] active: doc_to_markdown');

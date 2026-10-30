@@ -126,7 +126,12 @@ export function apply(ctx, config) {
 		},
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			return await transcribe(cfg, args, exec);
+			try {
+				return await transcribe(cfg, args, exec);
+			} catch (error) {
+				ctx.logger?.warn?.(`asr_transcribe failed (source=${String(args?.source ?? '').slice(0, 80)}): ${error?.message ?? error}`);
+				throw error;
+			}
 		},
 	});
 
@@ -136,7 +141,12 @@ export function apply(ctx, config) {
 		parameters: { type: 'object', properties: {} },
 		output: anyJsonOutput,
 		async execute(_args, exec) {
-			return await callApi(cfg, '/health', { timeoutMs: cfg.healthTimeoutMs, signal: exec?.signal });
+			try {
+				return await callApi(cfg, '/health', { timeoutMs: cfg.healthTimeoutMs, signal: exec?.signal });
+			} catch (error) {
+				ctx.logger?.warn?.(`asr_health failed: ${error?.message ?? error}`);
+				throw error;
+			}
 		},
 	});
 

@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/media-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -19,9 +19,7 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "dependencies": {
-    "@firecrawl/anydoc": "^0.1.7"
-  },
-  "description": "媒体工具:SenseNova 文生图/图生图(via CPA)+ 文档转 Markdown(anydoc)",
+  "dependencies": {},
+  "description": "媒体工具:腾讯混元文生图/图生图(via CPA)",
   "license": "MIT"
 }

@@ -2,15 +2,13 @@
  * @dsh-friends/media-tools — 媒体工具
  *
  * 2026-10-29 自 OpenClaw(/opt/1panel/apps/openclaw)移植:
- *   image_generate    — SenseNova U1.5 Fast 文生图(via CPA /v1/images/generations)
- *   image_edit        — SenseNova U1.5 图生图/编辑(via CPA /v1/images/edits,1-5 参考图)
- *   doc_to_markdown   — 文档转 Markdown(@firecrawl/anydoc;docx/pptx/xlsx/rtf/epub/csv/od*)
+ *   image_generate    — 腾讯混元文生图(via CPA /v1/images/generations)
+ *   image_edit        — 腾讯混元图生图/编辑(via CPA /v1/images/edits,1-3 参考图)
  *
  * 生成图片落盘 cfg.imageDir(默认 /data/dsh/tmp/media-images),1 小时 TTL 自动清理;
  * 返回本地路径,会话可用 read_image 查看。
  */
 
-import { createRequire } from 'node:module';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -27,7 +25,6 @@ const CONFIG_DEFAULTS = {
 	imageDir: '/data/dsh/tmp/media-images',
 	allowedPathPrefixes: ['/tmp/', '/data/dsh/', '/home/'],
 	requestTimeoutMs: 60_000,
-	model: 'sensenova-u1.5-fast',
 };
 
 const anyJsonOutput = {
@@ -302,35 +299,6 @@ async function readCredentialRef(refName) {
 	}
 }
 
-/* ── anydoc(@firecrawl/anydoc 懒加载) ─────────── */
-
-let anydocLib = null;
-function loadAnydoc() {
-	if (anydocLib) return anydocLib;
-	try {
-		const require = createRequire(import.meta.url);
-		anydocLib = require('@firecrawl/anydoc');
-		return anydocLib;
-	} catch (err) {
-		throw new Error(`无法加载 @firecrawl/anydoc(插件目录需 npm install): ${err.message || err}`);
-	}
-}
-
-const DOC_ERROR_MESSAGES = {
-	unsupported: '不支持的文件格式。PDF 请直接用其他工具处理。',
-	malformed: '文件结构损坏,无法解析。',
-	encrypted: '文件已加密或受密码保护,无法转换。',
-	resourceLimit: '文件超出安全限制(解压体积/嵌套深度/节点数过大)。',
-	missingPart: '文件缺少必要组成部分,可能已损坏。',
-	io: '文件读取失败,请检查路径是否正确。',
-};
-const MAX_DOC_OUTPUT_CHARS = 500_000;
-
-function inferDocFormatFromPath(filePath) {
-	const ext = path.extname(filePath).toLowerCase().replace('.', '');
-	return ext === 'csv' ? 'csv' : null;
-}
-
 /* ── 插件入口 ─────────────────────── */
 
 export function apply(ctx, config) {
@@ -354,222 +322,102 @@ export function apply(ctx, config) {
 		return '';
 	}
 
-	/* ── image_generate:文生图 ── */
+	/* ── 腾讯混元生图（原生移植 codebuddy-media-mcp，不再经过 MCP）── */
+
+	const HUNYUAN_SIZES = ['1024x1024', '1024x1536', '1536x1024'];
+	async function callHunyuan(pathName, args, editing) {
+		if (!args.prompt?.trim()) return { error: 'prompt 必填' };
+		const size = args.size || '1024x1024';
+		if (!HUNYUAN_SIZES.includes(size)) return { error: `size 只支持 ${HUNYUAN_SIZES.join(' / ')}` };
+		const n = Number(args.n ?? 1);
+		if (!Number.isInteger(n) || n < 1 || n > 4) return { error: 'n 必须为 1-4 的整数' };
+		const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
+		if (!isAllowedBaseUrl(baseUrl)) return { error: 'baseUrl 非法(内网地址被拦截)' };
+		const apiKey = await resolveApiKey();
+		if (!apiKey) return { error: 'API key 未配置(apiKeyRef/apiKey)' };
+		const payload = {
+			model: args.model?.trim() || (editing ? 'hunyuan-image-alpha-edit' : 'hunyuan-image-alpha'),
+			prompt: args.prompt.trim(), size, n,
+		};
+		if (editing) {
+			if (!Array.isArray(args.images) || args.images.length < 1 || args.images.length > 3) return { error: 'images 必须为 1-3 张参考图' };
+			const images = [];
+			for (const [index, raw] of args.images.entries()) {
+				const value = String(raw ?? '').trim();
+				if (/^https?:\/\//i.test(value) || value.startsWith('data:image/')) {
+					images.push(value);
+					continue;
+				}
+				try {
+					const { resolved, info } = await readImageWithMagic(value, cfg.allowedPathPrefixes);
+					if (info.size > 10 * 1024 * 1024) return { error: `images[${index}] 超过 10MB` };
+					images.push(`data:${MIME_BY_FORMAT[info.format]};base64,${(await fs.readFile(resolved)).toString('base64')}`);
+				} catch (error) {
+					return { error: `images[${index}]: ${error.message}` };
+				}
+			}
+			payload.image = images;
+		}
+		try {
+			const resp = await fetchWithRetry(`${baseUrl}${pathName}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+				body: JSON.stringify(payload),
+			}, 180_000);
+			if (!resp.ok) return { error: `HTTP ${resp.status}: ${(await resp.text()).slice(0, 500)}` };
+			const data = await resp.json();
+			if (!Array.isArray(data?.data) || data.data.length === 0) return { error: '上游返回成功但没有图片数据' };
+			const savedImages = [];
+			for (const item of data.data) {
+				const saved = await extractAndSaveImage({ data: [item] }, 'png', cfg.imageDir, log, editing ? 'hunyuan-edit' : 'hunyuan-t2i');
+				if (saved.error) return { error: saved.error };
+				savedImages.push({ image_path: saved.savePath, bytes: saved.bytes });
+			}
+			return { status: 'ok', model: payload.model, count: savedImages.length, images: savedImages, image_path: savedImages[0].image_path };
+		} catch (error) {
+			return { error: String(error?.message ?? error) };
+		}
+	}
+
+	// 失败可见性:错误对象不 throw,统一在此记日志(2026-10-30)
+	const callHunyuanLogged = async (pathName, args, editing) => {
+		const result = await callHunyuan(pathName, args, editing);
+		if (result?.error) ctx.logger?.warn?.(`hunyuan ${pathName} failed: ${String(result.error).slice(0, 200)} (prompt=${String(args?.prompt ?? '').slice(0, 60)})`);
+		return result;
+	};
 
 	ctx.tools.register({
 		name: 'image_generate',
-		description:
-			'文生图(SenseNova U1.5 Fast,经 CPA 网关)。输入文字描述,返回生成图片的本地文件路径(1 小时后自动清理)。aspect_ratio 与 size 二选一,size 优先。',
+		description: '腾讯混元文生图（原生 DSH 工具，经 CPA）。返回 1-4 张本地图片，可用 feishu_send_image 发送 image_path。',
 		parameters: {
-			type: 'object',
-			properties: {
-				prompt: { type: 'string', description: '图像描述(必填)' },
-				aspect_ratio: { type: 'string', description: '宽高比预设,默认 16:9', enum: VALID_ASPECT_RATIOS },
-				size: { type: 'string', description: '显式尺寸 WIDTHxHEIGHT(32 的倍数,512-4096)或 "auto";覆盖 aspect_ratio' },
-				prompt_extend: { type: 'boolean', description: '让上游先扩写提示词。默认 false(约快 3 倍)' },
-				watermark: { type: 'boolean', description: '加水印。默认 false' },
-				output_format: { type: 'string', description: '输出格式,默认 png', enum: VALID_OUTPUT_FORMATS },
-			},
-			required: ['prompt'],
+			type: 'object', properties: {
+				prompt: { type: 'string', description: '图像描述' },
+				size: { type: 'string', enum: HUNYUAN_SIZES, description: '输出尺寸，默认 1024x1024' },
+				n: { type: 'integer', description: '生成数量 1-4，默认 1' },
+				model: { type: 'string', description: '可选模型，默认 gpt-image-2.5' },
+			}, required: ['prompt'],
 		},
 		output: anyJsonOutput,
-		async execute(args) {
-			if (!args.prompt) return { error: 'prompt 必填' };
-			const outputFormat = args.output_format || 'png';
-			let sizeStr;
-			if (args.size) {
-				const n = normalizeGenSize(args.size);
-				if (n.error) return { error: n.error };
-				sizeStr = n.size;
-			} else {
-				const ar = args.aspect_ratio || '16:9';
-				if (!SIZE_MAP[ar]) return { error: `无效 aspect_ratio "${ar}",可选: ${VALID_ASPECT_RATIOS.join(', ')}` };
-				sizeStr = SIZE_MAP[ar];
-			}
-			const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
-			if (!isAllowedBaseUrl(baseUrl)) return { error: 'baseUrl 非法(内网地址被拦截)' };
-			const apiKey = await resolveApiKey();
-			if (!apiKey) return { error: 'API key 未配置(apiKeyRef/apiKey)' };
-			const payload = {
-				model: cfg.model,
-				prompt: args.prompt,
-				size: sizeStr,
-				n: 1,
-				response_format: 'url',
-				output_format: outputFormat,
-				watermark: args.watermark === true,
-				prompt_extend: args.prompt_extend === true,
-			};
-			try {
-				const resp = await fetchWithRetry(`${baseUrl}/images/generations`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-					body: JSON.stringify(payload),
-				}, genTimeoutForSize(sizeStr));
-				if (!resp.ok) {
-					const text = await resp.text();
-					return { error: `HTTP ${resp.status}: ${text.slice(0, 500)}` };
-				}
-				const saved = await extractAndSaveImage(await resp.json(), outputFormat, cfg.imageDir, log, 't2i');
-				if (saved.error) return { error: saved.error };
-				return { status: 'ok', image_path: saved.savePath, bytes: saved.bytes, size: sizeStr, model: cfg.model };
-			} catch (err) {
-				return { error: String(err?.message || err) };
-			}
-		},
+		execute: (args) => callHunyuanLogged('/images/generations', args, false),
 	});
-
-	/* ── image_edit:图生图/编辑 ── */
 
 	ctx.tools.register({
 		name: 'image_edit',
-		description:
-			'图生图/图片编辑(SenseNova U1.5,经 CPA 网关)。1-5 张参考图(本地路径/公网 https/data URL, PNG/JPEG/WebP ≤10MB, 256-4096px, 宽高比 ≤2:1)+ 文字指令,返回生成图片本地路径。',
+		description: '腾讯混元图生图/图片编辑（原生 DSH 工具，经 CPA）。1-3 张本地图片、https URL 或 data URL，返回 1-4 张本地图片。',
 		parameters: {
-			type: 'object',
-			properties: {
-				images: { type: 'array', items: { type: 'string' }, description: '1-5 张参考图:本地路径、公网 https URL 或 data URL' },
-				prompt: { type: 'string', description: '编辑指令,如"把背景换成雪山"(必填)' },
-				size: { type: 'string', description: '输出尺寸 WIDTHxHEIGHT 或 "auto"(跟随源图,默认)' },
-				prompt_extend: { type: 'boolean', description: '让上游先扩写提示词。默认 false' },
-				watermark: { type: 'boolean', description: '加水印。默认 false' },
-				output_format: { type: 'string', description: '输出格式,默认 png', enum: VALID_OUTPUT_FORMATS },
-			},
-			required: ['images', 'prompt'],
+			type: 'object', properties: {
+				prompt: { type: 'string', description: '编辑指令' },
+				images: { type: 'array', items: { type: 'string' }, description: '1-3 张参考图' },
+				size: { type: 'string', enum: HUNYUAN_SIZES, description: '输出尺寸，默认 1024x1024' },
+				n: { type: 'integer', description: '生成数量 1-4，默认 1' },
+				model: { type: 'string', description: '可选模型，默认 gpt-image-2.5-edit' },
+			}, required: ['prompt', 'images'],
 		},
 		output: anyJsonOutput,
-		async execute(args) {
-			if (!args.prompt) return { error: 'prompt 必填' };
-			if (!Array.isArray(args.images) || args.images.length < 1) return { error: 'images 须为非空数组(1-5 张)' };
-			if (args.images.length > MAX_EDIT_IMAGES) return { error: `参考图最多 ${MAX_EDIT_IMAGES} 张` };
-			const outputFormat = args.output_format || 'png';
-			let sizeStr = 'auto';
-			if (args.size) {
-				const n = normalizeGenSize(args.size);
-				if (n.error) return { error: n.error };
-				sizeStr = n.size;
-			}
-			const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
-			if (!isAllowedBaseUrl(baseUrl)) return { error: 'baseUrl 非法(内网地址被拦截)' };
-			const apiKey = await resolveApiKey();
-			if (!apiKey) return { error: 'API key 未配置(apiKeyRef/apiKey)' };
-
-			const resolvedImages = [];
-			for (let i = 0; i < args.images.length; i++) {
-				const label = `images[${i}]`;
-				const value = String(args.images[i] || '').trim();
-				if (!value) return { error: `${label}: 不能为空` };
-				if (value.startsWith('data:')) {
-					const comma = value.indexOf(',');
-					if (comma < 0) return { error: `${label}: data URL 格式错误` };
-					const buf = Buffer.from(value.slice(comma + 1), 'base64');
-					if (!buf.length) return { error: `${label}: data URL 为空` };
-					const checked = validateEditImageBuffer(buf, label);
-					if (checked.error) return { error: checked.error };
-					resolvedImages.push({ image_url: value });
-					continue;
-				}
-				if (/^https?:\/\//i.test(value)) {
-					if (!isAllowedImageUrl(value)) return { error: `${label}: 仅允许公网 https 图片地址` };
-					resolvedImages.push({ image_url: value });
-					continue;
-				}
-				let buf;
-				try {
-					buf = await fs.promises.readFile(value);
-				} catch (err) {
-					return { error: `${label}: 无法读取 "${value}": ${err.code || err.message}` };
-				}
-				const checked = validateEditImageBuffer(buf, label);
-				if (checked.error) return { error: checked.error };
-				resolvedImages.push({ image_url: `data:${EDIT_MIME_BY_FORMAT[checked.info.format]};base64,${buf.toString('base64')}` });
-			}
-
-			const payload = {
-				model: cfg.model,
-				images: resolvedImages,
-				prompt: args.prompt,
-				n: 1,
-				size: sizeStr,
-				response_format: 'url',
-				output_format: outputFormat,
-				watermark: args.watermark === true,
-				prompt_extend: args.prompt_extend === true,
-			};
-			try {
-				const resp = await fetchWithRetry(`${baseUrl}/images/edits`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-					body: JSON.stringify(payload),
-				}, EDIT_TIMEOUT_MS);
-				if (!resp.ok) {
-					const text = await resp.text();
-					return { error: `HTTP ${resp.status}: ${text.slice(0, 500)}` };
-				}
-				const saved = await extractAndSaveImage(await resp.json(), outputFormat, cfg.imageDir, log, 'edit');
-				if (saved.error) return { error: saved.error };
-				return { status: 'ok', image_path: saved.savePath, bytes: saved.bytes, refs: resolvedImages.length, model: cfg.model };
-			} catch (err) {
-				return { error: String(err?.message || err) };
-			}
-		},
+		execute: (args) => callHunyuanLogged('/images/edits', args, true),
 	});
 
-	/* ── doc_to_markdown:文档转 Markdown ── */
-
-	ctx.tools.register({
-		name: 'doc_to_markdown',
-		description:
-			'将本地文档转为 Markdown(docx/doc/pptx/ppt/xlsx/xls/rtf/epub/csv/odt/ods/odp)。毫秒级本地转换,无需 OCR;不支持 PDF 与加密文档。',
-		parameters: {
-			type: 'object',
-			properties: {
-				file_path: { type: 'string', description: '文档绝对路径' },
-				format_hint: { type: 'string', description: '自动检测失败时手动指定格式(csv 无文件头签名,常需 hint)', enum: ['docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'rtf', 'epub', 'csv', 'odt', 'ods', 'odp'] },
-			},
-			required: ['file_path'],
-		},
-		output: anyJsonOutput,
-		async execute(args) {
-			const filePath = String(args.file_path || '').trim();
-			if (!filePath) return { error: 'file_path 不能为空' };
-			const resolved = path.resolve(filePath);
-			const prefixes = cfg.allowedPathPrefixes;
-			if (!prefixes.some((p) => resolved.startsWith(p))) {
-				return { error: `路径必须在允许前缀内: ${prefixes.join(', ')}` };
-			}
-			if (!fs.existsSync(resolved)) return { error: '文件不存在: ' + resolved, code: 'io' };
-			let lib;
-			try {
-				lib = loadAnydoc();
-			} catch (err) {
-				return { error: err.message };
-			}
-			const bytes = fs.readFileSync(resolved);
-			const formatHint = args.format_hint || inferDocFormatFromPath(resolved);
-			let result;
-			try {
-				result = formatHint ? await lib.toMarkdownBytes(bytes, formatHint) : await lib.toMarkdownBytes(bytes);
-			} catch (convErr) {
-				const code = convErr.code || 'unknown';
-				return { error: DOC_ERROR_MESSAGES[code] || String(convErr.message || convErr), code };
-			}
-			let markdown = typeof result === 'string' ? result : String(result);
-			let detectedFormat = 'unknown';
-			try {
-				detectedFormat = lib.formatFromBytes(bytes) || formatHint || 'unknown';
-			} catch { /* 忽略 */ }
-			let truncated = false;
-			if (markdown.length > MAX_DOC_OUTPUT_CHARS) {
-				markdown = markdown.slice(0, MAX_DOC_OUTPUT_CHARS) + `\n\n<!-- 文档过长已截断,原文共 ${markdown.length} 字符 -->`;
-				truncated = true;
-			}
-			log.info?.(`[media-tools] converted ${resolved} (${detectedFormat}, ${markdown.length} chars)`);
-			return { status: 'ok', format: detectedFormat, markdown, charCount: markdown.length, truncated };
-		},
-	});
-
-	log.info(`[media-tools] active: image_generate / image_edit / doc_to_markdown -> ${cfg.baseUrl}`);
+	log.info(`[media-tools] active: image_generate / image_edit（混元） -> ${cfg.baseUrl}`);
 	return () => {};
 }
 

@@ -107,11 +107,18 @@ function safeEntry(entry) {
   return entry;
 }
 async function writeMemory(root, args) {
-  if (!/^[a-z0-9][a-z0-9-]{0,48}$/.test(args.topic ?? '')) throw new Error('topic 使用小写字母/数字/连字符，最长 49 字符');
-  if (typeof args.keywords !== 'string' || !args.keywords.trim() || /[\r\n]/.test(args.keywords)) throw new Error('新主题需要单行 keywords');
-  const entry = safeEntry(args.entry);
+  const rootAudit = (reason, detail = {}) => {
+    try {
+      fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+      fs.appendFileSync(path.join(root, 'audit.log'), `${JSON.stringify({ at: new Date().toISOString(), topic: String(args?.topic ?? ''), mode: 'denied', line: args?.line ?? null, reason, ...detail })}\n`, { mode: 0o600 });
+    } catch { /* 审计失败不影响拒绝本身 */ }
+  };
+  const deny = (reason, detail) => { rootAudit(reason, detail); throw new Error(reason); };
+  if (!/^[a-z0-9][a-z0-9-]{0,48}$/.test(args.topic ?? '')) deny('topic 使用小写字母/数字/连字符，最长 49 字符');
+  if (typeof args.keywords !== 'string' || !args.keywords.trim() || /[\r\n]/.test(args.keywords)) deny('新主题需要单行 keywords');
+  const entry = (() => { try { return safeEntry(args.entry); } catch (error) { deny(error.message); } })();
   const mode = args.mode ?? 'append';
-  if (!['append', 'replace'].includes(mode)) throw new Error('mode 只支持 append/replace');
+  if (!['append', 'replace'].includes(mode)) deny('mode 只支持 append/replace');
   const relative = `topics/${args.topic}.md`;
   const previous = writeQueues.get(root) ?? Promise.resolve();
   const operation = previous.then(async () => {
@@ -123,7 +130,7 @@ async function writeMemory(root, args) {
     const lines = shard.text.split('\n');
     if (!lines[0]?.startsWith('<!--')) lines.unshift(`<!-- ${args.topic} · 关键词: ${args.keywords.trim()} -->`);
     if (mode === 'replace') {
-      if (!Number.isInteger(args.line) || args.line < 2 || !/^\s*-\s+\S/.test(lines[args.line - 1] ?? '')) throw new Error('replace 必须指定现有记忆条目的行号');
+      if (!Number.isInteger(args.line) || args.line < 2 || !/^\s*-\s+\S/.test(lines[args.line - 1] ?? '')) deny('replace 必须指定现有记忆条目的行号');
       lines[args.line - 1] = entry;
     } else {
       if (entryRows(shard.text).some((row) => row.text.trim() === entry)) return { written: false, duplicate: true, path: relative };
