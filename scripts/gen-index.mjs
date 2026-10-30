@@ -99,7 +99,15 @@ function buildPluginEntry(baseDir, relDir, entryName) {
 const plugins = [];
 for (const entry of readdirSync(pluginsDir)) {
   const plugin = buildPluginEntry(pluginsDir, `plugins/${entry}`, entry);
-  if (plugin !== undefined) plugins.push(plugin);
+  if (plugin === undefined) continue;
+  // 磁盘上有但从未提交的插件目录(如他人在途的改名工作)没有可 pin 的 commit,
+  // 发布出去会产出空 commit 索引。跳过并提示,而不是发布坏源。
+  const commit = plugin.versions[0].source.commit;
+  if (registryArg === undefined && !commit) {
+    console.warn(`gen-index: 跳过未提交的插件目录 plugins/${entry}(HEAD 里无 commit 可 pin)`);
+    continue;
+  }
+  plugins.push(plugin);
 }
 if (withTest) {
   for (const entry of readdirSync(testPluginsDir)) {

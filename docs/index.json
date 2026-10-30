@@ -132,8 +132,8 @@
       },
       "versions": [
         {
-          "version": "0.4.0",
-          "publishTimestamp": 1793335418,
+          "version": "0.5.0",
+          "publishTimestamp": 1793356347,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -178,72 +178,6 @@
       ]
     },
     {
-      "name": "@dsh-friends/feishu-keeper",
-      "title": {
-        "zh": "飞书消息守护",
-        "en": "Feishu Keeper"
-      },
-      "description": {
-        "zh": "容器重启或进程崩溃后自动拉起飞书消息通道，保持随时在线。",
-        "en": "Restart the Feishu channel automatically after crashes or container restarts."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/feishu-keeper"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.2.1",
-          "publishTimestamp": 1793335242,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
-            "path": "plugins/feishu-keeper"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/feishu-memory",
-      "title": {
-        "zh": "飞书用户级长期记忆",
-        "en": "Feishu Per-User Memory"
-      },
-      "description": {
-        "zh": "每个可信飞书用户独立的长期记忆：主题地图、中英混合检索、行号读取、私有写入与审计，按 senderOpenId 隔离。",
-        "en": "Long-term memory isolated per trusted Feishu senderOpenId: topic shards, bilingual lexical search, line-numbered reads, private writes and audit."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/feishu-memory"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.2.1",
-          "publishTimestamp": 1793335242,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
-            "path": "plugins/feishu-memory"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
       "name": "@dsh-friends/feishu-principal",
       "title": {
         "zh": "飞书用户基座（身份与权限层）",
@@ -264,8 +198,8 @@
       },
       "versions": [
         {
-          "version": "0.1.3",
-          "publishTimestamp": 1793334676,
+          "version": "0.2.0",
+          "publishTimestamp": 1793356347,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -297,8 +231,8 @@
       },
       "versions": [
         {
-          "version": "0.2.2",
-          "publishTimestamp": 1793335242,
+          "version": "0.2.3",
+          "publishTimestamp": 1793356347,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -375,12 +309,12 @@
       },
       "versions": [
         {
-          "version": "0.2.2",
-          "publishTimestamp": 1793335242,
+          "version": "0.3.0",
+          "publishTimestamp": 1793355557,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "85f7eb1c30292084c2ad9e3df64fc694d8043dcb",
             "path": "plugins/interrupted-turn-resumer"
           },
           "engines": {}
@@ -585,8 +519,8 @@
       },
       "versions": [
         {
-          "version": "0.1.3",
-          "publishTimestamp": 1793334676,
+          "version": "0.1.4",
+          "publishTimestamp": 1793356347,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -618,8 +552,8 @@
       },
       "versions": [
         {
-          "version": "0.1.3",
-          "publishTimestamp": 1793334676,
+          "version": "0.1.5",
+          "publishTimestamp": 1793356347,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
