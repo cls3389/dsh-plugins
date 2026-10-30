@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feishu Channel (multi-bot fork)",
+    "description": "Forked official Lark channel: multi-account bots.json, per-bot tool allowlists and model routing, card streaming, session bindings with sticky /model; pairs with feishu-principal."
+  }
+}

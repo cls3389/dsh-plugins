@@ -112,33 +112,33 @@
       ]
     },
     {
-      "name": "@larksuite/dsh-lark",
+      "name": "@dsh-friends/feishu-channel",
       "title": {
-        "zh": "飞书渠道",
-        "en": "Feishu Channel"
+        "zh": "飞书渠道（多 bot 改造版）",
+        "en": "Feishu Channel (multi-bot fork)"
       },
       "description": {
-        "zh": "官方 Lark/Feishu 渠道与卡片流式输出:飞书里直接和 DSH 对话,支持 /model 切换模型、/new 新会话、审批与提问卡片。",
-        "en": "Official Lark/Feishu channel with CardKit streaming: chat with DSH inside Feishu, switch models with /model, start sessions with /new, resolve approvals on cards."
+        "zh": "官方 Lark/Feishu 渠道改造版：bots.json 多账号、每 bot 工具白名单与模型路由、卡片流式、会话绑定与 /model 持久化；配套「飞书用户基座」使用。",
+        "en": "Forked official Lark channel: multi-account bots.json, per-bot tool allowlists and model routing, card streaming, session bindings with sticky /model; pairs with feishu-principal."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
       "repository": {
         "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/dsh-lark"
+        "directory": "plugins/feishu-channel"
       },
       "metadata": {
         "keywords": []
       },
       "versions": [
         {
-          "version": "0.2.0",
-          "publishTimestamp": 1793141367,
+          "version": "0.3.0",
+          "publishTimestamp": 1793324232,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "b13b3677ee16e33764994e7fbac9d4b94a2fdf2e",
-            "path": "plugins/dsh-lark"
+            "commit": "6e7df48badd4755db94d32c556132ac5f12a4805",
+            "path": "plugins/feishu-channel"
           },
           "engines": {}
         }
@@ -269,7 +269,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "7d9562d6c481d0791e7db98823f6230407c0f4e8",
+            "commit": "5857e284510f4f6a0b70b9143719e2956df7c571",
             "path": "plugins/feishu-principal"
           },
           "engines": {}
@@ -302,7 +302,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "a172a922b8dc02f90d9869dbc3e989ec4e001c94",
+            "commit": "5857e284510f4f6a0b70b9143719e2956df7c571",
             "path": "plugins/feishu-workspaces"
           },
           "engines": {}

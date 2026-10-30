@@ -1,0 +1,75 @@
+{
+  "name": "@dsh-friends/feishu-channel",
+  "version": "0.3.0",
+  "description": "Official Lark/Feishu channel and CardKit streaming for DeepSeek Harness.",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib/",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "vendor/openclaw-lark/LICENSE",
+    "vendor/openclaw-lark/UPSTREAM_COMMIT"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm run build:vendor && tsdown",
+    "build:vendor": "tsc -p vendor/openclaw-lark/tsconfig.json",
+    "typecheck": "pnpm run build:vendor && tsc --noEmit",
+    "lint": "biome check src tests",
+    "test": "pnpm run build:vendor && vitest run"
+  },
+  "dependencies": {
+    "@dsh-friends/feishu-principal": "link:/data/dsh/home/dsh-management/dsh-plugins/plugins/feishu-principal",
+    "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@sinclair/typebox": "0.34.49",
+    "image-size": "^2.0.4",
+    "undici-types": "^8.12.3",
+    "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent-default-model": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent-default-model": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "@types/node": "^22.15.0",
+    "openclaw": "2026.4.9",
+    "tsdown": "^0.21.10",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

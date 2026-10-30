@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "飞书渠道（多 bot 改造版）",
+    "description": "官方 Lark/Feishu 渠道改造版：bots.json 多账号、每 bot 工具白名单与模型路由、卡片流式、会话绑定与 /model 持久化；配套「飞书用户基座」使用。"
+  }
+}

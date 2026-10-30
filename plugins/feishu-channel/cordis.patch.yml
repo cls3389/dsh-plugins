@@ -1,0 +1,3 @@
+- insert:
+    - id: feishu
+      name: '@dsh-friends/feishu-channel'

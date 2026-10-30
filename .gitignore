@@ -6,3 +6,5 @@ plugins/onepanel/servers.json
 plugins/feishu-memory/node_modules/
 plugins/feishu-principal/node_modules/
 pnpm-lock.yaml
+plugins/feishu-channel/node_modules/
+plugins/feishu-channel/_dev/
