@@ -413,7 +413,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
+            "commit": "309b0d3abb511c67652207ff9775dad35393b7ff",
             "path": "plugins/media-tools"
           },
           "engines": {}
