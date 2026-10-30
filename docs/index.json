@@ -231,8 +231,8 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793322781,
+          "version": "0.1.1",
+          "publishTimestamp": 1793323800,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -545,8 +545,8 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793246587,
+          "version": "0.1.1",
+          "publishTimestamp": 1793323800,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
