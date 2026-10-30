@@ -33,12 +33,12 @@
       },
       "versions": [
         {
-          "version": "0.2.0",
-          "publishTimestamp": 1793200710,
+          "version": "0.2.1",
+          "publishTimestamp": 1793329263,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
             "path": "plugins/asr-tools"
           },
           "engines": {}
@@ -99,12 +99,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793286542,
+          "version": "0.1.1",
+          "publishTimestamp": 1793329263,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9074f70a618f694dd732129bd331db65afebb384",
+            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
             "path": "plugins/document-tools"
           },
           "engines": {}
@@ -231,12 +231,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793323800,
+          "version": "0.2.0",
+          "publishTimestamp": 1793329263,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "94dcfda34ce1735bfc820bf9bbb3738bb35d4a9f",
+            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
             "path": "plugins/feishu-memory"
           },
           "engines": {}
@@ -408,12 +408,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793286760,
+          "version": "0.1.1",
+          "publishTimestamp": 1793329263,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
             "path": "plugins/media-tools"
           },
           "engines": {}
@@ -650,12 +650,12 @@
       },
       "versions": [
         {
-          "version": "0.2.0",
-          "publishTimestamp": 1793271398,
+          "version": "0.2.1",
+          "publishTimestamp": 1793329263,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "7d9562d6c481d0791e7db98823f6230407c0f4e8",
+            "commit": "32ba46d2abdbb81a1a8e611fb7acb3cd8f690470",
             "path": "plugins/zread"
           },
           "engines": {}
