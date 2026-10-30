@@ -17,6 +17,8 @@ interface Config {
   readonly dataDir?: string;
   readonly provider?: string;
   readonly model?: string;
+  /** Adapter-owned reasoning effort pinned for this account's agents (e.g. "max"). */
+  readonly reasoningEffort?: string;
   readonly allowedChats?: string[];
   readonly allowedUsers?: string[];
   readonly groupMentionMode?: 'always' | 'never' | 'ambient';

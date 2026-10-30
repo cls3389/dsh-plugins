@@ -16,6 +16,8 @@ export interface Config {
   readonly dataDir?: string;
   readonly provider?: string;
   readonly model?: string;
+  /** Adapter-owned reasoning effort pinned for this account's agents (e.g. "max"). */
+  readonly reasoningEffort?: string;
   readonly allowedChats?: string[];
   readonly allowedUsers?: string[];
   readonly groupMentionMode?: 'always' | 'never' | 'ambient';
@@ -48,6 +50,7 @@ export const Config: z<Config> = z.object({
   dataDir: z.string().required(false),
   provider: z.string().required(false),
   model: z.string().required(false),
+  reasoningEffort: z.string().required(false),
   allowedChats: z.array(z.string()).required(false),
   allowedUsers: z.array(z.string()).required(false),
   groupMentionMode: z

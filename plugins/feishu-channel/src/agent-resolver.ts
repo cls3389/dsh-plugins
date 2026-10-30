@@ -34,7 +34,7 @@ async function syncWorkingDirectory(ctx: Context, agent: Agent, cwd: string): Pr
 function agentOptions(
   config: Config,
   ctx: Context,
-): { provider?: string; model?: string } | undefined {
+): { provider?: string; model?: string; reasoningEffort?: string } | undefined {
   const selection = (
     ctx.get('agentDefaultModel') as
       | { currentSelection(): { provider: string; model: string } }
@@ -45,6 +45,7 @@ function agentOptions(
   return {
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
   };
 }
 

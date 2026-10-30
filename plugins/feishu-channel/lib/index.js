@@ -1022,7 +1022,8 @@ function agentOptions(config, ctx) {
 	const model = config.model ?? selection?.model;
 	return {
 		...provider ? { provider } : {},
-		...model ? { model } : {}
+		...model ? { model } : {},
+		...config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}
 	};
 }
 const restrictedAgents = /* @__PURE__ */ new WeakMap();
@@ -11839,6 +11840,7 @@ const Config = z.object({
 	dataDir: z.string().required(false),
 	provider: z.string().required(false),
 	model: z.string().required(false),
+	reasoningEffort: z.string().required(false),
 	allowedChats: z.array(z.string()).required(false),
 	allowedUsers: z.array(z.string()).required(false),
 	groupMentionMode: z.union([
