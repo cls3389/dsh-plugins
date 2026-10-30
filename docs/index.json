@@ -112,7 +112,7 @@
       ]
     },
     {
-      "name": "@dsh-friends/feishu-group-reader",
+      "name": "@dsh-friends/feishu-messages",
       "title": {
         "zh": "飞书群消息",
         "en": "Feishu Group Reader"
@@ -133,7 +133,7 @@
       "versions": [
         {
           "version": "0.2.1",
-          "publishTimestamp": 1793246988,
+          "publishTimestamp": 1793287665,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -211,6 +211,46 @@
       ]
     },
     {
+      "name": "@dsh-friends/idle-compaction",
+      "title": {
+        "zh": "闲置会话自动压缩",
+        "en": "Idle Session Auto-Compaction"
+      },
+      "description": {
+        "zh": "闲置超阈值的会话后台自动 compaction，下一条消息直接以紧凑上下文开始；事件驱动判定，飞书 bot 与 Web 会话通用。",
+        "en": "Compacts idle sessions in the background so the next message starts from a small context; event-driven idle detection works for every session host in the profile."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/idle-compaction"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "cordis",
+          "compaction",
+          "context",
+          "feishu",
+          "session"
+        ]
+      },
+      "versions": [
+        {
+          "version": "1.0.0",
+          "publishTimestamp": 1793322329,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "f9090bf177ff7d98d0bd64bce00e41bbfe9638f3",
+            "path": "plugins/idle-compaction"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/interrupted-turn-resumer",
       "title": {
         "zh": "中断任务续接",
@@ -255,8 +295,8 @@
         "en": "Media Tools"
       },
       "description": {
-        "zh": "SenseNova 文生图/图生图(经 CPA 网关)与文档转 Markdown(docx/pptx/xlsx/csv 等,毫秒级本地转换)。",
-        "en": "SenseNova image generation/editing (via CPA gateway) and document-to-Markdown conversion."
+        "zh": "腾讯混元文生图/图生图(经 CPA 网关)，支持多图输出与本地参考图。",
+        "en": "Tencent Hunyuan image generation/editing (via CPA gateway) and document-to-Markdown conversion."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -270,7 +310,7 @@
       "versions": [
         {
           "version": "0.1.0",
-          "publishTimestamp": 1793246587,
+          "publishTimestamp": 1793286760,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
