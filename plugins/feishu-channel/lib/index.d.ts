@@ -10,6 +10,8 @@ interface Config {
   /** Optional display-name override; the bot name is discovered by default. */
   readonly appName?: string;
   readonly appSecret?: string;
+  /** 环境变量名,从中读取 appSecret(密钥不落 patch 明文)。 */
+  readonly appSecretEnv?: string;
   readonly domain?: 'feishu' | 'lark';
   readonly defaultCwd?: string;
   /** Parent directory for per-application working directories. */

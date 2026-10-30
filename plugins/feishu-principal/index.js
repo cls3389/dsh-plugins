@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { homedir } from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -132,7 +133,12 @@ export function toolAllowFor(openId, defaults, usersFile, appId, defaultAppId) {
 }
 
 export function apply(ctx, config) {
-  const cfg = { ...config };
+  // usersFile 未配置时走 $DSH_HOME/lark/user-connections.json(可移植默认,profile 可覆盖)
+  const dshHome = process.env.DSH_HOME ?? path.join(homedir(), '.dsh');
+  const cfg = {
+    usersFile: path.join(dshHome, 'lark', 'user-connections.json'),
+    ...config,
+  };
   ctx.provide('feishuPrincipal', {
     userKey,
     workspaceFor,

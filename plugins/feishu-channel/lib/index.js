@@ -11834,6 +11834,7 @@ const Config = z.object({
 	appId: z.string().required(false),
 	appName: z.string().required(false),
 	appSecret: z.string().required(false),
+	appSecretEnv: z.string().required(false),
 	domain: z.union([z.const("feishu"), z.const("lark")]).required(false),
 	defaultCwd: z.string().required(false),
 	workspaceRoot: z.string().required(false),
@@ -11901,11 +11902,34 @@ function resolveBots(config) {
 }
 function resolveCredentials(config) {
 	const appId = config.appId ?? process.env.FEISHU_APP_ID;
-	const appSecret = config.appSecret ?? process.env.FEISHU_APP_SECRET;
+	const appSecret = config.appSecret ?? (config.appSecretEnv ? resolveSecretRef(config.appSecretEnv) : void 0) ?? process.env.FEISHU_APP_SECRET;
 	return appId && appSecret ? {
 		appId,
 		appSecret
 	} : void 0;
+}
+/**
+* appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
+* (feishu profile 下 credentials 服务未挂载;与 media-tools 同款兜底,只匹配 refs 段内缩进行)。
+*/
+function resolveSecretRef(ref) {
+	const fromEnv = process.env[ref];
+	if (fromEnv) return fromEnv;
+	try {
+		const text = readFileSync(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml"), "utf8");
+		const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		let inRefs = false;
+		for (const line of text.split(/\r?\n/)) {
+			if (/^refs:\s*$/.test(line)) {
+				inRefs = true;
+				continue;
+			}
+			if (!inRefs) continue;
+			if (/^\S/.test(line)) break;
+			const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
+			if (match?.[1] && !match[1].startsWith("\"")) return match[1];
+		}
+	} catch {}
 }
 function dataDirectory(config) {
 	return config.dataDir ?? join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark");

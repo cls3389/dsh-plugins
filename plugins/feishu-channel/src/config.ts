@@ -9,6 +9,8 @@ export interface Config {
   /** Optional display-name override; the bot name is discovered by default. */
   readonly appName?: string;
   readonly appSecret?: string;
+  /** 环境变量名,从中读取 appSecret(密钥不落 patch 明文)。 */
+  readonly appSecretEnv?: string;
   readonly domain?: 'feishu' | 'lark';
   readonly defaultCwd?: string;
   /** Parent directory for per-application working directories. */
@@ -44,6 +46,7 @@ export const Config: z<Config> = z.object({
   appId: z.string().required(false),
   appName: z.string().required(false),
   appSecret: z.string().required(false),
+  appSecretEnv: z.string().required(false),
   domain: z.union([z.const('feishu'), z.const('lark')]).required(false),
   defaultCwd: z.string().required(false),
   workspaceRoot: z.string().required(false),
@@ -112,8 +115,33 @@ export interface Credentials {
 
 export function resolveCredentials(config: Config): Credentials | undefined {
   const appId = config.appId ?? process.env.FEISHU_APP_ID;
-  const appSecret = config.appSecret ?? process.env.FEISHU_APP_SECRET;
+  const appSecret = config.appSecret
+    ?? (config.appSecretEnv ? resolveSecretRef(config.appSecretEnv) : undefined)
+    ?? process.env.FEISHU_APP_SECRET;
   return appId && appSecret ? { appId, appSecret } : undefined;
+}
+
+/**
+ * appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
+ * (feishu profile 下 credentials 服务未挂载;与 media-tools 同款兜底,只匹配 refs 段内缩进行)。
+ */
+function resolveSecretRef(ref: string): string | undefined {
+  const fromEnv = process.env[ref];
+  if (fromEnv) return fromEnv;
+  try {
+    const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+    const text = readFileSync(join(dshHome, '.credentials.yaml'), 'utf8');
+    const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let inRefs = false;
+    for (const line of text.split(/\r?\n/)) {
+      if (/^refs:\s*$/.test(line)) { inRefs = true; continue; }
+      if (!inRefs) continue;
+      if (/^\S/.test(line)) break;
+      const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
+      if (match?.[1] && !match[1].startsWith('"')) return match[1];
+    }
+  } catch { /* credentials 文件缺失时静默 */ }
+  return undefined;
 }
 
 export function dataDirectory(config: Config): string {
