@@ -165,12 +165,12 @@
       },
       "versions": [
         {
-          "version": "0.2.1",
-          "publishTimestamp": 1793287665,
+          "version": "0.2.2",
+          "publishTimestamp": 1793333279,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "commit": "296ec238414aa87f6aca996c18a3bdf09f753e59",
             "path": "plugins/feishu-group-reader"
           },
           "engines": {}
@@ -448,12 +448,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793329263,
+          "version": "0.1.2",
+          "publishTimestamp": 1793333279,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "309b0d3abb511c67652207ff9775dad35393b7ff",
+            "commit": "296ec238414aa87f6aca996c18a3bdf09f753e59",
             "path": "plugins/media-tools"
           },
           "engines": {}
@@ -585,12 +585,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793323800,
+          "version": "0.1.2",
+          "publishTimestamp": 1793333279,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "94dcfda34ce1735bfc820bf9bbb3738bb35d4a9f",
+            "commit": "296ec238414aa87f6aca996c18a3bdf09f753e59",
             "path": "plugins/ths-favorites"
           },
           "engines": {}
@@ -618,12 +618,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793327684,
+          "version": "0.1.2",
+          "publishTimestamp": 1793333279,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc35b27e7d4704e225434631433173e4334bdec8",
+            "commit": "296ec238414aa87f6aca996c18a3bdf09f753e59",
             "path": "plugins/ths-market"
           },
           "engines": {}
@@ -651,12 +651,12 @@
       },
       "versions": [
         {
-          "version": "0.4.0",
-          "publishTimestamp": 1793246982,
+          "version": "0.4.1",
+          "publishTimestamp": 1793333279,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "49a9704210ca082fe14cf95dcd805f0939bd9289",
+            "commit": "296ec238414aa87f6aca996c18a3bdf09f753e59",
             "path": "plugins/ths-trade"
           },
           "engines": {}
