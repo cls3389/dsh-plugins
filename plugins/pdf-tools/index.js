@@ -18,7 +18,7 @@ export function apply(ctx, config) {
 
   ctx.tools.register({
     name: 'pdf_read',
-    description: '读取本地 PDF（OpenClaw clawpdf / PDFium）。文本型直接提取文字；扫描或混合型渲染页面为图片供模型识别。最多处理前 max_pages 页，不支持加密 PDF。',
+    description: '读取本地 PDF（OpenClaw clawpdf / PDFium）。文本型直接提取文字；扫描或混合型逐页渲染图片供模型识别。最多处理前 max_pages 页；支持含权限标志但可正常打开的 PDF，不支持需要密码才能打开的 PDF。',
     parameters: {
       type: 'object',
       properties: {
@@ -30,7 +30,10 @@ export function apply(ctx, config) {
     output: {
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => {
-        const blocks = [{ type: 'text', text: value.markdown ?? value.error ?? JSON.stringify(value) }];
+        const summary = value.error ?? (value.type === 'image'
+          ? `图片型 PDF：共 ${value.totalPages} 页，已渲染 ${value.renderedPages} 页，请逐页阅读。${value.truncated ? '超出 max_pages 的页面未处理。' : ''}${value.markdown ? `\n【提取的文本层】\n${value.markdown}` : ''}`
+          : value.markdown ?? JSON.stringify(value));
+        const blocks = [{ type: 'text', text: summary }];
         const refs = pageAttachments.get(value.docId);
         for (const item of value.images ?? []) {
           blocks.push({ type: 'text', text: `【PDF 第 ${item.page} 页】` });

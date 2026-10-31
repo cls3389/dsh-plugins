@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apply as applyPdf } from './index.js';
 import { apply as applyDocument } from '../document-tools/index.js';
+import { readPdf } from './reader.js';
 
 const temporary = await mkdtemp(join(tmpdir(), 'pdf-tools-test-'));
 try {
@@ -34,6 +35,13 @@ try {
   assert.match(result.markdown, /周策略：坚守底线/);
   assert.equal((await pdf.tools.get('pdf_read').execute({ file_path: csv })).code, 'unsupported');
   console.log('PASS: anydoc CSV conversion, PDF rejection, independent pdf_read text extraction');
+
+  const scanned = await readPdf(await readFile('/data/dsh/attachments/v1/files/b1/b1830e71fa48aa75ecd6750aafc9829cc4a42e79a925ff56fe8dc987354f6c73/20260802格兰周策略：8月开篇.pdf'));
+  assert.equal(scanned.totalPages, 13);
+  assert.equal(scanned.images.length, 13);
+  assert.deepEqual(scanned.images.map((image) => image.page), Array.from({ length: 13 }, (_, index) => index + 1));
+  assert.ok(scanned.images.every((image) => image.width >= 794 && image.height >= 1123));
+  console.log('PASS: all 13 scanned pages retain full resolution, no shared pixel-budget shrinkage');
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

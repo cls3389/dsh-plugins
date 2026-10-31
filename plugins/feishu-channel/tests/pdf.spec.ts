@@ -40,7 +40,8 @@ describe('Feishu PDF attachment extraction', () => {
       })),
     } : undefined } } as unknown as Agent;
     const blocks = await pdfMessageContent(agent, '扫描周策略.pdf', bytes, logger);
-    expect(blocks?.filter((block) => block.type === 'image')).toHaveLength(7);
+    // The source has 25 pages; maxPages=20 is the explicit truncation, not 7 shared-budget thumbnails.
+    expect(blocks?.filter((block) => block.type === 'image')).toHaveLength(20);
     expect(blocks?.[0]?.type === 'text' && blocks[0].text).toContain('逐页阅读');
   });
 
