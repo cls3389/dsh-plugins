@@ -203,12 +203,12 @@
       },
       "versions": [
         {
-          "version": "0.6.1",
-          "publishTimestamp": 1793410166,
+          "version": "0.6.2",
+          "publishTimestamp": 1793413693,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "c4b67840181796cfc7efff6f72247dbd22a3da5d",
+            "commit": "cc3c230f3499b601dbee0c59ec540c631a7924ad",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -647,8 +647,8 @@
         "en": "THS Market & Watch"
       },
       "description": {
-        "zh": "行情查询(报价/K线/搜索/问财/L2/大盘体检/异动/两融折算率)与条件盯盘:纯提醒,或同装 ths-trade 并配钥后支持自动执行。",
-        "en": "Read-only market data (quotes/klines/search/wencai/L2/pulse/moves/margin rates) plus watch rules: reminder-only, or auto-exec when ths-trade is co-installed."
+        "zh": "行情查询(报价/K线/搜索/问财/L2/大盘体检/异动/两融折算率)、美国财政部国债收益率曲线与条件盯盘:纯提醒,或同装 ths-trade 并配钥后支持自动执行。",
+        "en": "Read-only market data (quotes/klines/search/wencai/L2/pulse/moves/margin rates), official US Treasury yield curves, plus watch rules: reminder-only, or auto-exec when ths-trade is co-installed."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -661,12 +661,12 @@
       },
       "versions": [
         {
-          "version": "0.1.6",
-          "publishTimestamp": 1793411046,
+          "version": "0.2.0",
+          "publishTimestamp": 1793413589,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "5c47e3d8062b0503b3b0ce2146e20b49dec7d5f2",
+            "commit": "cc3c230f3499b601dbee0c59ec540c631a7924ad",
             "path": "plugins/ths-market"
           },
           "engines": {}
