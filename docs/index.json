@@ -81,12 +81,12 @@
     {
       "name": "@dsh-friends/document-tools",
       "title": {
-        "zh": "文档与 PDF 工具",
-        "en": "Document & PDF Tools"
+        "zh": "Anydoc 文档转换",
+        "en": "Anydoc Document Converter"
       },
       "description": {
-        "zh": "读取 PDF（clawpdf：文本提取、扫描页渲染）并转换 Office、EPUB、CSV 等文档。",
-        "en": "Read PDFs with clawpdf (text extraction and page rendering), plus Office, EPUB and CSV conversion."
+        "zh": "Firecrawl @firecrawl/anydoc：Office、EPUB、CSV 等文档转 Markdown；PDF 请安装独立「PDF 阅读」。",
+        "en": "Convert Office, EPUB, CSV and other documents to Markdown with Firecrawl @firecrawl/anydoc. PDF is provided by the separate PDF Reader plugin."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -96,20 +96,20 @@
       },
       "metadata": {
         "keywords": [
-          "pdf",
+          "anydoc",
+          "firecrawl",
           "document",
-          "markdown",
-          "clawpdf"
+          "markdown"
         ]
       },
       "versions": [
         {
-          "version": "0.1.3",
-          "publishTimestamp": 1793407891,
+          "version": "0.2.0",
+          "publishTimestamp": 1793408742,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "5a8d694e49043c4346d915e8fb041f8c180e19f5",
+            "commit": "620bce3a5bf1384b4b3d386bf5d6d3a64c401c0e",
             "path": "plugins/document-tools"
           },
           "engines": {}
@@ -203,12 +203,12 @@
       },
       "versions": [
         {
-          "version": "0.5.1",
-          "publishTimestamp": 1793407787,
+          "version": "0.6.0",
+          "publishTimestamp": 1793409282,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9b292eb62bf911d3eddf0513b60717478a5e08fb",
+            "commit": "620bce3a5bf1384b4b3d386bf5d6d3a64c401c0e",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -526,6 +526,44 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
             "path": "plugins/onepanel"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/pdf-tools",
+      "title": {
+        "zh": "PDF 阅读（OpenClaw）",
+        "en": "PDF Reader (OpenClaw)"
+      },
+      "description": {
+        "zh": "基于 clawpdf / PDFium 读取 PDF：文本提取、扫描页渲染，并支持飞书附件自动直读。",
+        "en": "Read PDFs with clawpdf / PDFium: text extraction, page rendering and automatic Feishu attachment reading."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/pdf-tools"
+      },
+      "metadata": {
+        "keywords": [
+          "pdf",
+          "clawpdf",
+          "openclaw",
+          "reader"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793409162,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "620bce3a5bf1384b4b3d386bf5d6d3a64c401c0e",
+            "path": "plugins/pdf-tools"
           },
           "engines": {}
         }
