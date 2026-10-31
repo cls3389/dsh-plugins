@@ -39,3 +39,18 @@ test('disambiguates exchange aliases from explicitly named stock markets', () =>
   assert.deepEqual(parseSecurity('1A0001'), { market: 'USHI', code: '1A0001' });
   assert.throws(() => parseSecurity('SHI'), /无法识别/);
 });
+
+test('does not misclassify Shenzhen 000xxx stocks as Shanghai indices', () => {
+  assert.deepEqual(parseSecurity('000975'), { market: 'USZA', code: '000975' });
+  assert.deepEqual(parseSecurity('000001'), { market: 'USHI', code: '1A0001' });
+  assert.deepEqual(parseSecurity('SZ000001'), { market: 'USZA', code: '000001' });
+  assert.deepEqual(parseSecurity('USZA000975'), { market: 'USZA', code: '000975' });
+});
+
+test('preserves Hong Kong index and stock ths_codes and normalizes aliases', () => {
+  assert.deepEqual(parseSecurity('UHKIHSI'), { market: 'UHKI', code: 'HSI' });
+  assert.deepEqual(parseSecurity('UHKMHK0700'), { market: 'UHKM', code: 'HK0700' });
+  assert.deepEqual(parseSecurity('UHKMHK3330'), { market: 'UHKM', code: 'HK3330' });
+  assert.deepEqual(parseSecurity('00700'), { market: 'UHKM', code: 'HK0700' });
+  assert.deepEqual(parseSecurity('HK03330'), { market: 'UHKM', code: 'HK3330' });
+});
