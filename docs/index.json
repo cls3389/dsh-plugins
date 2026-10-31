@@ -183,6 +183,31 @@
       ]
     },
     {
+      "name": "@dsh-friends/execution-sandbox",
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/execution-sandbox"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793425449,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "9bed4221b44f63a8dd8d189d8fa011d253a013be",
+            "path": "plugins/execution-sandbox"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/feishu-channel",
       "title": {
         "zh": "飞书渠道（多 bot 改造版）",
