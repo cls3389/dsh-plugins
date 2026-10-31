@@ -295,9 +295,20 @@ export class LarkChannel {
       );
       return;
     }
-    const resolvedName = message.senderId && this.client
-      ? (await resolveUserName({ account: this.client.account, openId: message.senderId, log: (line) => this.options.logger.debug(String(line)) })).name
-      : undefined;
+    let resolvedName: string | undefined;
+    if (message.senderId && this.client) {
+      let timeout: NodeJS.Timeout | undefined;
+      try {
+        resolvedName = (await Promise.race([
+          resolveUserName({ account: this.client.account, openId: message.senderId, log: (line) => this.options.logger.debug(String(line)) }),
+          new Promise<{ name?: string }>((resolve) => {
+            timeout = setTimeout(() => resolve({}), 1500);
+          }),
+        ])).name;
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+    }
     const binding = this.options.sessions.get(message.chatId, message.senderId, resolvedName);
     await mkdir(binding.cwd, { recursive: true, mode: 0o700 });
     await syncIdentitySkills(this.options.config.workspaceRoot ?? agentsRootDefault(), this.options.config.agentId, binding.cwd);

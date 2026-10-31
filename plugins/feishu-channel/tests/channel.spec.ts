@@ -69,12 +69,12 @@ function event<T extends SessionEvent['type']>(type: T, data: SessionEventMap[T]
   return { type, data, seq: 1, time: Date.now() } as SessionEvent<T>;
 }
 
-function inbound(text: string) {
+function inbound(text: string, chatId = 'oc_chat', senderId = 'ou_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
   return {
-    sender: { sender_id: { open_id: 'ou_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }, sender_type: 'user' },
+    sender: { sender_id: { open_id: senderId }, sender_type: 'user' },
     message: {
       message_id: 'om_inbound',
-      chat_id: 'oc_chat',
+      chat_id: chatId,
       chat_type: 'p2p' as const,
       message_type: 'text',
       content: JSON.stringify({ text }),
@@ -84,6 +84,52 @@ function inbound(text: string) {
 }
 
 describe('official Lark channel to DSH', () => {
+  it('does not block one private chat behind another chat active turn', async () => {
+    const dir = await mkdtemp(join(process.cwd(), '_dev', 'channel-concurrent-'));
+    temporary.push(dir);
+    const sessions = new SessionStore(dir, dir);
+    await sessions.load();
+    const agents = new Map<string, Agent>();
+    const completions = new Map<string, () => void>();
+    const channel = new LarkChannel({
+      config: { dataDir: dir },
+      officialConfig: { channels: { feishu: {} } },
+      sessions,
+      toolContexts: new OfficialToolContexts(),
+      resolveAgent: async (sessionId) => {
+        const agent = {
+          session: { id: sessionId },
+          followup: vi.fn(() => new Promise<void>((resolve) => {
+            completions.set(sessionId, resolve);
+          })),
+          cancel: vi.fn(() => completions.get(sessionId)?.()),
+        } as unknown as Agent;
+        agents.set(sessionId, agent);
+        return agent;
+      },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      streamFactory: () => controller(),
+    });
+    const send = vi.spyOn(channel as unknown as { send(chatId: string, text: string): Promise<void> }, 'send')
+      .mockResolvedValue(undefined);
+    const first = inbound('Long task', 'oc_chat_a');
+    const second = inbound('Quick question', 'oc_chat_b', 'ou_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    first.message.message_id = 'om_first';
+    second.message.message_id = 'om_second';
+    const pending = channel.receive(first);
+    await vi.waitFor(() => expect(completions.size).toBe(1));
+    const secondPending = channel.receive(second);
+    await vi.waitFor(() => expect(completions.size).toBe(2));
+    expect(agents.size).toBe(2);
+    for (const agent of agents.values()) expect(agent.followup).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('still running'));
+    const active = [...(channel as unknown as { activeByChat: Map<string, { settle(): void }> }).activeByChat.values()];
+    active.forEach((turn) => turn.settle());
+    completions.forEach((complete) => complete());
+    await Promise.all([pending, secondPending]);
+    await channel.stop();
+  });
+
   it('rejects a redelivered message after the channel restarts', async () => {
     const dir = await mkdtemp(join(process.cwd(), '_dev', 'dedup-'));
     temporary.push(dir);

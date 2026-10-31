@@ -129,6 +129,15 @@ export class LarkClient {
   private _botName: string | undefined;
   private _lastProbeResult: FeishuProbeResult | null = null;
   private _lastProbeAt = 0;
+  private _wsStopped = false;
+  private _wsWatchdog: NodeJS.Timeout | null = null;
+  private _wsReconnecting: Promise<void> | null = null;
+  private _wsBackoffMs = 5000;
+  private _wsHandlers: Record<string, (data: unknown) => Promise<void>> | null = null;
+  private _wsAbortSignal: AbortSignal | undefined;
+
+  private _wsReconnectDelayMs = 5000;
+  private _wsConnectionGeneration = 0;
 
   /** Attached message deduplicator — disposed together with the client. */
   messageDedup: MessageDedup | null = null;
@@ -166,7 +175,7 @@ export class LarkClient {
 
   // --------------------------------------------------------------------------
 
-  private constructor(account: LarkAccount) {
+  private constructor(account: LarkAccount, private readonly wsFactory?: (params: any) => Lark.WSClient) {
     this.account = account;
   }
 
@@ -210,7 +219,7 @@ export class LarkClient {
    * The instance is **not** added to the global cache — suitable for
    * one-off probe / diagnose calls that should not pollute account state.
    */
-  static fromCredentials(credentials: LarkClientCredentials): LarkClient {
+  static fromCredentials(credentials: LarkClientCredentials, options?: { wsFactory?: (params: any) => Lark.WSClient }): LarkClient {
     const base = {
       accountId: credentials.accountId ?? 'default',
       enabled: true as const,
@@ -223,7 +232,7 @@ export class LarkClient {
         ? { ...base, configured: true as const, appId: credentials.appId, appSecret: credentials.appSecret }
         : { ...base, configured: false as const, appId: credentials.appId, appSecret: credentials.appSecret };
 
-    return new LarkClient(account);
+    return new LarkClient(account, options?.wsFactory);
   }
 
   /** Look up a cached instance by accountId. */
@@ -342,7 +351,9 @@ export class LarkClient {
    * Start WebSocket event monitoring.
    *
    * Flow: probe bot identity → EventDispatcher → WSClient → start.
-   * The returned Promise resolves when `abortSignal` fires.
+   * Resolves once the current receive connection is ready, or immediately when
+   * an already-aborted signal stops it. Reconnects replace only the socket;
+   * channel sessions, active agents and durable dedup state stay untouched.
    */
   async startWS(opts: {
     handlers: Record<string, (data: unknown) => Promise<void>>;
@@ -350,6 +361,10 @@ export class LarkClient {
     autoProbe?: boolean;
   }): Promise<void> {
     const { handlers, abortSignal, autoProbe = true } = opts;
+    this._wsHandlers = handlers;
+    this._wsAbortSignal = abortSignal;
+    this._wsStopped = false;
+    this._wsBackoffMs = 5000;
 
     if (autoProbe) await this.probe();
 
@@ -372,12 +387,58 @@ export class LarkClient {
       this._wsClient = null;
     }
 
-    this._wsClient = new Lark.WSClient({
+    let attemptSettled = false;
+    let attemptReady!: () => void;
+    let attemptFailed!: (error: unknown) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      attemptReady = () => {
+        if (attemptSettled) return;
+        attemptSettled = true;
+        resolve();
+      };
+      attemptFailed = (error: unknown) => {
+        if (attemptSettled) return;
+        attemptSettled = true;
+        reject(error);
+      };
+    });
+    const generation = ++this._wsConnectionGeneration;
+    let socket: Lark.WSClient;
+    const stale = () => generation !== this._wsConnectionGeneration || this._wsClient !== socket;
+    socket = (this.wsFactory ?? ((params: any) => new Lark.WSClient(params)))({
       appId,
       appSecret,
       domain: resolveBrand(this.account.brand),
       loggerLevel: Lark.LoggerLevel.info,
+      // Keep the SDK liveness/reconnect enabled; surface every state transition.
+      autoReconnect: true,
+      wsConfig: { pingTimeout: 30 },
+      handshakeTimeoutMs: 15000,
+      onReady: () => {
+        if (stale()) return;
+        this._wsBackoffMs = 5000;
+        attemptReady();
+        log.info('ws connected', { accountId: this.accountId });
+      },
+      onReconnecting: () => {
+        if (!stale()) log.warn('ws reconnecting', {
+          accountId: this.accountId,
+          attempt: this.wsConnectionStatus?.reconnectAttempts,
+        });
+      },
+      onReconnected: () => {
+        if (stale()) return;
+        this._wsBackoffMs = 5000;
+        log.info('ws reconnected', { accountId: this.accountId });
+      },
+      onError: (error: unknown) => {
+        if (stale()) return;
+        log.error('ws terminal error; scheduling a fresh connection', { accountId: this.accountId, error: String(error) });
+        attemptFailed(error);
+        this.scheduleWsReconnect();
+      },
     });
+    this._wsClient = socket;
 
     // SDK 的 handleEventData 只处理 type="event"，card action 回调是 type="card" 会被丢弃。
     // 打 patch 将 "card" 类型消息改成 "event" 后交给原 handler，让 EventDispatcher 正常路由。
@@ -394,17 +455,68 @@ export class LarkClient {
       }
       return origHandleEventData(data);
     };
+    this.startWsWatchdog();
 
-    await this.waitForAbort(dispatcher, abortSignal);
+    await this.waitForAbort(dispatcher, abortSignal, ready, attemptFailed);
   }
 
   /** Whether a WebSocket client is currently active. */
   get wsConnected(): boolean {
-    return this._wsClient != null;
+    if (!this._wsClient) return false;
+    const status = (this._wsClient as any).getConnectionStatus?.();
+    return status ? status.state === 'connected' : true;
+  }
+
+  /** Exposed for health tests and operational introspection, without app credentials. */
+  get wsConnectionStatus(): { state: string; lastConnectTime?: number; nextConnectTime?: number; reconnectAttempts?: number } | null {
+    return (this._wsClient as any)?.getConnectionStatus?.() ?? null;
+  }
+
+  private startWsWatchdog(): void {
+    if (this._wsWatchdog) clearInterval(this._wsWatchdog);
+    this._wsWatchdog = setInterval(() => {
+      if (this._wsStopped || !this._wsClient) return;
+      const state = this.wsConnectionStatus?.state;
+      if (state === 'failed' || state === 'idle') {
+        log.warn('ws receive connection is not healthy; rebuilding', { accountId: this.accountId, state });
+        this.scheduleWsReconnect();
+      }
+    }, 15000);
+    this._wsWatchdog.unref();
+  }
+
+  /** One reconnect per bot, bounded backoff; never rebuild a healthy socket or agent. */
+  private scheduleWsReconnect(): void {
+    if (this._wsStopped || this._wsReconnecting || !this._wsHandlers) return;
+    const delay = this._wsReconnectDelayMs;
+    this._wsReconnectDelayMs = 5000;
+    this._wsBackoffMs = Math.min(this._wsBackoffMs * 2, 60000);
+    this._wsReconnecting = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (this._wsStopped || !this._wsHandlers) return;
+      try {
+        const handlers = this._wsHandlers;
+        const signal = this._wsAbortSignal;
+        this.disconnect();
+        await this.startWS({ handlers, abortSignal: signal, autoProbe: false });
+      } catch (error) {
+        log.error('ws rebuild failed; retrying with backoff', { accountId: this.accountId, error: String(error) });
+        // Clear the in-flight marker before scheduling; schedule is single-flight.
+        this._wsReconnecting = null;
+        this.scheduleWsReconnect();
+      }
+    })().finally(() => { this._wsReconnecting = null; });
   }
 
   /** Disconnect WebSocket but keep instance in cache. */
   disconnect(): void {
+    this._wsStopped = true;
+    this._wsConnectionGeneration++;
+
+    if (this._wsWatchdog) {
+      clearInterval(this._wsWatchdog);
+      this._wsWatchdog = null;
+    }
     if (this._wsClient) {
       log.info(`disconnecting WebSocket`, { accountId: this.accountId });
       try {
@@ -440,10 +552,16 @@ export class LarkClient {
   }
 
   /**
-   * Start the WSClient and return a promise that resolves when the
-   * abort signal fires (or immediately if already aborted).
+   * Resolve after this attempt is ready. Abort intentionally leaves a pending
+   * attempt promise settled only by the fail callback, avoiding unhandled
+   * rejections from stale sockets during teardown.
    */
-  private waitForAbort(dispatcher: Lark.EventDispatcher, signal?: AbortSignal): Promise<void> {
+  private waitForAbort(
+    dispatcher: Lark.EventDispatcher,
+    signal: AbortSignal | undefined,
+    ready: Promise<void>,
+    fail: (error: unknown) => void,
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (signal?.aborted) {
         this.disconnect();
@@ -454,6 +572,7 @@ export class LarkClient {
         'abort',
         () => {
           this.disconnect();
+          fail(new Error(`Feishu WebSocket disconnected (${this.accountId})`));
           resolve();
         },
         { once: true },
@@ -461,6 +580,11 @@ export class LarkClient {
 
       try {
         void this._wsClient!.start({ eventDispatcher: dispatcher });
+        const timer = setTimeout(() => {
+          fail(new Error(`Feishu WebSocket initial ready timeout (${this.accountId})`));
+          this.scheduleWsReconnect();
+        }, 20000);
+        void ready.then(() => { clearTimeout(timer); resolve(); }, (error) => { clearTimeout(timer); reject(error); });
       } catch (err) {
         this.disconnect();
         reject(err);
