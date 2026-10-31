@@ -64,19 +64,20 @@ function isIndex(item) {
 /** Stable, transparent ranking: exact matches first, then canonical indices over derivative products. */
 export function rankSearchItems(items, pattern) {
   const query = compactText(pattern);
-  const broadQuery = query.length >= 2 && !/\d/.test(query) && !/^(?:ths|etf|lof|qfii|rqfii)$/.test(query);
+  const broadQuery = query.length >= 2 && !/^(?:ths|etf|lof|qfii|rqfii)$/.test(query);
   return items.map((item, index) => {
     const name = String(item.name ?? '');
     const code = String(item.code ?? '');
     const thsCode = String(item.ths_code ?? '');
-    const exact = compactText(name) === query || compactText(code) === query || compactText(thsCode) === query;
+    const exactName = compactText(name) === query && !INDEX_MARKETS.has(item.market);
+    const exact = exactName || compactText(code) === query || compactText(thsCode) === query;
     const starts = compactText(name).startsWith(query);
     const benchmark = broadQuery && BROAD_INDEX_CODES.has(thsCode);
     const officialIndex = broadQuery && INDEX_MARKETS.has(item.market);
     const namedIndex = broadQuery && isIndex(item);
     const derivative = /etf|lof|结构化|缓冲|收益增强|双向|两倍|三倍|做空|做多|期货|主连|连续|ntr|fund/i.test(`${name} ${code}`);
-    // Official index market outranks both an exact company name and index-tracking ETFs.
-    const tier = benchmark ? 0 : officialIndex ? 1 : namedIndex && !derivative ? 2 : exact ? 3 : starts ? 4 : 5;
+    // Exact names and canonical benchmark codes outrank thematic index funds.
+    const tier = benchmark ? 0 : exactName ? 1 : officialIndex ? 2 : namedIndex && !derivative ? 3 : exact ? 4 : starts ? 5 : 6;
     return { item, index, tier, derivative: derivative ? 1 : 0, length: name.length };
   }).sort((a, b) => a.tier - b.tier || a.derivative - b.derivative || a.length - b.length || a.index - b.index)
     .map(({ item }) => item);
@@ -86,6 +87,7 @@ const BROAD_INDEX_QUERIES = new Map([
   ['纳斯达克', ['IXIC']], ['纳斯达克综合指数', ['IXIC']], ['纳指', ['IXIC']],
   ['标普500', ['SPX']], ['标准普尔500', ['SPX']], ['标准普尔500指数', ['SPX']],
   ['道琼斯', ['DJI']], ['道琼斯指数', ['DJI']], ['道琼斯工业指数', ['DJI']], ['道琼斯工业平均指数', ['DJI']],
+  ['恒生科技指数', ['HSTECH']], ['恒生科技', ['HSTECH']],
 ]);
 
 /** Broad Chinese queries can overflow upstream before it returns the official index. */
@@ -106,9 +108,12 @@ export function mergeSearchItems(primary, supplemental) {
 }
 
 export function formatSearchResult(data, pattern) {
-  const items = rankSearchItems(Array.isArray(data?.items) ? data.items : [], pattern);
+  const ranked = rankSearchItems(Array.isArray(data?.items) ? data.items : [], pattern);
+  const limit = 20;
   return {
-    pattern, count: items.length, items,
+    pattern, count: ranked.length, returned: Math.min(limit, ranked.length),
+    hasMore: ranked.length > limit, items: ranked.slice(0, limit),
+    ...(ranked.length > limit ? { note: '结果较多，默认展示前20条；请用更完整名称或代码缩小范围。' } : {}),
     // Numeric records are wire-format diagnostics, not useful model-facing search results.
     upstream: { dataState: data?.data_state ?? null, itemCount: data?.item_count ?? null },
   };
