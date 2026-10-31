@@ -1,6 +1,6 @@
 import { relative as relativePath, resolve as resolvePath, sep } from 'node:path';
 import type { Context } from '@deepseek-ai/cordis';
-import type { Agent } from '@deepseek-ai/dsh-agent';
+import type { Agent, AgentSetup } from '@deepseek-ai/dsh-agent';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 import { userKey } from '@dsh-friends/feishu-principal';
 import type { Config } from './config.js';
@@ -175,6 +175,15 @@ const AGENT_PROTO_ALLOW: Readonly<Record<string, readonly string[]>> = {
     'pdf_read',
     'zread_*',
     'memory_*',
+    'bash',
+    'bash_compact',
+    'read',
+    'write',
+    'edit',
+    'grep',
+    'glob',
+    'read_image',
+    'working_directory',
     'feishu_send_image',
     'schedule_*',
     'subagent',
@@ -205,6 +214,15 @@ const AGENT_PROTO_ALLOW: Readonly<Record<string, readonly string[]>> = {
     'pdf_read',
     'zread_*',
     'memory_*',
+    'bash',
+    'bash_compact',
+    'read',
+    'write',
+    'edit',
+    'grep',
+    'glob',
+    'read_image',
+    'working_directory',
     'feishu_send_image',
     'schedule_*',
     'subagent',
@@ -249,6 +267,7 @@ function restrictChannelTools(ctx: Context, config: Config, agent: Agent): void 
     .map((tool) => tool.name)
     .filter((name) => patterns.some((pattern) => toolNameMatches(name, pattern)));
   const removeRestriction = tools.restrict({ allow });
+
   const bindingRoot = bindingCwdOf(ctx, agent);
   const removeGuard = tools.guard((exec) => {
     const denied = patterns.some((pattern) => toolNameMatches(exec.name, pattern))
@@ -301,11 +320,24 @@ export async function resolveAgent(
     return existing;
   }
   const options = agentOptions(config, ctx);
-  const setup = extras.selections?.setup(extras.modelOverride?.(sessionId));
+  const modelSetup = extras.selections?.setup(extras.modelOverride?.(sessionId));
+  const setup: AgentSetup = (agentCtx, agent) => {
+    const delegated = modelSetup?.(agentCtx, agent);
+    const commit = () => {
+      // Apply before AgentRegistry publishes agent/created and before callers
+      // build the model catalog: never advertise tools the guard will deny.
+      bindUserIdentity(agent, extras);
+      restrictChannelTools(ctx, config, agent);
+    };
+    if (delegated instanceof Promise) {
+      return delegated.then((ready) => ({ commit: () => { commit(); ready?.commit(); } }));
+    }
+    return { commit: () => { commit(); delegated?.commit(); } };
+  };
   const withOptions = <T extends object>(base: T): T => ({
     ...base,
     ...(options ? { agentOptions: options } : {}),
-    ...(setup ? { setup } : {}),
+    setup,
   });
   try {
     const resumed = await agents.resume(withOptions({ resumeSessionId: sessionId as SessionId }));

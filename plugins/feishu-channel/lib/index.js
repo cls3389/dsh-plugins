@@ -1237,6 +1237,15 @@ const AGENT_PROTO_ALLOW = {
 		"pdf_read",
 		"zread_*",
 		"memory_*",
+		"bash",
+		"bash_compact",
+		"read",
+		"write",
+		"edit",
+		"grep",
+		"glob",
+		"read_image",
+		"working_directory",
 		"feishu_send_image",
 		"schedule_*",
 		"subagent",
@@ -1266,6 +1275,15 @@ const AGENT_PROTO_ALLOW = {
 		"pdf_read",
 		"zread_*",
 		"memory_*",
+		"bash",
+		"bash_compact",
+		"read",
+		"write",
+		"edit",
+		"grep",
+		"glob",
+		"read_image",
+		"working_directory",
 		"feishu_send_image",
 		"schedule_*",
 		"subagent",
@@ -1338,11 +1356,26 @@ async function resolveAgent(ctx, config, sessionId, cwd, extras = {}) {
 		return existing;
 	}
 	const options = agentOptions(config, ctx);
-	const setup = extras.selections?.setup(extras.modelOverride?.(sessionId));
+	const modelSetup = extras.selections?.setup(extras.modelOverride?.(sessionId));
+	const setup = (agentCtx, agent) => {
+		const delegated = modelSetup?.(agentCtx, agent);
+		const commit = () => {
+			bindUserIdentity(agent, extras);
+			restrictChannelTools(ctx, config, agent);
+		};
+		if (delegated instanceof Promise) return delegated.then((ready) => ({ commit: () => {
+			commit();
+			ready?.commit();
+		} }));
+		return { commit: () => {
+			commit();
+			delegated?.commit();
+		} };
+	};
 	const withOptions = (base) => ({
 		...base,
 		...options ? { agentOptions: options } : {},
-		...setup ? { setup } : {}
+		setup
 	});
 	try {
 		const resumed = await agents.resume(withOptions({ resumeSessionId: sessionId }));

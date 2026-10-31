@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis';
-import type { Agent } from '@deepseek-ai/dsh-agent';
+import type { Agent, AgentSetup } from '@deepseek-ai/dsh-agent';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 import { describe, expect, it, vi } from 'vitest';
 import { registerSessionController, resolveAgent } from '../src/agent-resolver.js';
@@ -26,6 +26,7 @@ describe('Lark Agent compatibility services', () => {
     expect(resume).toHaveBeenCalledWith({
       resumeSessionId: 'lark-session',
       agentOptions: { provider: 'test', model: 'test' },
+      setup: expect.any(Function),
     });
     expect(create).not.toHaveBeenCalled();
     await runtime.dispose();
@@ -138,6 +139,28 @@ describe('Lark Agent compatibility services', () => {
     expect(restrictions).toHaveLength(2);
   });
 
+  it('applies the guest workspace tools before publishing the agent catalog', async () => {
+    const ctx = new Context();
+    const visible: string[][] = [];
+    const tools = {
+      schemas: () => [{ name: 'bash' }, { name: 'read' }, { name: 'ths_account' }, { name: 'web_search' }],
+      restrict: ({ allow }: { allow: string[] }) => { visible.push(allow); return () => {}; },
+      guard: () => () => {},
+    };
+    const agent = { session: { id: 'lark-session' }, ctx: { get: () => tools } } as unknown as Agent;
+    let setup: AgentSetup | undefined;
+    ctx.provide('agents', {
+      get: () => undefined,
+      resume: async (options: { setup?: AgentSetup }) => { setup = options.setup; return { agent, dispose: async () => {} }; },
+      create: vi.fn(),
+    });
+    await resolveAgent(ctx, { manifest: { proto: 'guest' } } as Config, 'lark-session', '/workspace');
+    const prepared = await setup?.({} as never, agent);
+    prepared?.commit();
+    expect(visible[0]).toEqual(['bash', 'read', 'web_search']);
+    expect(visible[0]).not.toContain('ths_account');
+  });
+
   it('threads the model-selection setup through resume', async () => {
     const ctx = new Context();
     const agent = { session: { id: 'lark-session' } } as Agent;
@@ -161,7 +184,7 @@ describe('Lark Agent compatibility services', () => {
     });
 
     expect(captured).toBeTypeOf('function');
-    const commit = (captured as (ctx: unknown, agent: Agent) => { commit(): void })(
+    const commit = await (captured as (ctx: unknown, agent: Agent) => Promise<{ commit(): void }>)(
       { effect: vi.fn() },
       { id: 'lark-session' } as unknown as Agent,
     );
@@ -173,7 +196,7 @@ describe('Lark Agent compatibility services', () => {
     expect(resume).toHaveBeenCalledWith({
       resumeSessionId: 'lark-session',
       agentOptions: { provider: 'cpa', model: 'deepseek-v4-flash' },
-      setup: captured,
+      setup: expect.any(Function),
     });
   });
 });
