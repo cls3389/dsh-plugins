@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/pdf-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -26,7 +26,7 @@
   "dependencies": {
     "clawpdf": "^0.3.2"
   },
-  "description": "PDF 阅读（OpenClaw clawpdf）：文本提取、扫描页渲染与飞书附件直读",
+  "description": "PDF 阅读：文本提取、扫描页渲染与飞书附件直读；集成 OpenClaw 的 clawpdf",
   "keywords": ["pdf", "clawpdf", "openclaw", "reader"],
   "license": "MIT"
 }
