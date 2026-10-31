@@ -14,6 +14,7 @@ export default defineConfig({
       /^@deepseek-ai\//,
       /^@larksuiteoapi\//,
       /^@sinclair\//,
+      'clawpdf',
       'image-size',
       'undici-types',
       'zod',

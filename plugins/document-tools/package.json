@@ -18,8 +18,10 @@
     }
   },
   "dependencies": {
-    "@firecrawl/anydoc": "^0.1.7"
+    "@firecrawl/anydoc": "^0.1.7",
+    "clawpdf": "^0.3.2"
   },
-  "description": "文档转 Markdown(@firecrawl/anydoc)，与生图媒体插件独立",
+  "description": "文档与 PDF 读取：clawpdf 文本提取/页面渲染，Office 等文档转 Markdown",
+  "keywords": ["pdf", "document", "markdown", "clawpdf"],
   "license": "MIT"
 }

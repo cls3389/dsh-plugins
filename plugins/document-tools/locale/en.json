@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Document Tools",
-    "description": "Convert Office, EPUB, CSV, and other documents to Markdown with @firecrawl/anydoc."
+    "title": "Document & PDF Tools",
+    "description": "Read PDFs with clawpdf (text extraction and page rendering), plus Office, EPUB and CSV conversion."
   }
 }

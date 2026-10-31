@@ -11,7 +11,7 @@ import * as fs$1 from "node:fs";
 import fs, { createReadStream, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readUsers, userKey, workspaceFor } from "@dsh-friends/feishu-principal";
 import * as fsPromises from "node:fs/promises";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as dns from "node:dns/promises";
 import * as net from "node:net";
 import { Readable } from "node:stream";
@@ -6684,6 +6684,14 @@ function createToolClient(config, accountIndex = 0) {
 	});
 }
 //#endregion
+//#region vendor/openclaw-lark/dist/core/app-auth-url.js
+/** Single source for one-click application permission requests. */
+function appPermissionAuthUrl(appId, scopes, brand = "feishu", source = "feishu-openclaw") {
+	const openDomain = brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn";
+	const unique = [...new Set(scopes.filter(Boolean))];
+	return `${openDomain}/app/${appId}/auth?q=${encodeURIComponent(unique.join(","))}&op_from=${encodeURIComponent(source)}&token_type=user`;
+}
+//#endregion
 //#region vendor/openclaw-lark/dist/card/card-error.js
 /**
 * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
@@ -7092,19 +7100,6 @@ async function dispatchSyntheticTextMessage(params) {
 }
 //#endregion
 //#region vendor/openclaw-lark/dist/core/domains.js
-/**
-* Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
-* SPDX-License-Identifier: MIT
-*
-* Centralized domain helpers for Feishu / Lark brand-aware URL generation.
-*
-* All runtime code that needs to construct platform URLs should use these
-* helpers instead of hardcoding domain strings.
-*/
-/** 开放平台域名 (API & 权限管理页面) */
-function openPlatformDomain(brand) {
-	return brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn";
-}
 /** Applink 域名 */
 function applinkDomain(brand) {
 	return brand === "lark" ? "https://applink.larksuite.com" : "https://applink.feishu.cn";
@@ -7934,10 +7929,10 @@ async function executeAuthorize(params) {
 		if (unavailableScopes.length > 0) {
 			log$6.info(`app has not granted scopes [${unavailableScopes.join(", ")}], filtering them out`);
 			if (availableScopes.length === 0) {
-				const permissionUrl = `${brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"}/app/${appId}/permission`;
+				const permissionUrl = appPermissionAuthUrl(appId, unavailableScopes, brand);
 				return json$2({
 					error: "app_scopes_not_granted",
-					message: `应用未开通任何请求的用户权限，无法发起授权。请先在开放平台开通以下权限：\n${unavailableScopes.map((s) => `- ${s}`).join("\n")}\n\n权限管理地址：${permissionUrl}`,
+					message: `应用未开通任何请求的用户权限，无法发起授权。请先点击一键申请链接开通以下权限并发布版本：\n${unavailableScopes.map((s) => `- ${s}`).join("\n")}\n\n一键申请地址：${permissionUrl}`,
 					unavailable_scopes: unavailableScopes,
 					app_permission_url: permissionUrl
 				});
@@ -8147,16 +8142,15 @@ async function executeAuthorize(params) {
 	let message = isBatchAuth ? `已发送批量授权请求卡片，共需授权 ${scopeCount} 个权限。请在卡片中完成授权。` : "已发送授权请求卡片，请用户在卡片中点击链接完成授权。授权完成后请重新执行之前的操作。";
 	if (batchInfo) message += batchInfo;
 	if (unavailableScopes.length > 0) {
-		const permissionUrl = `${brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"}/app/${appId}/permission`;
-		message += `\n\n⚠️ **注意**：以下权限因应用未开通而被跳过，如需使用请先在开放平台开通：\n${unavailableScopes.map((s) => `- ${s}`).join("\n")}\n\n权限管理地址：${permissionUrl}`;
+		const permissionUrl = appPermissionAuthUrl(appId, unavailableScopes, brand);
+		message += `\n\n⚠️ **注意**：以下权限因应用未开通而被跳过。请先点击一键申请链接开通并发布版本：\n${unavailableScopes.map((s) => `- ${s}`).join("\n")}\n\n一键申请地址：${permissionUrl}`;
 	}
-	const openDomainForResult = brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn";
 	return json$2({
 		success: true,
 		message,
 		awaiting_authorization: true,
 		filtered_scopes: unavailableScopes.length > 0 ? unavailableScopes : void 0,
-		app_permission_url: unavailableScopes.length > 0 ? `${openDomainForResult}/app/${appId}/permission` : void 0
+		app_permission_url: unavailableScopes.length > 0 ? appPermissionAuthUrl(appId, unavailableScopes, brand) : void 0
 	});
 }
 //#endregion
@@ -8454,9 +8448,8 @@ const I18N_CONFIG = {
 */
 function buildAppScopeMissingCard(params) {
 	const { missingScopes, appId, operationId, brand } = params;
-	const openDomain = brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn";
 	const multiUrl = {
-		url: appId ? `${openDomain}/app/${appId}/auth?q=${encodeURIComponent(missingScopes.join(","))}&op_from=feishu-openclaw&token_type=user` : `${openDomain}/`,
+		url: appId ? appPermissionAuthUrl(appId, missingScopes, brand) : `${brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"}/`,
 		pc_url: "",
 		android_url: "",
 		ios_url: ""
@@ -8652,7 +8645,7 @@ async function sendAppScopeCard(params) {
 		return json$1({
 			error: "app_scope_missing",
 			missing_scopes: missingScopes,
-			message: `应用缺少以下权限：${missingScopes.join(", ")}，请管理员在开放平台开通后重试。` + (appId ? `\n权限管理：${account.brand === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"}/app/${appId}/permission` : "")
+			message: `应用缺少以下权限：${missingScopes.join(", ")}，请管理员在开放平台开通后重试。` + (appId ? `\n一键申请地址：${appPermissionAuthUrl(appId, missingScopes, account.brand)}` : "")
 		});
 	}
 	await sendCardByCardId({
@@ -8966,6 +8959,7 @@ const Config = z.object({
 	]).required(false),
 	replyMode: z.const("streaming").required(false),
 	tools: z.object({ deny: z.array(z.string()).required(false) }).required(false),
+	officialTools: z.union([z.boolean(), z.const("messages")]).required(false),
 	agentToolAllow: z.array(z.string()).required(false),
 	mcpEndpoint: z.string().required(false),
 	accountId: z.string().required(false),
@@ -9110,6 +9104,81 @@ function resolveSecretRef(ref) {
 }
 function dataDirectory(config) {
 	return config.dataDir ?? join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark");
+}
+//#endregion
+//#region src/pdf.ts
+const MAX_TEXT_CHARS = 5e5;
+const MAX_PDF_PAGES = 20;
+/** Extract PDF content at the channel boundary, before the model sees the message. */
+async function pdfMessageContent(agent, fileName, bytes, logger) {
+	if (!fileName.toLowerCase().endsWith(".pdf")) return void 0;
+	try {
+		const { extractPdf } = await import("clawpdf");
+		const result = await extractPdf(bytes, { maxPages: MAX_PDF_PAGES });
+		const text = result.text.trim();
+		const blocks = [];
+		const notes = [`以下是飞书 PDF「${fileName}」的自动解析内容，无需再调用文档转换工具。`];
+		if (result.truncated.text || result.truncated.images) notes.push("仅处理前 20 页；其余内容仍保存在原文件中。");
+		if (text.length > 0) notes.push(`【提取的文本${text.length > MAX_TEXT_CHARS ? "（已截断）" : ""}】\n${text.slice(0, MAX_TEXT_CHARS)}`);
+		if (result.images.length > 0) notes.push("请结合随后附上的 PDF 页面图片逐页阅读。");
+		if (text.length === 0 && result.images.length === 0) notes.push("未能提取到文本或页面图片，请使用原始附件路径处理。");
+		blocks.push({
+			type: "text",
+			text: notes.join("\n\n")
+		});
+		if (result.images.length > 0) {
+			const attachments = agent.ctx.get("attachments");
+			if (!attachments) throw new Error("PDF 页面需要附件服务，但当前会话未提供");
+			const refs = await attachments.saveImages(result.images.map((image) => ({
+				data: image.bytes,
+				mediaType: image.mimeType,
+				name: `${fileName}-page-${image.page}.png`
+			})));
+			for (let i = 0; i < refs.length; i++) {
+				blocks.push({
+					type: "text",
+					text: `【${fileName} · 第 ${result.images[i]?.page} 页】`
+				});
+				blocks.push({
+					type: "image",
+					attachment: refs[i]
+				});
+			}
+		}
+		logger.info(`[lark] PDF auto-extracted: ${fileName} (text=${text.length}, pages=${result.images.length})`);
+		return blocks;
+	} catch (error) {
+		logger.warn(`[lark] PDF auto-extraction failed: ${fileName}: ${String(error)}`);
+		return [{
+			type: "text",
+			text: `飞书 PDF「${fileName}」自动解析失败：${String(error)}。原始附件路径如下，可用文档工具重试。`
+		}];
+	}
+}
+//#endregion
+//#region src/skill-sync.ts
+/**
+* Provision identity-level skills into a user's fenced workspace.
+* Existing files are never overwritten; reference updates must be deliberate.
+*/
+async function syncIdentitySkills(agentsRoot, agentId, userCwd) {
+	if (!agentId) return;
+	const source = join(agentsRoot, agentId, ".dsh", "skills");
+	const target = join(userCwd, ".dsh", "skills");
+	try {
+		await mkdir(target, {
+			recursive: true,
+			mode: 448
+		});
+		await cp(source, target, {
+			recursive: true,
+			force: false,
+			errorOnExist: false
+		});
+	} catch (error) {
+		if (error.code === "ENOENT") return;
+		throw error;
+	}
 }
 //#endregion
 //#region src/dedup-store.ts
@@ -12033,6 +12102,7 @@ var LarkChannel = class {
 			recursive: true,
 			mode: 448
 		});
+		await syncIdentitySkills(this.options.config.workspaceRoot ?? agentsRootDefault(), this.options.config.agentId, binding.cwd);
 		await this.options.sessions.save();
 		this.options.toolContexts.bind(binding.sessionId, {
 			messageId: message.messageId,
@@ -12068,16 +12138,13 @@ var LarkChannel = class {
 			await stream.start();
 			if (turn.closed) return;
 			this.options.logger.info(`official streaming started chat=${message.chatId} phase=${stream.phase} message=${stream.messageId ?? "pending"}`);
-			const content = await this.messageContent(message, binding.cwd);
+			const content = await this.messageContent(message, binding.cwd, agent);
 			if (turn.closed) return;
 			this.options.logger.info(`delivering message ${message.messageId} session=${binding.sessionId}`);
 			agent.followup({
 				id: randomUUID(),
 				role: "user",
-				content: [{
-					type: "text",
-					text: content
-				}],
+				content,
 				source: { kind: "user" }
 			});
 			await done;
@@ -12125,8 +12192,9 @@ var LarkChannel = class {
 		turn.settle();
 		await turn.stream.abort();
 	}
-	async messageContent(message, cwd) {
+	async messageContent(message, cwd, agent) {
 		const parts = [message.content];
+		const blocks = [];
 		for (const resource of message.resources) try {
 			const downloaded = await downloadMessageResourceFeishu({
 				cfg: this.options.officialConfig,
@@ -12137,13 +12205,19 @@ var LarkChannel = class {
 			});
 			const directory = join(cwd, ".dsh_lark", "attachments", sanitize(message.chatId));
 			await mkdir(directory, { recursive: true });
-			const path = join(directory, basename(sanitize(resource.fileName ?? downloaded.fileName ?? `${resource.fileKey}${extension(downloaded.contentType)}`)));
+			const name = sanitize(resource.fileName ?? downloaded.fileName ?? `${resource.fileKey}${extension(downloaded.contentType)}`);
+			const path = join(directory, basename(name));
 			await writeFile(path, downloaded.buffer);
 			parts.push(`[Attachment: ${path}]`);
+			const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger);
+			if (pdf) blocks.push(...pdf);
 		} catch (error) {
 			parts.push(`[Attachment ${resource.fileKey} could not be downloaded: ${errorMessage(error)}]`);
 		}
-		return parts.filter(Boolean).join("\n\n");
+		return [{
+			type: "text",
+			text: parts.filter(Boolean).join("\n\n")
+		}, ...blocks];
 	}
 	async send(chatId, text) {
 		await sendMessageFeishu({
@@ -12591,7 +12665,7 @@ var SessionStore = class {
 		return workspaceFor(this.identity.path, openId, this.identity.appId);
 	}
 	get(chatId, openId, displayName) {
-		const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? "") || (openId ? `用户 ${userKey(openId).slice(0, 8)}` : void 0);
+		const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? "") || (openId ? `用户 ${userKey(openId, this.identity?.appId).slice(0, 8)}` : void 0);
 		if (openId) this.userNames.set(openId, resolvedName);
 		const cwd = this.cwdFor(openId);
 		const existing = this.bindings.get(chatId);
@@ -12684,7 +12758,7 @@ var SessionStore = class {
 					}];
 				}), ...[...this.recoveredUsers].map(([hash, path]) => {
 					return [hash, {
-						displayName: Object.entries(readUsers(join(dirname(this.path), "user-connections.json"))).find(([openId]) => userKey(openId).startsWith(hash))?.[1]?.displayName || `用户 ${hash.slice(0, 8)}`,
+						displayName: `用户 ${hash.slice(0, 8)}`,
 						path,
 						sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId)
 					}];
@@ -19350,7 +19424,7 @@ function registerFeishuOAuthBatchAuthTool(api) {
 					if (err instanceof AppScopeCheckFailedError) return json({
 						error: "app_scope_check_failed",
 						message: "应用缺少核心权限 application:application:self_manage，无法查询可授权 scope 列表。\n\n请管理员在飞书开放平台开通此权限后重试。",
-						permission_link: `${openPlatformDomain(account.brand)}/app/${appId}/auth?q=application:application:self_manage`,
+						permission_link: appPermissionAuthUrl(appId, ["application:application:self_manage"], account.brand),
 						app_id: appId
 					});
 					throw err;
@@ -19526,7 +19600,7 @@ function adaptTool(tool, contexts) {
 * remains the interactive-question implementation, so the OpenClaw-specific
 * synthetic-card tool is deliberately not mounted.
 */
-function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = officialConfig(config, credentials)) {
+function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = officialConfig(config, credentials), mode = "all") {
 	const tools = ctx.get("tools");
 	if (tools === void 0) {
 		ctx.logger.warn("[feishu] tools service unavailable; official Lark tools not registered");
@@ -19538,6 +19612,12 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 		config: hostConfig,
 		logger: ctx.logger,
 		registerTool(tool) {
+			if (mode === "messages" && ![
+				"feishu_im_user_message",
+				"feishu_im_user_fetch_resource",
+				"feishu_im_bot_image",
+				"feishu_send_file"
+			].includes(tool.name)) return;
 			disposers.push(tools.register(adaptTool(tool, contexts)));
 			registered.push(tool.name);
 			ctx.logger.debug(`[feishu] official tool registered: ${tool.name}`);
@@ -19545,12 +19625,12 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 	};
 	disposers.push(tools.register({
 		name: "feishu_send_image",
-		description: "把本地图片发送到当前飞书对话。支持 ths_qr_login 的 output，以及 image_generate/image_edit 返回的 image_path。",
+		description: "把本地图片发送到当前飞书对话。支持 ths_qr_login 的 output、image_generate/image_edit 的 image_path，以及 feishu_group_image、browser_screenshot 等工作区图片。",
 		parameters: {
 			type: "object",
 			properties: { path: {
 				type: "string",
-				description: "ths_qr_login 返回的 output 路径"
+				description: "图片文件路径"
 			} },
 			required: ["path"]
 		},
@@ -19569,10 +19649,13 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 			const sessionId = exec.agent?.session.id;
 			const ticket = sessionId === void 0 ? void 0 : contexts.get(sessionId);
 			if (!ticket) throw new Error("当前对话没有可信飞书用户身份");
-			const path = resolve(String(inputPath));
-			const isQr = path.startsWith(`${resolve("/tmp/openclaw-ths-qr")}/`) && /\/qr-[a-f0-9]+\.png$/.test(path);
-			const isGenerated = path.startsWith(`${resolve("/data/dsh/tmp/media-images")}/`) && /\.(png|jpe?g|webp)$/i.test(path);
-			if (!isQr && !isGenerated) throw new Error("图片路径不属于受支持的扫码或生图输出目录");
+			const { realpathSync } = await import("node:fs");
+			const path = realpathSync(resolve(String(inputPath)));
+			const agentsRoot = realpathSync(resolve(process.env.DSH_HOME ?? "/data/dsh", "home", "agents"));
+			const isQr = path.startsWith(`${realpathSync("/tmp/openclaw-ths-qr")}/`) && /\/qr-[a-f0-9]+\.png$/.test(path);
+			const isGenerated = path.startsWith(`${realpathSync("/data/dsh/tmp/media-images")}/`) && /\.(png|jpe?g|webp)$/i.test(path);
+			const isWorkspace = path.startsWith(`${agentsRoot}/`) && /\.(png|jpe?g|webp|gif|bmp)$/i.test(path);
+			if (!isQr && !isGenerated && !isWorkspace) throw new Error("图片路径不属于受支持的扫码、生图或工作区目录");
 			const client = LarkClient.fromCfg(host.config, ticket.accountId);
 			const response = await client.sdk.im.image.create({ data: {
 				image_type: "message",
@@ -19588,10 +19671,68 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 					content: JSON.stringify({ image_key: imageKey })
 				}
 			});
-			if (sent.code !== 0) throw new Error(`二维码发送失败: ${sent.msg ?? sent.code}`);
+			if (sent.code !== 0) throw new Error(`图片发送失败: ${sent.msg ?? sent.code}`);
 			return {
 				sent: true,
 				messageId: sent.data?.message_id
+			};
+		}
+	}));
+	disposers.push(tools.register({
+		name: "feishu_send_file",
+		description: "把本地文件(csv/xlsx/pdf/txt 等)发送到当前飞书对话。文件需在当前用户工作区 agents/ 目录下。",
+		parameters: {
+			type: "object",
+			properties: { path: {
+				type: "string",
+				description: "文件路径"
+			} },
+			required: ["path"]
+		},
+		output: {
+			schema: {
+				type: "object",
+				additionalProperties: true
+			},
+			render: (_args, value) => [{
+				type: "text",
+				text: JSON.stringify(value)
+			}]
+		},
+		async execute(args, exec) {
+			const { path: inputPath } = args;
+			const sessionId = exec.agent?.session.id;
+			const ticket = sessionId === void 0 ? void 0 : contexts.get(sessionId);
+			if (!ticket) throw new Error("当前对话没有可信飞书用户身份");
+			const { realpathSync } = await import("node:fs");
+			const path = realpathSync(resolve(String(inputPath)));
+			const agentsRoot = realpathSync(resolve(process.env.DSH_HOME ?? "/data/dsh", "home", "agents"));
+			if (!path.startsWith(`${agentsRoot}/`)) throw new Error("文件路径必须在当前用户工作区 agents/ 目录下");
+			const { stat } = await import("node:fs/promises");
+			const info = await stat(path);
+			if (!info.isFile() || info.size > 30 * 1024 * 1024) throw new Error("文件不存在或超过 30MB 限制");
+			const client = LarkClient.fromCfg(host.config, ticket.accountId);
+			const fileType = /\.(pdf)$/i.test(path) ? "pdf" : /\.(xlsx?|csv)$/i.test(path) ? "xls" : /\.(docx?)$/i.test(path) ? "doc" : "stream";
+			const response = await client.sdk.im.file.create({ data: {
+				file_type: fileType,
+				file_name: path.split("/").pop() ?? "file",
+				file: createReadStream(path)
+			} });
+			const fileKey = response?.data?.file_key ?? response?.file_key;
+			if (response?.code !== void 0 && response.code !== 0 || !fileKey) throw new Error(`文件上传失败: ${response?.msg ?? response?.code ?? "missing file_key"}`);
+			const sent = await client.sdk.im.message.create({
+				params: { receive_id_type: "chat_id" },
+				data: {
+					receive_id: ticket.chatId,
+					msg_type: "file",
+					content: JSON.stringify({ file_key: fileKey })
+				}
+			});
+			if (sent.code !== 0) throw new Error(`文件发送失败: ${sent.msg ?? sent.code}`);
+			return {
+				sent: true,
+				messageId: sent.data?.message_id,
+				fileName: path.split("/").pop()
 			};
 		}
 	}));
@@ -19643,7 +19784,7 @@ function apply(ctx, config) {
 	});
 	LarkClient.setGlobalConfig(upstream);
 	const toolContexts = new OfficialToolContexts();
-	const disposeTools = registerOfficialTools(ctx, config, credentials, toolContexts, upstream);
+	const disposeTools = config.officialTools === false ? () => {} : registerOfficialTools(ctx, config, credentials, toolContexts, upstream, config.officialTools === "messages" ? "messages" : "all");
 	const selections = new ModelSelectionRegistry();
 	const appForAccount = new Map(bots.map((bot) => [bot.accountId ?? "default", bot.appId]));
 	const agentForAccount = new Map(bots.map((bot) => [bot.accountId ?? "default", bot.agentId]));

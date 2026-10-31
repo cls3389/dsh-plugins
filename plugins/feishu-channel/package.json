@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/feishu-channel",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Official Lark/Feishu channel and CardKit streaming for DeepSeek Harness.",
   "type": "module",
   "main": "lib/index.js",
@@ -37,6 +37,7 @@
     "@dsh-friends/feishu-principal": "link:/data/dsh/home/dsh-management/dsh-plugins/plugins/feishu-principal",
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@sinclair/typebox": "0.34.49",
+    "clawpdf": "^0.3.2",
     "image-size": "^2.0.4",
     "undici-types": "^8.12.3",
     "zod": "^4.6.5"

@@ -38,6 +38,8 @@ interface Config {
   readonly tools?: {
     readonly deny?: string[];
   };
+  /** false disables all; 'messages' keeps only current-chat text/image messaging tools. */
+  readonly officialTools?: boolean | 'messages';
   /** Allowlist for the complete DSH tool catalog exposed through this channel. */
   readonly agentToolAllow?: string[];
   readonly mcpEndpoint?: string;

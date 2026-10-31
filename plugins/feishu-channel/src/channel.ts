@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { Agent, AssistantStreamFrame } from '@deepseek-ai/dsh-agent';
-import type { UserMessage } from '@deepseek-ai/dsh-llm';
+import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
 import { LarkClient } from '../vendor/openclaw-lark/dist/core/lark-client.js';
 import { MessageDedup } from '../vendor/openclaw-lark/dist/messaging/inbound/dedup.js';
@@ -16,7 +16,9 @@ import type {
 } from '../vendor/openclaw-lark/dist/messaging/types.js';
 import { handleCardAction } from '../vendor/openclaw-lark/dist/tools/auto-auth.js';
 import type { Config } from './config.js';
-import { dataDirectory } from './config.js';
+import { agentsRootDefault, dataDirectory } from './config.js';
+import { pdfMessageContent } from './pdf.js';
+import { syncIdentitySkills } from './skill-sync.js';
 import { DedupStore } from './dedup-store.js';
 import type { LarkRuntimeConfig } from './runtime-config.js';
 import type { SessionStore } from './session-store.js';
@@ -298,6 +300,7 @@ export class LarkChannel {
       : undefined;
     const binding = this.options.sessions.get(message.chatId, message.senderId, resolvedName);
     await mkdir(binding.cwd, { recursive: true, mode: 0o700 });
+    await syncIdentitySkills(this.options.config.workspaceRoot ?? agentsRootDefault(), this.options.config.agentId, binding.cwd);
     await this.options.sessions.save();
     this.options.toolContexts.bind(binding.sessionId, {
       messageId: message.messageId,
@@ -342,7 +345,7 @@ export class LarkChannel {
       this.options.logger.info(
         `official streaming started chat=${message.chatId} phase=${stream.phase} message=${stream.messageId ?? 'pending'}`,
       );
-      const content = await this.messageContent(message, binding.cwd);
+      const content = await this.messageContent(message, binding.cwd, agent);
       if (turn.closed) return;
       this.options.logger.info(
         `delivering message ${message.messageId} session=${binding.sessionId}`,
@@ -350,7 +353,7 @@ export class LarkChannel {
       agent.followup({
         id: randomUUID() as UserMessage['id'],
         role: 'user',
-        content: [{ type: 'text', text: content }],
+        content,
         source: { kind: 'user' },
       } satisfies UserMessage);
       await done;
@@ -411,8 +414,9 @@ export class LarkChannel {
     await turn.stream.abort();
   }
 
-  private async messageContent(message: MessageContext, cwd: string): Promise<string> {
+  private async messageContent(message: MessageContext, cwd: string, agent: Agent): Promise<ContentBlock[]> {
     const parts = [message.content];
+    const blocks: ContentBlock[] = [];
     for (const resource of message.resources) {
       try {
         const downloaded = await downloadMessageResourceFeishu({
@@ -432,13 +436,15 @@ export class LarkChannel {
         const path = join(directory, basename(name));
         await writeFile(path, downloaded.buffer);
         parts.push(`[Attachment: ${path}]`);
+        const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger);
+        if (pdf) blocks.push(...pdf);
       } catch (error) {
         parts.push(
           `[Attachment ${resource.fileKey} could not be downloaded: ${errorMessage(error)}]`,
         );
       }
     }
-    return parts.filter(Boolean).join('\n\n');
+    return [{ type: 'text', text: parts.filter(Boolean).join('\n\n') }, ...blocks];
   }
 
   private async send(chatId: string, text: string): Promise<void> {
