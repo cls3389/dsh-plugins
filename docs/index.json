@@ -208,7 +208,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "f6f4a3982557a6626e4b945098cc79d89dc113c3",
+            "commit": "c4b67840181796cfc7efff6f72247dbd22a3da5d",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -557,12 +557,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793409761,
+          "version": "0.1.2",
+          "publishTimestamp": 1793411868,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9be05e82044e02b6d47ccacf12770db5353467f4",
+            "commit": "c4b67840181796cfc7efff6f72247dbd22a3da5d",
             "path": "plugins/pdf-tools"
           },
           "engines": {}
