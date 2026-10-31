@@ -666,7 +666,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "0db212fc9e895342037b791e367d8e5001f153dc",
+            "commit": "b8800a422e3ed576ab206d02598c3f990f334dff",
             "path": "plugins/ths-market"
           },
           "engines": {}
