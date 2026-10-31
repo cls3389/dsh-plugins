@@ -1158,7 +1158,7 @@ class PortfolioManager {
         const allGroups = await this.getAllGroups(false);
         const stored = allGroups[groupInfo.name];
         if (stored && Array.isArray(stored.items)) {
-          storedItems = new Map(stored.items.map((it) => [it.code, it]));
+          storedItems = new Map(stored.items.map((it) => [storedStockKey(it.code, it.market), it]));
         }
       } catch (_e) { /* fall back to resolved symbols */ }
     }
@@ -1166,9 +1166,11 @@ class PortfolioManager {
     const results = [];
     for (const stock of parsed) {
       let content;
-      const stored = storedItems?.get(stock.code);
+      const stored = storedItems?.get(storedStockKey(stock.code, stock.market_abbr));
       if (stored && stored.market) {
-        content = `${stock.code},${stored.market}`;
+        // Group delete matches the upstream's exact stored code+market, not a
+        // display-normalized code. HK may be stored as HK1060/177 or 01060/55.
+        content = `${stored.code},${stored.market}`;
       } else {
         content = buildContent(stock);
       }
@@ -1574,6 +1576,17 @@ async function resolveSymbol(symbol) {
     }
   }
   return stock;
+}
+
+/** Match user-facing 01060/1060/HK01060 to the group's stored HK identity. */
+function storedStockKey(code, market) {
+  let value = String(code ?? '').trim().toUpperCase();
+  const type = String(market ?? '').trim().toUpperCase();
+  if (/^HK\d+$/.test(value) || type === 'HK' || type === '55' || type === '177') {
+    value = value.replace(/^HK/, '').replace(/^0+/, '') || '0';
+    return `HK:${value}`;
+  }
+  return value;
 }
 
 function buildStockCode(stock) {
@@ -2330,11 +2343,13 @@ function apply(ctx, config) {
         // identityOf 无双载体时返回 undefined,回退分支保持原 ou_ 守卫不变。
         const identity = identityOf(exec?.agent);
         const openId = exec?.agent?.larkUser?.openId ?? identity?.subjectId;
-        if (typeof openId !== "string" || !openId.startsWith("ou_")) {
+        if ((typeof openId !== "string" || !openId.startsWith("ou_")) && !cfg.defaultAgentId) {
           throw new Error("无法确认飞书用户身份，已拒绝访问同花顺自选；请从飞书私聊或群聊重新发起");
         }
-        // open_id 只在同一飞书应用内稳定；默认应用保留原状态，新应用独立状态。
-        const agentId = `user-${principalKey(openId, exec?.agent?.larkUser?.appId ?? identity?.appId, cfg.defaultAppId)}`;
+        // 有飞书身份时始终按 appId+openId 隔离；仅无渠道身份的 Web 单用户会话使用显式 defaultAgentId。
+        const agentId = typeof openId === "string" && openId.startsWith("ou_")
+          ? `user-${principalKey(openId, exec?.agent?.larkUser?.appId ?? identity?.appId, cfg.defaultAppId)}`
+          : `user-${normalizeAgentId(cfg.defaultAgentId)}`;
         const tool = scopedFor(agentId).find((x) => x.name === t.name);
         if (!tool) return { error: `tool ${t.name} unavailable for ${agentId}` };
         // DSH output must be lossless JSON; absent quote metadata is omitted, not undefined.
@@ -2350,4 +2365,4 @@ function apply(ctx, config) {
 const name = "ths-favorites";
 const inject = ["tools"];
 
-export { apply, inject, name };
+export { apply, inject, name, storedStockKey };

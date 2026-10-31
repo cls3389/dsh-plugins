@@ -30,9 +30,13 @@ export function apply(ctx, config) {
     output: {
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => {
-        const summary = value.error ?? (value.type === 'image'
-          ? `图片型 PDF：共 ${value.totalPages} 页，已渲染 ${value.renderedPages} 页，请逐页阅读。${value.truncated ? '超出 max_pages 的页面未处理。' : ''}${value.markdown ? `\n【提取的文本层】\n${value.markdown}` : ''}`
-          : value.markdown ?? JSON.stringify(value));
+        const summary = value.error ?? [
+          `PDF：共 ${value.totalPages} 页，已处理前 ${value.processedPages} 页${value.renderedPages ? `，其中 ${value.renderedPages} 页补充页面图片` : ''}。`,
+          value.truncatedPages ? `仅处理前 max_pages 页，其余 ${value.totalPages - value.processedPages} 页未读取。` : '',
+          value.truncatedText ? '文字层达到 max_text_chars 上限，已截断。' : '',
+          ...(value.pageErrors ?? []).map((item) => item.error),
+          value.markdown || '所选页面没有可提取文字；请结合页面图片阅读。',
+        ].filter(Boolean).join('\n\n');
         const blocks = [{ type: 'text', text: summary }];
         const refs = pageAttachments.get(value.docId);
         for (const item of value.images ?? []) {
@@ -57,12 +61,15 @@ export function apply(ctx, config) {
         const out = {
           status: 'ok', format: 'pdf', type: result.images.length > 0 ? 'image' : 'text',
           markdown: result.text, charCount: result.text.length,
-          totalPages: result.totalPages, renderedPages: result.images.length,
+          totalPages: result.totalPages, processedPages: result.processedPages,
+          renderedPages: result.images.length,
+          pageErrors: result.pageErrors,
           truncated: result.truncated.text || result.truncated.images,
+          truncatedText: result.truncated.text, truncatedPages: result.truncated.images,
         };
         if (result.images.length > 0) {
           const attachments = ctx.get('attachments');
-          if (!attachments) return { error: '图片型 PDF 需要附件服务才能返回页面图片。', code: 'attachments_unavailable' };
+          if (!attachments) return { error: 'PDF 页面图片需要附件服务才能返回页面图片。', code: 'attachments_unavailable' };
           const docId = `pdf-${++documentCounter}`;
           const refs = await attachments.saveImages(result.images.map((image) => ({ data: image.bytes, mediaType: image.mimeType, name: `page-${image.page}.png` })));
           const pages = new Map();

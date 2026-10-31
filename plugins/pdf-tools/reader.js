@@ -4,38 +4,90 @@ export const DEFAULT_MAX_PAGES = 20;
 export const DEFAULT_MAX_TEXT_CHARS = 500_000;
 const DEFAULT_DPI = 96;
 const DEFAULT_PAGE_MAX_PIXELS = 4_000_000;
+const MIN_PAGE_TEXT_CHARS = 80;
+const MIN_PAGE_SIDE = 100;
+
+/** Return extracted pages with explicit boundaries, without mixing page order. */
+function formatTextPages(pages, maxTextChars) {
+  let remaining = maxTextChars;
+  let text = '';
+  let truncated = false;
+  for (const page of pages) {
+    const heading = `\n\n【PDF 第 ${page.page} 页 · 文字层】\n`;
+    const available = remaining - heading.length;
+    if (available <= 0) {
+      truncated = true;
+      break;
+    }
+    const body = page.text.slice(0, available) || (page.imageRequired ? '（此页无可用文字层，见随后页面图片。）' : '');
+    text += `${heading}${body}`;
+    remaining -= heading.length + body.length;
+    if (body.length < page.text.length) {
+      truncated = true;
+      break;
+    }
+  }
+  return { text: text.trim(), truncated };
+}
 
 /**
- * Extract a whole PDF once for text, then render selected pages independently.
- * clawpdf's multi-page extractPdf shares one maxPixels budget across the entire
- * document, silently shrinking later pages to thumbnails before dropping them.
+ * Keep every selected page explicit. Clawpdf's auto mode only looks at total
+ * document text and silently omits image pages in mixed documents; its shared
+ * image budget also degrades later scans. Text and images use separate budgets.
  */
+export function assertRenderablePage(image) {
+  if (!image) throw new Error('未返回页面图像');
+  if (image.width < MIN_PAGE_SIDE || image.height < MIN_PAGE_SIDE) {
+    throw new Error(`页面渲染尺寸异常（${image.width}×${image.height}px），拒绝当作有效页面`);
+  }
+  return image;
+}
+
 export async function readPdf(bytes, options = {}) {
   const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
   const maxTextChars = options.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
   const dpi = options.dpi ?? DEFAULT_DPI;
   const pageMaxPixels = options.pageMaxPixels ?? DEFAULT_PAGE_MAX_PIXELS;
-  const result = await extractPdf(bytes, { maxPages, maxTextChars, mode: 'text' });
-  const text = result.text?.trim() ?? '';
-  if (text.length >= 200) {
-    return { text, images: [], totalPages: result.pagesProcessed?.length ?? 0, truncated: { text: result.truncated.text, images: false } };
-  }
-
+  const extracted = await extractPdf(bytes, { maxPages, maxTextChars, mode: 'text' });
   const document = await openPdf(bytes);
   try {
-    const pages = Array.from({ length: Math.min(document.pageCount, maxPages) }, (_, index) => index + 1);
+    const selectedCount = Math.min(document.pageCount, maxPages);
+    const pageNumbers = Array.from({ length: selectedCount }, (_, index) => index + 1);
+    const textPages = pageNumbers.map((page) => {
+      const text = document.getPageText(page).trim();
+      return { page, text, imageRequired: text.length < MIN_PAGE_TEXT_CHARS };
+    });
+    const formatted = formatTextPages(textPages, maxTextChars);
     const images = [];
-    for (const page of pages) {
-      // A fresh per-page budget prevents earlier pages from degrading later ones.
-      const rendered = await document.extract({
-        pages: [page], mode: 'images',
-        image: { dpi, maxPixels: pageMaxPixels },
-      });
-      for (const image of rendered.images) images.push(image);
+    const pageErrors = [];
+    const renderedPages = [];
+    for (const { page, text } of textPages) {
+      // Sparse text on a page normally indicates a scan or a mixed figure page.
+      // Pure text pages keep their cheaper text representation; mixed pages are
+      // still rendered, so figures cannot silently disappear behind a text layer.
+      if (text.length >= MIN_PAGE_TEXT_CHARS) continue;
+      renderedPages.push(page);
+      try {
+        const rendered = await document.extract({
+          pages: [page], mode: 'images',
+          image: { dpi, maxPixels: pageMaxPixels },
+        });
+        images.push(assertRenderablePage(rendered.images[0]));
+      } catch (error) {
+        pageErrors.push({ page, error: `第 ${page} 页图像读取失败：${error?.message ?? error}` });
+      }
     }
     return {
-      text, images, totalPages: document.pageCount,
-      truncated: { text: result.truncated.text, images: document.pageCount > maxPages },
+      text: formatted.text,
+      images,
+      totalPages: document.pageCount,
+      processedPages: selectedCount,
+      renderedPages,
+      pageErrors,
+      truncated: {
+        text: formatted.truncated || extracted.truncated.text,
+        images: document.pageCount > maxPages,
+      },
     };
   } finally {
     await document.destroy();
