@@ -1,8 +1,8 @@
 /**
  * @dsh-friends/ths-market — 同花顺行情+盯盘(2026-10-29 自 @local/ths-trade 拆分)
  *
- * 纯只读行情 9 工具(quote/klines/search/wencai/level2/market_pulse/sec_kline/
- * move_detail/margin_collateral) + 盯盘引擎与 3 工具(watch_add/list/remove)。
+ * 纯只读行情 10 工具(quote/klines/search/wencai/level2/market_pulse/sec_kline/
+ * move_detail/margin_collateral/yield_curve) + 盯盘引擎与 3 工具(watch_add/list/remove)。
  * 自动执行双门禁:同 profile 装有 ths-trade(ctx.tools 探测 ths_order_submit)
  * 且配置 xiadanApiKey 才启用;否则 action 规则自动降级为提醒型。
  * 工具面收窄:toolDeny/toolAllow(通配符,deny 优先)。
@@ -11,6 +11,7 @@
 import fsModule from 'node:fs';
 import { connectionForExecution, connectionForOpenId } from '../../lib/user-connections.js';
 import { identityOf } from '../feishu-principal/index.js';
+import { readTreasuryYieldCurve } from './yield-curve.js';
 
 const name = 'ths-market';
 const inject = ['tools'];
@@ -23,6 +24,8 @@ const CONFIG_DEFAULTS = {
 	dataCenterApiKey: process.env.THS_DATACENTER_API_KEY || '',
 	// ── 华宝证券可充抵保证金证券(官网公示页)──
 	marginCollateralBaseUrl: 'https://www.cnhbstock.com/tt/308',
+	// ── 美国财政部官方每日名义国债收益率曲线(无需 API Key)──
+	treasuryYieldBaseUrl: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates',
 	// ── 盯盘引擎(原 ths-trade 同款)──
 	watchEnabled: false,
 	watchIntervalMs: 30000,
@@ -350,6 +353,22 @@ function apply(ctx, config) {
 				.filter(({ market, code }) => !results[`${market}${code}`])
 				.map(({ market, code }) => ({ symbol: `${market}${code}`, reason: '上游未返回行情,请用 ths_search 核对完整代码' }));
 			return { quotes: results, unavailable, ...(errors.length ? { errors } : {}) };
+		},
+	});
+
+	register({
+		name: 'ths_yield_curve',
+		description: '查询美国财政部官方每日国债收益率曲线（名义 par yield，单位 %），含 2Y/10Y/30Y 及完整期限、相对上一发布日基点变化。不是同花顺证券行情，也不是国债 ETF 价格；适用于美债收益率与历史宏观复盘。date 可指定 YYYY-MM-DD，取该日或之前最近发布日；省略取最新发布值，不是实时盘中利率。',
+		parameters: {
+			type: 'object',
+			properties: {
+				date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: '可选，查询该日或之前最近发布日，格式 YYYY-MM-DD' },
+			},
+			additionalProperties: false,
+		},
+		output: anyJsonOutput,
+		async execute(args) {
+			return readTreasuryYieldCurve({ date: args.date, baseUrl: cfg.treasuryYieldBaseUrl, timeoutMs: cfg.requestTimeoutMs });
 		},
 	});
 

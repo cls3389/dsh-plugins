@@ -185,6 +185,7 @@ const AGENT_PROTO_ALLOW: Readonly<Record<string, readonly string[]>> = {
     'ths_search',
     'ths_quote',
     'ths_klines',
+    'ths_yield_curve',
     'ths_level2',
     'ths_sec_kline',
     'ths_wencai',

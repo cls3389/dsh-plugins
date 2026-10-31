@@ -8,6 +8,7 @@
         dataCenterBaseUrl: http://127.0.0.1:17890
         dataCenterApiKey: ''
         marginCollateralBaseUrl: https://www.cnhbstock.com/tt/308
+        treasuryYieldBaseUrl: https://home.treasury.gov/resource-center/data-chart-center/interest-rates
         requestTimeoutMs: 15000
         # 盯盘引擎与规则持久化。
         # 公共默认关闭；需要盯盘时在本机完整配置中启用，并指定唯一 master。

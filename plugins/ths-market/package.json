@@ -1,9 +1,9 @@
 {
   "name": "@dsh-friends/ths-market",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "test": "node --test test-security.mjs test-user-isolation.mjs"
+    "test": "node --test test-security.mjs test-yield-curve.mjs test-user-isolation.mjs test-watch-master.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -12,8 +12,11 @@
   },
   "files": [
     "index.js",
+    "yield-curve.js",
     "test-security.mjs",
+    "test-yield-curve.mjs",
     "test-user-isolation.mjs",
+    "test-watch-master.mjs",
     "cordis.patch.yml",
     "locale/*.json"
   ],
@@ -22,6 +25,6 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "同花顺行情+盯盘(纯提醒或双门禁自动执行):行情9工具+盯盘引擎,自动执行须同装 ths-trade",
+  "description": "同花顺行情+盯盘(纯提醒或双门禁自动执行):行情9工具+美国财政部收益率曲线+盯盘引擎,自动执行须同装 ths-trade",
   "license": "MIT"
 }
