@@ -1,0 +1,11 @@
+# PDF 阅读使用 clawpdf（OpenClaw / PDFium WASM），与 anydoc 文档转换独立。
+- insert:
+    - id: pdf-tools
+      name: '@dsh-friends/pdf-tools'
+      config:
+        allowedPathPrefixes:
+          - /tmp/
+          - /data/dsh/
+          - /home/
+        maxPages: 20
+        maxTextChars: 500000

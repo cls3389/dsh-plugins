@@ -22,7 +22,7 @@ describe('Feishu PDF attachment extraction', () => {
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]).toMatchObject({ type: 'text' });
     const text = blocks?.[0]?.type === 'text' ? blocks[0].text : '';
-    expect(text).toContain('无需再调用文档转换工具');
+    expect(text).toContain('无需再调用 PDF 工具');
     expect(text).toContain('周策略：坚守底线');
     expect(text).toContain('上证指数');
   });
@@ -56,7 +56,7 @@ describe('Feishu PDF attachment extraction', () => {
     } as MessageContext, dir, agent);
     expect(blocks).toHaveLength(2);
     expect(blocks[0]?.text).not.toContain('could not be downloaded');
-    expect(blocks[1]?.text).toContain('无需再调用文档转换工具');
+    expect(blocks[1]?.text).toContain('无需再调用 PDF 工具');
     expect(blocks[1]?.text).toContain('周策略：坚守底线');
   });
 });

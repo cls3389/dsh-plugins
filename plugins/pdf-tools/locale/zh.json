@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "PDF 阅读（OpenClaw）",
+    "description": "基于 clawpdf / PDFium 读取 PDF：文本提取、扫描页渲染，并支持飞书附件自动直读。"
+  }
+}

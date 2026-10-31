@@ -1,0 +1,32 @@
+{
+  "name": "@dsh-friends/pdf-tools",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./reader": {
+      "types": "./reader.d.ts",
+      "default": "./reader.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "reader.js",
+    "reader.d.ts",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "clawpdf": "^0.3.2"
+  },
+  "description": "PDF 阅读（OpenClaw clawpdf）：文本提取、扫描页渲染与飞书附件直读",
+  "keywords": ["pdf", "clawpdf", "openclaw", "reader"],
+  "license": "MIT"
+}

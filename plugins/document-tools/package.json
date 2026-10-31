@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/document-tools",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -18,10 +18,9 @@
     }
   },
   "dependencies": {
-    "@firecrawl/anydoc": "^0.1.7",
-    "clawpdf": "^0.3.2"
+    "@firecrawl/anydoc": "^0.1.7"
   },
-  "description": "文档与 PDF 读取：clawpdf 文本提取/页面渲染，Office 等文档转 Markdown",
-  "keywords": ["pdf", "document", "markdown", "clawpdf"],
+  "description": "Firecrawl anydoc：Office、EPUB、CSV 等文档转 Markdown（PDF 由独立 pdf-tools 提供）",
+  "keywords": ["anydoc", "firecrawl", "document", "markdown"],
   "license": "MIT"
 }

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "PDF Reader (OpenClaw)",
+    "description": "Read PDFs with clawpdf / PDFium: text extraction, page rendering and automatic Feishu attachment reading."
+  }
+}

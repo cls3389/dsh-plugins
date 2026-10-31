@@ -18,6 +18,7 @@ import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
 import z from "@deepseek-ai/schemastery";
+import { isPdf, readPdf } from "@dsh-friends/pdf-tools/reader";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { imageSize } from "image-size";
@@ -1098,6 +1099,7 @@ const AGENT_PROTO_ALLOW = {
 		"image_generate",
 		"image_edit",
 		"doc_to_markdown",
+		"pdf_read",
 		"zread_*",
 		"memory_*",
 		"feishu_send_image",
@@ -1125,6 +1127,7 @@ const AGENT_PROTO_ALLOW = {
 		"image_generate",
 		"image_edit",
 		"doc_to_markdown",
+		"pdf_read",
 		"zread_*",
 		"memory_*",
 		"feishu_send_image",
@@ -9111,13 +9114,15 @@ const MAX_TEXT_CHARS = 5e5;
 const MAX_PDF_PAGES = 20;
 /** Extract PDF content at the channel boundary, before the model sees the message. */
 async function pdfMessageContent(agent, fileName, bytes, logger, contentType) {
-	if (!fileName.toLowerCase().endsWith(".pdf") && contentType !== "application/pdf") return void 0;
+	if (!isPdf(fileName, contentType)) return void 0;
 	try {
-		const { extractPdf } = await import("clawpdf");
-		const result = await extractPdf(bytes, { maxPages: MAX_PDF_PAGES });
+		const result = await readPdf(bytes, {
+			maxPages: MAX_PDF_PAGES,
+			maxTextChars: MAX_TEXT_CHARS
+		});
 		const text = result.text.trim();
 		const blocks = [];
-		const notes = [`以下是飞书 PDF「${fileName}」的自动解析内容，无需再调用文档转换工具。`];
+		const notes = [`以下是飞书 PDF「${fileName}」的自动解析内容，无需再调用 PDF 工具。`];
 		if (result.truncated.text || result.truncated.images) notes.push("仅处理前 20 页；其余内容仍保存在原文件中。");
 		if (text.length > 0) notes.push(`【提取的文本${text.length > MAX_TEXT_CHARS ? "（已截断）" : ""}】\n${text.slice(0, MAX_TEXT_CHARS)}`);
 		if (result.images.length > 0) notes.push("请结合随后附上的 PDF 页面图片逐页阅读。");
@@ -9151,7 +9156,7 @@ async function pdfMessageContent(agent, fileName, bytes, logger, contentType) {
 		logger.warn(`[lark] PDF auto-extraction failed: ${fileName}: ${String(error)}`);
 		return [{
 			type: "text",
-			text: `飞书 PDF「${fileName}」自动解析失败：${String(error)}。原始附件路径如下，可用文档工具重试。`
+			text: `飞书 PDF「${fileName}」自动解析失败：${String(error)}。原始附件路径如下，可用 pdf_read 重试。`
 		}];
 	}
 }

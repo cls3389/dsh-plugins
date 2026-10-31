@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "文档与 PDF 工具",
-    "description": "读取 PDF（clawpdf：文本提取、扫描页渲染）并转换 Office、EPUB、CSV 等文档。"
+    "title": "Anydoc 文档转换",
+    "description": "Firecrawl @firecrawl/anydoc：Office、EPUB、CSV 等文档转 Markdown；PDF 请安装独立「PDF 阅读」。"
   }
 }
