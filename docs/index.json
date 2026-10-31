@@ -208,7 +208,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "5a8d694e49043c4346d915e8fb041f8c180e19f5",
+            "commit": "9b292eb62bf911d3eddf0513b60717478a5e08fb",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
