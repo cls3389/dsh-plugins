@@ -23,7 +23,10 @@ export async function pdfMessageContent(
     const result = await readPdf(bytes, { maxPages: MAX_PDF_PAGES, maxTextChars: MAX_TEXT_CHARS });
     const text = result.text.trim();
     const blocks: ContentBlock[] = [];
-    const notes = [`以下是飞书 PDF「${fileName}」的自动解析内容，无需再调用 PDF 工具。`];
+    const notes = [
+      `以下是飞书 PDF「${fileName}」的自动解析内容，无需再调用 PDF 工具。`,
+      '工具边界：自动解析的正文可直接阅读，无需重复调用 PDF 工具。可围绕文档核验少量关键行情，但不得把阅读任务扩展为全市场扫描；未获明确请求不得查询账户、持仓、委托或自选股等个人数据，也不要为同一目的反复调用等价工具。',
+    ];
     if (result.truncated.text || result.truncated.images) notes.push('仅处理前 20 页；其余内容仍保存在原文件中。');
     if (text.length > 0) {
       notes.push(`【提取的文本${text.length > MAX_TEXT_CHARS ? '（已截断）' : ''}】\n${text.slice(0, MAX_TEXT_CHARS)}`);

@@ -25,6 +25,7 @@ describe('Feishu PDF attachment extraction', () => {
     expect(text).toContain('无需再调用 PDF 工具');
     expect(text).toContain('周策略：坚守底线');
     expect(text).toContain('上证指数');
+    expect(text).toContain('未获明确请求不得查询账户、持仓、委托或自选股');
   });
 
   it('saves scanned pages as durable image blocks', async () => {
