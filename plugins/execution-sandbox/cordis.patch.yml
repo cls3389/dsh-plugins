@@ -1,0 +1,20 @@
+- id: bash-sandbox
+  disabled: true
+- insert:
+    - id: execution-sandbox
+      name: '@dsh-friends/execution-sandbox'
+      config:
+        image: dsh-user-sandbox:bookworm
+        uid: 1000
+        gid: 1000
+        network: none
+        workspaceRoots:
+          - /data/dsh/home/agents
+        memory: 1g
+        cpus: 1
+        pidsLimit: 128
+        timeoutMs: 60000
+        maxOutputBytes: 64000
+        maxSpillBytes: 67108864
+        graceMs: 3000
+        maxTimeoutMs: 600000
