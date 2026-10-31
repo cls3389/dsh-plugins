@@ -53,4 +53,8 @@ test('preserves Hong Kong index and stock ths_codes and normalizes aliases', () 
   assert.deepEqual(parseSecurity('UHKMHK3330'), { market: 'UHKM', code: 'HK3330' });
   assert.deepEqual(parseSecurity('00700'), { market: 'UHKM', code: 'HK0700' });
   assert.deepEqual(parseSecurity('HK03330'), { market: 'UHKM', code: 'HK3330' });
+  assert.deepEqual(parseSecurity('02689.HK'), { market: 'UHKM', code: 'HK2689' });
+  assert.deepEqual(parseSecurity('600519.SH'), { market: 'USHA', code: '600519' });
+  assert.deepEqual(parseSecurity('000001.SZ'), { market: 'USZA', code: '000001' });
+  assert.deepEqual(parseSecurity('000001.SH'), { market: 'USHI', code: '1A0001' });
 });

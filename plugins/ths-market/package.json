@@ -1,9 +1,9 @@
 {
   "name": "@dsh-friends/ths-market",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
-    "test": "node --test test-security.mjs test-yield-curve.mjs test-user-isolation.mjs test-watch-master.mjs"
+    "test": "node --test test-security.mjs test-market-output.mjs test-yield-curve.mjs test-user-isolation.mjs test-watch-master.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -13,7 +13,9 @@
   "files": [
     "index.js",
     "yield-curve.js",
+    "market-output.js",
     "test-security.mjs",
+    "test-market-output.mjs",
     "test-yield-curve.mjs",
     "test-user-isolation.mjs",
     "test-watch-master.mjs",

@@ -12,6 +12,7 @@ import fsModule from 'node:fs';
 import { connectionForExecution, connectionForOpenId } from '../../lib/user-connections.js';
 import { identityOf } from '../feishu-principal/index.js';
 import { readTreasuryYieldCurve } from './yield-curve.js';
+import { decodeKlines, formatSearchResult, mergeSearchItems, quoteFreshness, searchRefinements } from './market-output.js';
 
 const name = 'ths-market';
 const inject = ['tools'];
@@ -89,7 +90,10 @@ function normalizeCode(market, code) {
  */
 function parseSecurity(input) {
 	if (typeof input !== 'string' || !input.trim()) throw new Error('证券代码不能为空');
-	const raw = input.trim().toUpperCase();
+	const raw = input.trim().toUpperCase().replace(/\s+/g, '');
+	// Common vendor suffixes: 02689.HK, 600519.SH, 000001.SZ, 920xxx.BJ.
+	const suffix = raw.match(/^([0-9A-F]{4,6})\.(SH|SZ|BJ|HK)$/);
+	if (suffix) return parseSecurity(`${suffix[2]}${suffix[1]}`);
 	if (/^1[AB][0-9A-F]{4}$/.test(raw)) return { market: 'USHI', code: raw };
 	let m = raw.match(/^(U[A-Z]{3})([0-9A-Z]+)$/);
 	if (m && m[1] === 'USHK') return { market: 'UHKM', code: `HK${m[2].padStart(4, '0')}` };
@@ -352,7 +356,7 @@ function apply(ctx, config) {
 			const unavailable = secs
 				.filter(({ market, code }) => !results[`${market}${code}`])
 				.map(({ market, code }) => ({ symbol: `${market}${code}`, reason: '上游未返回行情,请用 ths_search 核对完整代码' }));
-			return { quotes: results, unavailable, ...(errors.length ? { errors } : {}) };
+			return { quotes: results, unavailable, freshness: quoteFreshness(), ...(errors.length ? { errors } : {}) };
 		},
 	});
 
@@ -387,7 +391,10 @@ function apply(ctx, config) {
 			},
 			required: ['code', 'interval'],
 		},
-		output: anyJsonOutput,
+		output: {
+			schema: anyJsonOutput.schema,
+			render: (_args, value) => [renderJson(value, Math.max(12000, Math.min(60000, (value.klines?.count ?? 0) * 220 + 2000)))],
+		},
 		async execute(args, exec) {
 			const { market, code } = parseSecurity(args.code);
 			const body = { market, code, interval: args.interval };
@@ -396,7 +403,7 @@ function apply(ctx, config) {
 			if (args.end_date) body.end_date = args.end_date;
 			if (args.adjust) body.adjust = args.adjust;
 			const raw = await fqFor(exec).post('/v1/market/history/klines', body);
-			return { klines: raw?.data ?? raw };
+			return { klines: decodeKlines(raw?.data ?? raw, { market, code, interval: args.interval, adjust: args.adjust, count: args.count }) };
 		},
 	});
 
@@ -410,10 +417,24 @@ function apply(ctx, config) {
 			},
 			required: ['pattern'],
 		},
-		output: anyJsonOutput,
+		output: {
+			schema: anyJsonOutput.schema,
+			render: (_args, value) => [renderJson(value, Math.max(12000, (value.symbols?.count ?? 0) * 180 + 1000))],
+		},
 		async execute(args, exec) {
 			const raw = await fqFor(exec).post('/v1/market/catalog/search-symbols', { pattern: args.pattern });
-			return { symbols: raw?.data ?? raw };
+			const data = raw?.data ?? raw;
+			const refinements = searchRefinements(args.pattern);
+			if (refinements.length > 0) {
+				const supplements = await Promise.all(refinements.map(async (pattern) => {
+					try {
+						const response = await fqFor(exec).post('/v1/market/catalog/search-symbols', { pattern });
+						return (response?.data ?? response)?.items ?? [];
+					} catch { return []; }
+				}));
+				data.items = mergeSearchItems(data.items ?? [], supplements.flat());
+			}
+			return { symbols: formatSearchResult(data, args.pattern) };
 		},
 	});
 
