@@ -436,7 +436,7 @@ export class LarkChannel {
         const path = join(directory, basename(name));
         await writeFile(path, downloaded.buffer);
         parts.push(`[Attachment: ${path}]`);
-        const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger);
+        const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger, downloaded.contentType);
         if (pdf) blocks.push(...pdf);
       } catch (error) {
         parts.push(

@@ -15,8 +15,9 @@ export async function pdfMessageContent(
   fileName: string,
   bytes: Uint8Array,
   logger: PdfLogger,
+  contentType?: string,
 ): Promise<ContentBlock[] | undefined> {
-  if (!fileName.toLowerCase().endsWith('.pdf')) return undefined;
+  if (!fileName.toLowerCase().endsWith('.pdf') && contentType !== 'application/pdf') return undefined;
   try {
     const { extractPdf } = await import('clawpdf');
     const result = await extractPdf(bytes, { maxPages: MAX_PDF_PAGES });

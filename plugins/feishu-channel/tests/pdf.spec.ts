@@ -1,9 +1,18 @@
-import { readFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { pdfMessageContent } from '../src/pdf.js';
+import { LarkChannel } from '../src/channel.js';
+import type { MessageContext } from '../vendor/openclaw-lark/dist/messaging/types.js';
 
-const logger = { info() {}, warn() {} };
+const logger = { debug() {}, info() {}, warn() {}, error() {} };
+const temporary: string[] = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 
 describe('Feishu PDF attachment extraction', () => {
   it('injects PDF text without requiring a model tool call', async () => {
@@ -32,5 +41,22 @@ describe('Feishu PDF attachment extraction', () => {
     const blocks = await pdfMessageContent(agent, '扫描周策略.pdf', bytes, logger);
     expect(blocks?.filter((block) => block.type === 'image')).toHaveLength(7);
     expect(blocks?.[0]?.type === 'text' && blocks[0].text).toContain('逐页阅读');
+  });
+
+  it('delivers extracted text through the Feishu message boundary', async () => {
+    const bytes = await readFile('/data/dsh/attachments/v1/files/90/905d69d9a006e6d839488680e0787671a3da3fc34ca6dbfc94b0c3fd5730d578/20261018格兰周策略：坚守底线.pdf');
+    const media = await import('../vendor/openclaw-lark/dist/messaging/outbound/media.js');
+    vi.spyOn(media, 'downloadMessageResourceFeishu').mockResolvedValue({ buffer: bytes, fileName: '周策略.pdf', contentType: 'application/pdf' });
+    const dir = await mkdtemp(join(tmpdir(), 'feishu-pdf-'));
+    temporary.push(dir);
+    const channel = new LarkChannel({ config: {}, logger } as never);
+    const agent = { ctx: { get: () => undefined } } as unknown as Agent;
+    const blocks = await (channel as unknown as { messageContent(message: MessageContext, cwd: string, agent: Agent): Promise<Array<{ type: string; text?: string }>> }).messageContent({
+      content: '', messageId: 'om_pdf', chatId: 'oc_pdf', resources: [{ fileKey: 'file_pdf', type: 'file', fileName: '周策略.pdf' }],
+    } as MessageContext, dir, agent);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.text).not.toContain('could not be downloaded');
+    expect(blocks[1]?.text).toContain('无需再调用文档转换工具');
+    expect(blocks[1]?.text).toContain('周策略：坚守底线');
   });
 });

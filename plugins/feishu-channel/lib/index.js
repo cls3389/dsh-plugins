@@ -9110,8 +9110,8 @@ function dataDirectory(config) {
 const MAX_TEXT_CHARS = 5e5;
 const MAX_PDF_PAGES = 20;
 /** Extract PDF content at the channel boundary, before the model sees the message. */
-async function pdfMessageContent(agent, fileName, bytes, logger) {
-	if (!fileName.toLowerCase().endsWith(".pdf")) return void 0;
+async function pdfMessageContent(agent, fileName, bytes, logger, contentType) {
+	if (!fileName.toLowerCase().endsWith(".pdf") && contentType !== "application/pdf") return void 0;
 	try {
 		const { extractPdf } = await import("clawpdf");
 		const result = await extractPdf(bytes, { maxPages: MAX_PDF_PAGES });
@@ -12209,7 +12209,7 @@ var LarkChannel = class {
 			const path = join(directory, basename(name));
 			await writeFile(path, downloaded.buffer);
 			parts.push(`[Attachment: ${path}]`);
-			const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger);
+			const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger, downloaded.contentType);
 			if (pdf) blocks.push(...pdf);
 		} catch (error) {
 			parts.push(`[Attachment ${resource.fileKey} could not be downloaded: ${errorMessage(error)}]`);
