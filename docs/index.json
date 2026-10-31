@@ -534,12 +534,12 @@
     {
       "name": "@dsh-friends/pdf-tools",
       "title": {
-        "zh": "PDF 阅读（OpenClaw）",
-        "en": "PDF Reader (OpenClaw)"
+        "zh": "PDF 阅读",
+        "en": "PDF Reader"
       },
       "description": {
-        "zh": "基于 clawpdf / PDFium 读取 PDF：文本提取、扫描页渲染，并支持飞书附件自动直读。",
-        "en": "Read PDFs with clawpdf / PDFium: text extraction, page rendering and automatic Feishu attachment reading."
+        "zh": "读取 PDF：文本提取、扫描页渲染，支持飞书附件自动直读。集成 OpenClaw 的 clawpdf / PDFium。",
+        "en": "Read PDFs with text extraction, page rendering and automatic Feishu attachment reading. Integrates clawpdf / PDFium from OpenClaw."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -557,12 +557,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793409162,
+          "version": "0.1.1",
+          "publishTimestamp": 1793409761,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "620bce3a5bf1384b4b3d386bf5d6d3a64c401c0e",
+            "commit": "9be05e82044e02b6d47ccacf12770db5353467f4",
             "path": "plugins/pdf-tools"
           },
           "engines": {}
