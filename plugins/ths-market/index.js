@@ -389,7 +389,7 @@ function apply(ctx, config) {
 
 	register({
 		name: 'ths_klines',
-		description: '查询证券历史 K 线。分钟(1m/5m/15m/30m/60m/120m)使用数据中心且仅支持前复权，日线及以上使用 FQGate V2。count 与 start_date/end_date 二选一。指数代码同 ths_quote,如 USHI1A0001。',
+		description: '查询证券历史 K 线。分钟(1m/5m/15m/30m/60m/120m)使用数据中心且仅支持前复权，日线及以上使用 FQGate V2。count 与 start_date/end_date 二选一。指数代码同 ths_quote,如 USHI1A0001。当前数据中心分钟 K 仅返回沪深普通股票；ETF/指数分钟 K 和 FQGate 季/年 K 暂不支持，返回空数据或能力错误时勿重复重试。',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -426,7 +426,8 @@ function apply(ctx, config) {
 					symbol: `${security.market}${security.code}`, interval: args.interval,
 					adjust: 'forward', count,
 				});
-				return { klines, source: 'ths-data-center', ...(klines.count === 0 ? { warning: '数据中心未返回分钟 K 线，请核对交易日期与证券代码。' } : {}) };
+				const unsupportedMinuteType = ['USHJ', 'USZJ', 'USHI', 'USZI'].includes(security.market);
+				return { klines, source: 'ths-data-center', ...(klines.count === 0 ? { warning: unsupportedMinuteType ? '数据中心分钟 K 当前仅返回沪深普通股票，ETF/指数无分钟数据；请改用日线，勿重复重试。' : '数据中心未返回分钟 K 线，请核对交易日期与证券代码。' } : {}) };
 			}
 			const raw = await fqFor(exec).post('/v2/market/bars', {
 				security: v2SecurityTarget(security), interval: args.interval, range,

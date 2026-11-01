@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/ths-market",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "scripts": {
     "test": "node --test test-security.mjs test-fqgate-v2.mjs test-data-center-klines.mjs test-market-output.mjs test-yield-curve.mjs test-user-isolation.mjs test-watch-master.mjs"
