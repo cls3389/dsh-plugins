@@ -58,3 +58,22 @@ test('preserves Hong Kong index and stock ths_codes and normalizes aliases', () 
   assert.deepEqual(parseSecurity('000001.SZ'), { market: 'USZA', code: '000001' });
   assert.deepEqual(parseSecurity('000001.SH'), { market: 'USHI', code: '1A0001' });
 });
+
+test('routes convertible bonds to the bond markets across every input shape', () => {
+  // 深市转债 123/127/128/120:裸码、显式前缀、后缀、完整 ths_code 必须一致(2026-11-01 欧通转债 123241 曾误投 mainland 报 HTTP 400)。
+  for (const code of ['123241', '127045', '128039', '120456']) {
+    const expected = { market: 'USZB', code };
+    assert.deepEqual(parseSecurity(code), expected);
+    assert.deepEqual(parseSecurity(`SZ${code}`), expected);
+    assert.deepEqual(parseSecurity(`USZB${code}`), expected);
+  }
+  assert.deepEqual(parseSecurity('123241.SZ'), { market: 'USZB', code: '123241' });
+  // 沪市转债 110/111/113/118/100。
+  for (const code of ['110092', '111032', '113050', '118000', '100456']) {
+    const expected = { market: 'USHB', code };
+    assert.deepEqual(parseSecurity(code), expected);
+    assert.deepEqual(parseSecurity(`SH${code}`), expected);
+    assert.deepEqual(parseSecurity(`USHB${code}`), expected);
+  }
+  assert.deepEqual(parseSecurity('110092.SH'), { market: 'USHB', code: '110092' });
+});

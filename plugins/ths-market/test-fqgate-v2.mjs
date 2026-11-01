@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeV2Quote, fetchV2Quotes, normalizeV2SearchItems, quoteRoute, toV2Security, v2QuoteFields } from './fqgate-v2.js';
+import { decodeV2Quote, fetchV2Quotes, normalizeV2SearchItems, quoteRoute, toV2Security, v2QuoteFields, v2SecurityTarget } from './fqgate-v2.js';
 
 const security = (market, code) => ({ market, code });
 
@@ -12,6 +12,25 @@ test('converts legacy THS identities to V2 without losing Hong Kong leading zero
   assert.equal(quoteRoute(security('UHKM', 'HK0700')), '/v2/market/quotes/hong-kong');
   assert.equal(quoteRoute(security('UFII', 'IXIC')), null);
   assert.deepEqual(toV2Security(security('XSHG', '600519')), { market: 'XSHG', code: '600519', assetType: 'equity' });
+});
+
+test('routes convertible bonds through the V2 bonds endpoint', () => {
+  // 2026-11-01:欧通转债 123241 曾被误投 quotes/mainland 报 HTTP 400;实测 bonds 路由可用。
+  assert.deepEqual(toV2Security(security('USZB', '123241')), { market: 'XSHE', code: '123241', assetType: 'bond' });
+  assert.deepEqual(toV2Security(security('USHB', '110092')), { market: 'XSHG', code: '110092', assetType: 'bond' });
+  assert.equal(quoteRoute(security('USZB', '123241')), '/v2/market/quotes/bonds');
+  assert.equal(quoteRoute(security('USHB', '110092')), '/v2/market/quotes/bonds');
+  assert.deepEqual(v2SecurityTarget(security('USZB', '123241')), { market: 'XSHE', code: '123241' });
+  // decodeV2Quote 对 bonds 返回(asset_type: bond)要还原成 USZB/USHB 前缀,与 parseSecurity 往返一致。
+  const row = decodeV2Quote({ security: { market: 'XSHE', code: '123241' }, asset_type: 'bond', latest: 447, previous_close: 480.003, security_name: '欧通转债' });
+  assert.equal(row.code, 'USZB123241');
+  assert.equal(row.price, 447);
+  assert.ok(Math.abs(row.changePercent - (447 - 480.003) / 480.003 * 100) < 0.001);
+  // 搜索结果无 asset_type 时按号段归到债券市场,ths_code 可直接回传 ths_quote。
+  assert.deepEqual(
+    normalizeV2SearchItems({ items: [{ security: { market: 'XSHE', code: '123241' }, name: '欧通转债' }] }),
+    [{ name: '欧通转债', code: '123241', market: 'USZB', ths_code: 'USZB123241' }],
+  );
 });
 
 test('maps legacy field ids and standard field names', () => {

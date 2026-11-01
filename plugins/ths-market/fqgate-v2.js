@@ -6,8 +6,8 @@
  */
 
 const STANDARD_MARKETS = {
-  USHA: 'XSHG', USHJ: 'XSHG', USHI: 'XSHG',
-  USZA: 'XSHE', USZJ: 'XSHE', USZI: 'XSHE',
+  USHA: 'XSHG', USHJ: 'XSHG', USHI: 'XSHG', USHB: 'XSHG',
+  USZA: 'XSHE', USZJ: 'XSHE', USZI: 'XSHE', USZB: 'XSHE',
   USJB: 'XBEI', UHKM: 'XHKG', UHKI: 'XHKG',
   UNQQ: 'XNAS', UFII: 'XNAS', UNYN: 'XNYS',
   XSHG: 'XSHG', XSHE: 'XSHE', XBEI: 'XBEI', XHKG: 'XHKG',
@@ -42,7 +42,8 @@ export function toV2Security(security) {
   let code = security.code;
   if (security.market === 'UHKM') code = code.replace(/^HK/i, '').padStart(5, '0');
   const assetType = ['USHI', 'USZI', 'UHKI', 'UFII'].includes(security.market) ? 'index'
-    : ['USHJ', 'USZJ'].includes(security.market) ? 'fund' : 'equity';
+    : ['USHJ', 'USZJ'].includes(security.market) ? 'fund'
+    : ['USHB', 'USZB'].includes(security.market) ? 'bond' : 'equity';
   return { market, code, assetType };
 }
 
@@ -54,6 +55,7 @@ export function v2SecurityTarget(security) {
 export function quoteRoute(security) {
   if (['USHI', 'USZI'].includes(security.market)) return '/v2/market/quotes/indices';
   if (['USHJ', 'USZJ'].includes(security.market)) return '/v2/market/quotes/funds';
+  if (['USHB', 'USZB'].includes(security.market)) return '/v2/market/quotes/bonds';
   if (['USHA', 'USZA', 'USJB'].includes(security.market)) return '/v2/market/quotes/mainland';
   if (security.market === 'UHKM') return '/v2/market/quotes/hong-kong';
   if (['UNQQ', 'UNYN'].includes(security.market)) return '/v2/market/quotes/united-states';
@@ -81,11 +83,13 @@ function legacySymbol(security, assetType = 'equity') {
   const { market, code } = security;
   if (market === 'XSHG') {
     const prefix = assetType === 'index' || /^1[AB]/.test(code) ? 'USHI'
+      : assetType === 'bond' || /^(100|110|111|113|118)\d{3}$/.test(code) ? 'USHB'
       : assetType === 'fund' || /^[45]/.test(code) ? 'USHJ' : 'USHA';
     return `${prefix}${code}`;
   }
   if (market === 'XSHE') {
     const prefix = assetType === 'index' || /^399/.test(code) ? 'USZI'
+      : assetType === 'bond' || /^(120|123|127|128)\d{3}$/.test(code) ? 'USZB'
       : assetType === 'fund' || /^1[56]/.test(code) ? 'USZJ' : 'USZA';
     return `${prefix}${code}`;
   }

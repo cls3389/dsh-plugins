@@ -56,13 +56,21 @@ const MARKETS = {
 	SZJ: 'USZJ', 深基: 'USZJ', SZF: 'USZJ',
 	SHI: 'USHI', SZI: 'USZI',
 	USHI: 'USHI', USZI: 'USZI',
+	SHB: 'USHB', 沪债: 'USHB', SZB: 'USZB', 深债: 'USZB',
+	USHB: 'USHB', USZB: 'USZB',
 };
+
+/** 沪市可转债/可交换债号段:100/110/111/113/118(科创);深市:120/123/127/128。 */
+const SH_CONVERTIBLE = /^(100|110|111|113|118)\d{3}$/;
+const SZ_CONVERTIBLE = /^(120|123|127|128)\d{3}$/;
 
 /** 按代码前缀推断 FQGate 市场(实测校准:510300/588000/511990→USHJ,159915→USZJ) */
 function inferMarket(code) {
 	if (code.length === 6) {
 		if (/^4[38]/.test(code)) return 'USJB';  // 43/48 北交
 		if (/^8[38]/.test(code)) return 'USJB';  // 83/87 北交
+		if (SH_CONVERTIBLE.test(code)) return 'USHB';  // 沪市转债,V2 走 bonds 路由
+		if (SZ_CONVERTIBLE.test(code)) return 'USZB';  // 深市转债,V2 走 bonds 路由
 		if (/^[45]/.test(code)) return 'USHJ';   // 50/51/56/58 沪市基金/ETF
 		if (/^1[56]/.test(code)) return 'USZJ';  // 15/16/18 深市基金/ETF
 		// 000xxx 是深圳股票与上证指数的重叠号段，不能一律当指数。
@@ -112,6 +120,9 @@ function parseSecurity(input) {
 	if (/^(SZ|SZA|SZI|深|深圳)$/.test(alias) && /^399/.test(code)) return { market: 'USZI', code };
 	if (['USHI', 'USZI'].includes(MARKETS[alias] ?? inferMarket(code))) return { market: inferMarket(code), code: normalizeCode(inferMarket(code), code) };
 	const market = MARKETS[alias] ?? inferMarket(code);
+	// SH/SZ 显式交易所前缀 + 转债号段 → 可转债市场(与 inferMarket 一致,避免误投股票路由)。
+	if (/^(SH|SHA|沪|上海)$/.test(alias) && SH_CONVERTIBLE.test(code)) return { market: 'USHB', code };
+	if (/^(SZ|SZA|深|深圳)$/.test(alias) && SZ_CONVERTIBLE.test(code)) return { market: 'USZB', code };
 	// 港股主板完整代码为 UHKMHK0700，而不是 USHK700。
 	if (market === 'UHKM') code = `HK${code.replace(/^0+(?=\d)/, '').padStart(4, '0')}`;
 	return { market, code };
@@ -313,11 +324,11 @@ function apply(ctx, config) {
 	};
 	register({
 		name: 'ths_quote',
-		description: '查询单只或多只证券实时行情(FQGate)。支持股票/ETF/指数/债券,返回价格、涨跌幅、成交量额、换手率等。securities 支持形如 "600519"、"SH600519"、"SZ000001" 的代码;指数优先用 ths_search 返回的完整代码,如 "USHI1A0001"(上证)、"USZI399001"(深证成指)、"USZI399006"(创业板指),也支持 "SH000001"、"SZ399001"。',
+		description: '查询单只或多只证券实时行情(FQGate)。支持股票/ETF/指数/可转债,返回价格、涨跌幅、成交量额等。securities 支持形如 "600519"、"SH600519"、"SZ000001" 的代码;可转债支持 "123241"、"SZ123241"、"USZB123241" 及 110/111/113/118(沪)/120/123/127/128(深) 号段;指数优先用 ths_search 返回的完整代码,如 "USHI1A0001"(上证)、"USZI399001"(深证成指)、"USZI399006"(创业板指),也支持 "SH000001"、"SZ399001"。',
 		parameters: {
 			type: 'object',
 			properties: {
-				securities: { type: 'array', items: { type: 'string' }, description: '证券代码列表,如 ["600519","SZ000001","USHI1A0001"];指数用 ths_search 返回的完整 ths_code' },
+				securities: { type: 'array', items: { type: 'string' }, description: '证券代码列表,如 ["600519","SZ000001","USHI1A0001","123241"];指数用 ths_search 返回的完整 ths_code;可转债可直接用六位代码' },
 				fields: { type: 'array', items: { type: ['integer', 'string'] }, description: '可选 V2 标准字段名；旧数字编号会转换为标准字段。省略返回全部常用字段' },
 			},
 			required: ['securities'],
@@ -389,14 +400,14 @@ function apply(ctx, config) {
 
 	register({
 		name: 'ths_klines',
-		description: '查询证券历史 K 线。分钟(1m/5m/15m/30m/60m/120m)使用数据中心且仅支持前复权，日线及以上使用 FQGate V2。count 与 start_date/end_date 二选一。指数代码同 ths_quote,如 USHI1A0001。当前数据中心分钟 K 仅返回沪深普通股票；ETF/指数分钟 K 和 FQGate 季/年 K 暂不支持，返回空数据或能力错误时勿重复重试。',
+		description: '查询证券历史 K 线。分钟(1m/5m/15m/30m/60m/120m)使用数据中心且仅支持前复权，日线及以上使用 FQGate V2。count 与 start_date/end_date 二选一（不要同时传）。指数代码同 ths_quote,如 USHI1A0001;可转债如 123241/110092。当前数据中心分钟 K 仅返回沪深普通股票；ETF/可转债/指数分钟 K 和 FQGate 季/年 K 暂不支持，返回空数据或能力错误时勿重复重试。',
 		parameters: {
 			type: 'object',
 			properties: {
-				code: { type: 'string', description: '证券代码,如 600519;指数用完整代码 USHI1A0001 / USZI399001' },
+				code: { type: 'string', description: '证券代码,如 600519;指数用完整代码 USHI1A0001 / USZI399001;可转债如 123241/110092' },
 				interval: { type: 'string', description: 'K 线周期:1m/5m/15m/30m/60m/120m/day/week/month/quarter/year' },
-				count: { type: 'integer', description: '返回最近 N 根(与日期范围二选一)' },
-				start_date: { type: 'string', description: 'YYYYMMDD(与 count 二选一)' },
+				count: { type: 'integer', description: '返回最近 N 根(与 start_date/end_date 二选一,勿同时传)' },
+				start_date: { type: 'string', description: 'YYYYMMDD(与 count 二选一,勿同时传)' },
 				end_date: { type: 'string', description: 'YYYYMMDD' },
 				adjust: { type: 'string', description: '复权:None 不复权 / forward 前复权 / backward 后复权' },
 			},
