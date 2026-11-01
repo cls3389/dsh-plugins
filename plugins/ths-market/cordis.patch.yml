@@ -5,6 +5,8 @@
       name: '@dsh-friends/ths-market'
       config:
         fqgateBaseUrl: http://127.0.0.1:18000
+        # 只有一个数据连接时留空；多个连接填 GET /v2/source-instances 的 instanceId。
+        fqgateInstanceId: ''
         dataCenterBaseUrl: http://127.0.0.1:17890
         dataCenterApiKey: ''
         marginCollateralBaseUrl: https://www.cnhbstock.com/tt/308

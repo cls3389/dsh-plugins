@@ -12,7 +12,8 @@ import fsModule from 'node:fs';
 import { connectionForExecution, connectionForOpenId } from '../../lib/user-connections.js';
 import { identityOf } from '../feishu-principal/index.js';
 import { readTreasuryYieldCurve } from './yield-curve.js';
-import { decodeKlines, formatSearchResult, mergeSearchItems, quoteFreshness, searchRefinements } from './market-output.js';
+import { decodeKlines, decodeV2Klines, formatSearchResult, mergeSearchItems, quoteFreshness, searchRefinements } from './market-output.js';
+import { DEFAULT_V2_QUOTE_FIELDS, DEFAULT_V2_SUBSCRIPTION_FIELDS, decodeV2Quote, fetchV2Quotes, normalizeV2LargeOrder, normalizeV2SearchItems, toV2Security, v2QuoteFields, v2SecurityTarget } from './fqgate-v2.js';
 
 const name = 'ths-market';
 const inject = ['tools'];
@@ -168,11 +169,17 @@ function unwrapXiadan(envelope, path) {
 	return envelope.data;
 }
 
-/** FQGate REST 客户端(无鉴权) */
+/** FQGate REST 客户端。多数据连接时按配置选择，不使用账号名代替 instanceId。 */
 function fqgateClient(ctx, cfg) {
+	const headers = cfg.fqgateInstanceId ? { 'X-FQGate-Instance-Id': cfg.fqgateInstanceId } : {};
 	return {
-		post: (path, body) =>
-			request(ctx, cfg.fqgateBaseUrl, path, { method: 'POST', body, timeoutMs: cfg.requestTimeoutMs }),
+		get: (path) => request(ctx, cfg.fqgateBaseUrl, path, { headers, timeoutMs: cfg.requestTimeoutMs }),
+		post: (path, body) => request(ctx, cfg.fqgateBaseUrl, path, {
+			method: 'POST', body, headers, timeoutMs: cfg.requestTimeoutMs,
+		}).then((raw) => {
+			if (raw?.code !== 0) throw new Error(`FQGate ${path}: ${raw?.message ?? raw?.error ?? '响应格式异常'}`);
+			return raw;
+		}),
 	};
 }
 
@@ -310,52 +317,55 @@ function apply(ctx, config) {
 			type: 'object',
 			properties: {
 				securities: { type: 'array', items: { type: 'string' }, description: '证券代码列表,如 ["600519","SZ000001","USHI1A0001"];指数用 ths_search 返回的完整 ths_code' },
-				fields: { type: 'array', items: { type: 'integer' }, description: `可选,自选字段编号。常用:${Object.entries(FQ_FIELDS).map(([k, v]) => `${k}=${v}`).join(', ')}。省略返回全部常用字段` },
+				fields: { type: 'array', items: { type: ['integer', 'string'] }, description: '可选 V2 标准字段名；旧数字编号会转换为标准字段。省略返回全部常用字段' },
 			},
 			required: ['securities'],
 		},
 		output: anyJsonOutput,
 		async execute(args, exec) {
 			const secs = args.securities.map(parseSecurity);
-			// FQGate 自选字段接口要求同市场分组;fields 必填(实测)
-			const groups = new Map();
-			for (const s of secs) {
-				const list = groups.get(s.market) ?? [];
-				list.push(s.code);
-				groups.set(s.market, list);
-			}
 			const results = {};
 			const errors = [];
-			for (const [market, codes] of groups) {
-				try {
-					const body = {
-						securities: codes.map((code) => ({ market, code })),
-						fields: args.fields?.length ? args.fields : DEFAULT_QUOTE_FIELDS,
-					};
-					const raw = await fqFor(exec).post('/v1/market/realtime/quote', body);
-					const rows = decodeRows(raw?.data);
-					for (const row of rows) {
-						// 本地衍生指标:涨跌幅、振幅(FQ 无直接字段)
-						if (Number.isFinite(row.price) && Number.isFinite(row.preClose) && row.preClose > 0) {
-							row.changePercent = round4(((row.price - row.preClose) / row.preClose) * 100);
-							// fields 子集可能不含 high/low;缺字段时省略振幅,避免非有限数破坏 lossless JSON 输出。
-							if (Number.isFinite(row.high) && Number.isFinite(row.low)) {
-								row.amplitude = round4(((row.high - row.low) / row.preClose) * 100);
-							}
-						}
-						const symbol = String(row.code ?? '');
-						// 完整 ths_code 是跨市场唯一键；四位市场前缀后的代码仅作兼容别名。
-						results[symbol] = row;
-						results[symbol.slice(4)] = row;
-					}
-				} catch (error) {
-					if (groups.size === 1) throw error;
-					errors.push({ market, codes, reason: String(error?.message ?? error) });
+			const unavailable = [];
+			const rows = [];
+			const fields = v2QuoteFields(args.fields);
+			const groups = new Map();
+			for (const security of secs) {
+				if (!groups.has(security.market)) groups.set(security.market, []);
+				groups.get(security.market).push(security);
+			}
+			for (const [market, group] of groups) {
+				try { rows.push(...await fetchV2Quotes(fqFor(exec), group, fields)); }
+				catch (error) {
+					if (groups.size === 1 && !['UHKI', 'UFII', 'UFIC', 'UFIE', 'UFIX'].includes(market)) throw error;
+					errors.push({ market, reason: String(error?.message ?? error) });
 				}
 			}
-			const unavailable = secs
-				.filter(({ market, code }) => !results[`${market}${code}`])
-				.map(({ market, code }) => ({ symbol: `${market}${code}`, reason: '上游未返回行情,请用 ths_search 核对完整代码' }));
+			for (const row of rows) {
+				results[row.code] = row;
+				results[row.code.slice(4)] = row;
+			}
+			for (const security of secs) {
+				if (results[`${security.market}${security.code}`]) continue;
+				// Only genuinely absent V2 capabilities use this explicit legacy route.
+				if (!['UHKI', 'UFII', 'UFIC', 'UFIE', 'UFIX'].includes(security.market)) {
+					unavailable.push({ symbol: `${security.market}${security.code}`, reason: 'V2 上游未返回行情,请用 ths_search 核对完整代码' });
+					continue;
+				}
+				try {
+					const raw = await fqFor(exec).post('/v1/market/realtime/quote', {
+						securities: [security], fields: DEFAULT_QUOTE_FIELDS,
+					});
+					for (const row of decodeRows(raw?.data)) {
+						if (Number.isFinite(row.price) && Number.isFinite(row.preClose) && row.preClose > 0) row.changePercent = round4((row.price - row.preClose) / row.preClose * 100);
+						results[row.code] = row;
+						results[row.code.slice(4)] = row;
+					}
+				} catch (error) {
+					errors.push({ symbol: `${security.market}${security.code}`, reason: String(error?.message ?? error), compatibility: 'v1-global-index' });
+				}
+				if (!results[`${security.market}${security.code}`]) unavailable.push({ symbol: `${security.market}${security.code}`, reason: '上游未返回行情,请用 ths_search 核对完整代码' });
+			}
 			return { quotes: results, unavailable, freshness: quoteFreshness(), ...(errors.length ? { errors } : {}) };
 		},
 	});
@@ -396,14 +406,30 @@ function apply(ctx, config) {
 			render: (_args, value) => [renderJson(value, Math.max(12000, Math.min(60000, (value.klines?.count ?? 0) * 220 + 2000)))],
 		},
 		async execute(args, exec) {
-			const { market, code } = parseSecurity(args.code);
-			const body = { market, code, interval: args.interval };
-			if (args.count != null) body.count = args.count;
-			if (args.start_date) body.start_date = args.start_date;
-			if (args.end_date) body.end_date = args.end_date;
-			if (args.adjust) body.adjust = args.adjust;
-			const raw = await fqFor(exec).post('/v1/market/history/klines', body);
-			return { klines: decodeKlines(raw?.data ?? raw, { market, code, interval: args.interval, adjust: args.adjust, count: args.count }) };
+			const security = parseSecurity(args.code);
+			if (args.count != null && (args.start_date || args.end_date)) throw new Error('count 与 start_date/end_date 二选一');
+			if (args.count == null && !args.start_date) throw new Error('请提供 count，或 start_date/end_date 日期范围');
+			const date = (value) => /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value;
+			const range = args.count != null
+				? { type: 'count', count: args.count }
+				: { type: 'date_range', start_date: date(args.start_date), end_date: date(args.end_date ?? args.start_date) };
+			// tonghuashun-plugin 2.0.7 的分钟 bars 返回 source_data_contract_violation；
+			// 用户允许此类 V2 未覆盖能力显式保留 V1。日/周/月等仍使用 V2。
+			if (['1m', '5m', '15m', '30m', '60m', '120m'].includes(args.interval)) {
+				const body = { market: security.market, code: security.code, interval: args.interval };
+				if (args.count != null) body.count = args.count;
+				if (args.start_date) body.start_date = args.start_date;
+				if (args.end_date) body.end_date = args.end_date;
+				if (args.adjust) body.adjust = args.adjust;
+				const raw = await fqFor(exec).post('/v1/market/history/klines', body);
+				const klines = decodeKlines(raw?.data ?? raw, { ...security, interval: args.interval, adjust: args.adjust, count: args.count });
+				return { klines, compatibility: 'v1-intraday-bars', ...(klines.count === 0 ? { warning: '当前数据连接未返回分钟 K 线；V2 分钟 bars 在当前 2.0.7 服务端也报 source_data_contract_violation。' } : {}) };
+			}
+			const raw = await fqFor(exec).post('/v2/market/bars', {
+				security: v2SecurityTarget(security), interval: args.interval, range,
+				adjustment: String(args.adjust ?? 'none').toLowerCase(),
+			});
+			return { klines: decodeV2Klines(raw?.data, { symbol: `${security.market}${security.code}`, interval: args.interval, adjust: args.adjust, count: args.count }) };
 		},
 	});
 
@@ -422,19 +448,20 @@ function apply(ctx, config) {
 			render: (_args, value) => [renderJson(value, Math.max(12000, (value.symbols?.count ?? 0) * 180 + 1000))],
 		},
 		async execute(args, exec) {
-			const raw = await fqFor(exec).post('/v1/market/catalog/search-symbols', { pattern: args.pattern });
-			const data = raw?.data ?? raw;
+			const raw = await fqFor(exec).get(`/v2/instruments/search?query=${encodeURIComponent(args.pattern)}`);
+			const data = raw?.data ?? {};
+			let items = normalizeV2SearchItems(data);
 			const refinements = searchRefinements(args.pattern);
 			if (refinements.length > 0) {
 				const supplements = await Promise.all(refinements.map(async (pattern) => {
 					try {
-						const response = await fqFor(exec).post('/v1/market/catalog/search-symbols', { pattern });
-						return (response?.data ?? response)?.items ?? [];
+						const response = await fqFor(exec).get(`/v2/instruments/search?query=${encodeURIComponent(pattern)}`);
+						return normalizeV2SearchItems(response?.data);
 					} catch { return []; }
 				}));
-				data.items = mergeSearchItems(data.items ?? [], supplements.flat());
+				items = mergeSearchItems(items, supplements.flat());
 			}
-			return { symbols: formatSearchResult(data, args.pattern) };
+			return { symbols: formatSearchResult({ ...data, items }, args.pattern) };
 		},
 	});
 
@@ -460,7 +487,7 @@ function apply(ctx, config) {
 				return { source: 'data-center', answer: data?.answer ?? '', tables: data?.tables ?? [] };
 			} catch (err) {
 				// 回退 FQGate wencai-nlp(列较少,无 AI 摘要)
-				const raw = await fqFor(exec).post('/v1/market/selection/wencai-nlp', { condition: args.condition });
+				const raw = await fqFor(exec).post('/v2/selection/natural-language', { condition: args.condition });
 				return { source: 'fqgate-fallback', result: raw?.data ?? raw, fallbackReason: String(err?.message ?? err) };
 			}
 		},
@@ -480,30 +507,21 @@ function apply(ctx, config) {
 		},
 		output: anyJsonOutput,
 		async execute(args, exec) {
-			const { market, code } = parseSecurity(args.code);
+			const security = v2SecurityTarget(parseSecurity(args.code));
 			if (args.kind === 'depth') {
-				const raw = await fqFor(exec).post('/v1/market/level2/depth', { securities: [{ market, code }] });
+				const raw = await fqFor(exec).post('/v2/market/level2/order-books/ten-level', { securities: [security] });
 				return { depth: raw?.data ?? raw };
 			}
 			if (args.kind === 'transactions') {
-				const body = {
-					market, code,
-					fields: ['price', 'volume', 'side', 'trade_time', 'volclass', 'transaction_count'],
-					count: args.count ?? 50,
-					end_time: 0,
-				};
-				const raw = await fqFor(exec).post('/v1/market/level2/transactions', body);
+				const raw = await fqFor(exec).post('/v2/market/level2/trade-ticks', {
+					security, range: { type: 'recent', count: Math.min(2000, Math.max(1, args.count ?? 50)) },
+				});
 				return { transactions: raw?.data ?? raw };
 			}
 			if (args.kind === 'orders') {
-				const body = {
-					market, code,
-					fields: ['order_no', 'price', 'side', 'volume', 'amount', 'order_time'],
-					range: { count: args.count ?? 50, end: 0, mode: 'recent' },
-					require_data: true,
-					semantic: true,
-				};
-				const raw = await fqFor(exec).post('/v1/market/level2/orders', body);
+				const raw = await fqFor(exec).post('/v2/market/level2/order-events', {
+					security, range: { type: 'recent', count: Math.min(2000, Math.max(1, args.count ?? 50)) },
+				});
 				return { orders: raw?.data ?? raw };
 			}
 			throw new Error(`未知的 level2 kind: ${args.kind}`);
@@ -1049,6 +1067,8 @@ function createWatchEngine(ctx, cfg, options) {
 	/** 交易日标志:后台异步刷新(isTradingDay 有 5 分钟缓存),交易日历失效(节假日)时不自动执行/不唤醒 */
 	let tradingDay = true;
 	let tradeDayTimer = null;
+	let snapshotTimer = null;
+	let transport = 'v2-websocket';
 	let stats = { connectedAt: null, reconnects: 0, pushes: 0, fired: 0, autoTrades: 0, autoBlocked: 0, lastError: null };
 
 	/** 持久化存储 */
@@ -1317,39 +1337,25 @@ function createWatchEngine(ctx, cfg, options) {
 		}
 	}
 
-	/** WS 推送数据处理 */
+	/** V2 推送:标准 items + security；字段更新不能将缺省值当成零。 */
 	function handlePush(data) {
 		stats.pushes += 1;
-		if (data?.event !== 'data' || !data.data) return;
-		const inner = data.data;
-		// quote 推送:records 字段结构
-		if (inner.business_type === 10001 && Array.isArray(inner.records)) {
-			for (const segment of inner.records) {
-				if (!Array.isArray(segment)) continue;
-				for (const record of segment) {
-					const row = {};
-					for (const [key, cell] of Object.entries(record ?? {})) {
-						if (cell?.value === undefined) continue;
-						row[FQ_FIELDS[key] ?? `f${key}`] = cell.value;
-					}
-					const code = String(row.code ?? '').replace(/^[A-Z]+/, '');
-					if (!code || typeof row.price !== 'number') continue;
-					lastQuotes.set(code, { ...row, at: nowMs() });
-					evaluateRules(code, row);
-				}
+		if (data?.event === 'notice') { stats.lastError = data.message ?? 'notice'; return; }
+		if (data?.event !== 'data' || !Array.isArray(data.data?.items)) return;
+		for (const item of data.data.items) {
+			if (data.topic === 'capital_flow.large_order') {
+				evaluateBigOrder(normalizeV2LargeOrder(item));
+				continue;
 			}
-			return;
-		}
-		// 大单资金流(business_type 见文档;records 为大单数组)
-		if (Array.isArray(inner.records) && (inner.business_type === 10200 || inner.business_type === 10207)) {
-			for (const segment of inner.records) {
-				const arr = Array.isArray(segment) ? segment : [segment];
-				for (const rec of arr) {
-					const row = rec && typeof rec === 'object' && !Array.isArray(rec) ? rec : null;
-					if (!row) continue;
-					evaluateBigOrder(row);
-				}
-			}
+			if (data.topic !== 'quote.snapshot' || !item.security) continue;
+			const standard = toV2Security(item.security);
+			const row = decodeV2Quote(item);
+			const code = standard.code;
+			const previous = lastQuotes.get(code);
+			const merged = { ...previous, ...row };
+			if (!code || typeof merged.price !== 'number') continue;
+			lastQuotes.set(code, { ...merged, at: nowMs() });
+			evaluateRules(code, merged);
 		}
 	}
 
@@ -1358,7 +1364,9 @@ function createWatchEngine(ctx, cfg, options) {
 		const trading = forceTrading || (isTradingHours() && tradingDay);
 		const auction = isAuctionWindow();
 		for (const rule of rules.values()) {
-			if (rule.code !== code || rule.type === 'big_order' || ruleCompleted(rule)) continue;
+			const ruleSecurity = parseSecurity(rule.code);
+			if (rule.type === 'big_order' || ruleCompleted(rule)) continue;
+			if (`${ruleSecurity.market}${ruleSecurity.code}` !== row.code && rule.code !== code) continue;
 			if (!cooled(rule.id)) continue;
 			if (rule.action && executing.has(rule.id)) continue; // 防重入
 			// 拐点条件运行状态(每规则每代码一份)
@@ -1427,7 +1435,7 @@ function createWatchEngine(ctx, cfg, options) {
 		const code = String(row.code ?? row.full_code ?? row['5'] ?? '').replace(/^[A-Z]+/, '');
 		const amount = Number(row.amount ?? row['19'] ?? 0);
 		for (const rule of rules.values()) {
-			if (rule.type !== 'big_order' || rule.code !== code || ruleCompleted(rule)) continue;
+			if (rule.type !== 'big_order' || parseSecurity(rule.code).code !== code || ruleCompleted(rule)) continue;
 			if (!cooled(rule.id) || !(amount >= rule.threshold)) continue;
 			lastFired.set(rule.id, nowMs());
 			const side = row.side ?? row.buyorsell ?? '';
@@ -1441,62 +1449,58 @@ function createWatchEngine(ctx, cfg, options) {
 		}
 	}
 
-	/** 确保 WS 里的订阅覆盖规则集合 */
+	/** 确保 V2 WS 里的订阅覆盖规则集合。 */
 	function syncSubscriptions() {
 		if (!ws || ws.readyState !== 1 /* OPEN */) return;
 		for (const rule of rules.values()) {
-			const { market, code } = parseSecurity(rule.code);
-			if (rule.type === 'big_order') {
-				const key = `big:${market}:${code}`;
-				if (!subscribed.has(key)) {
-					subscribed.add(key);
-					ws.send(JSON.stringify({
-						action: 'subscribe', kind: 'big_order_flow', market, code,
-						money: rule.threshold,
-					}));
-				}
-			} else {
-				const key = `q:${market}:${code}`;
-				if (!subscribed.has(key)) {
-					subscribed.add(key);
-					// fields 显式指定:55=名称(触发文本用);其余常用行情字段
-					ws.send(JSON.stringify({
-						action: 'subscribe', kind: 'quote', market, code,
-						fields: [5, 6, 7, 8, 9, 10, 13, 19, 55],
-					}));
-					// 名称走 REST 补缓存(WS 的 55 字段是 GBK 乱码,见 safeName)
-					if (!nameCache.has(code)) fetchNameIntoCache(market, code);
-				}
-			}
+			const parsed = parseSecurity(rule.code);
+			const security = toV2Security(parsed);
+			const key = `${rule.type === 'big_order' ? 'big' : 'q'}:${security.market}:${security.code}`;
+			if (subscribed.has(key)) continue;
+			subscribed.add(key);
+			const target = { market: security.market, code: security.code };
+			ws.send(JSON.stringify(rule.type === 'big_order'
+				? { action: 'subscribe', topic: 'capital_flow.large_order', params: { security: target } }
+				: { action: 'subscribe', topic: 'quote.snapshot', params: { securities: [target], fields: DEFAULT_V2_SUBSCRIPTION_FIELDS } }));
+			if (!nameCache.has(parsed.code)) fetchNameIntoCache(parsed);
 		}
 	}
 
-	/** REST 拉一次名称进缓存(失败静默,触发文本回退代码) */
-	async function fetchNameIntoCache(market, code) {
+	/** V2 REST 拉一次名称进缓存(失败静默,触发文本回退代码)。 */
+	async function fetchNameIntoCache(security) {
 		try {
-			const raw = await request(ctx, cfg.fqgateBaseUrl, '/v1/market/realtime/quote', {
-				method: 'POST',
-				body: { securities: [{ market, code }], fields: [5, 55] },
-				timeoutMs: cfg.requestTimeoutMs,
-			});
-			for (const row of decodeRows(raw?.data)) {
-				const c = String(row.code ?? '').replace(/^[A-Z]+/, '');
-				if (c && typeof row.name === 'string' && row.name && !row.name.includes('�')) {
-					nameCache.set(c, row.name);
-				}
+			for (const row of await fetchV2Quotes(fqgateClient(ctx, cfg), [security], ['security_name'])) {
+				const code = toV2Security(security).code;
+				if (typeof row.name === 'string' && row.name) nameCache.set(code, row.name);
 			}
-		} catch { /* 静默:名称是锦上添花 */ }
+		} catch { /* 名称是锦上添花 */ }
 	}
 
-	/** 建立 WS(带重连) */
+	/** 当前 tonghuashun-plugin 尚未实现 V2 quote.snapshot WS 时，用 V2 REST 快照。
+	 * 这是协议内的传输降级，绝不自动切回 V1 行情流。
+	 */
+	function startSnapshotPolling() {
+		if (transport === 'v2-rest-polling') return;
+		transport = 'v2-rest-polling';
+		stats.lastError = '当前数据连接未实现 V2 WebSocket 实时行情，已使用 V2 REST 快照';
+		stats.connectedAt = nowMs();
+		try { ws?.close(); } catch { /* noop */ }
+		if (snapshotTimer) clearInterval(snapshotTimer);
+		const interval = Math.min(5000, Math.max(1000, Number(cfg.watchIntervalMs) || 30000));
+		snapshotTimer = setInterval(() => catchUpAfterReconnect(), interval);
+		catchUpAfterReconnect();
+		ctx.logger.warn(`ths-watch: V2 WS 订阅不可用，改用 V2 REST ${interval}ms 快照`);
+	}
+
+	/** 建立 V2 WS(带重连)，订阅确认失败时显式转 V2 REST 快照。 */
 	function connect() {
-		if (!cfg.watchEnabled) return;
-		const url = cfg.fqgateBaseUrl.replace(/^http/, 'ws') + '/v1/market/stream';
+		if (!cfg.watchEnabled || transport === 'v2-rest-polling') return;
+		const url = cfg.fqgateBaseUrl.replace(/^http/, 'ws') + '/v2/market/stream';
 		try {
-			ws = new WebSocket(url);
+			ws = new WebSocket(url, cfg.fqgateInstanceId ? { headers: { 'X-FQGate-Instance-Id': cfg.fqgateInstanceId } } : undefined);
 		} catch (error) {
 			stats.lastError = String(error?.message ?? error);
-			ctx.logger.warn(`ths-watch: WS 构造失败 ${stats.lastError}`);
+			ctx.logger.warn(`ths-watch: V2 WS 构造失败 ${stats.lastError}`);
 			scheduleReconnect();
 			return;
 		}
@@ -1504,25 +1508,25 @@ function createWatchEngine(ctx, cfg, options) {
 			stats.connectedAt = nowMs();
 			subscribed.clear();
 			syncSubscriptions();
-			ctx.logger.info('ths-watch: FQGate WS 已连接');
-			// 断线补偿:重连后先 REST 拉一次快照,对每个规则补评估
-			// (断线期间可能已越过阈值;replay 模式只记录+执行条件单,不重复唤醒提醒)
+			ctx.logger.info('ths-watch: FQGate V2 WS 已连接');
 			catchUpAfterReconnect();
 		};
 		ws.onmessage = (ev) => {
 			try {
 				const data = JSON.parse(String(ev.data));
-				if (data?.event === 'notice') { stats.lastError = data.message ?? 'notice'; return; }
+				if (data?.event === 'notice' && (data.kind === 'standard_subscription_not_implemented' || data.reason === 'unsupported_capability')) {
+					startSnapshotPolling();
+					return;
+				}
 				handlePush(data);
-				// 订阅确认可能需要补同步(规则动态新增时)
 				if (data?.event === 'subscribed') syncSubscriptions();
 			} catch { /* 忽略非 JSON */ }
 		};
 		ws.onclose = () => {
-			stats.connectedAt = null;
+			if (transport !== 'v2-rest-polling') stats.connectedAt = null;
 			scheduleReconnect();
 		};
-		ws.onerror = () => { stats.lastError = 'ws error'; };
+		ws.onerror = () => { stats.lastError = 'V2 ws error'; };
 	}
 
 	function scheduleReconnect() {
@@ -1540,27 +1544,14 @@ function createWatchEngine(ctx, cfg, options) {
 			const codes = [...new Set([...rules.values()].map((r) => r.code))];
 			if (codes.length === 0) return;
 			const secs = codes.map(parseSecurity);
-			const groups = new Map();
-			for (const s of secs) {
-				const list = groups.get(s.market) ?? [];
-				list.push(s.code);
-				groups.set(s.market, list);
+			const rows = await fetchV2Quotes(fqgateClient(ctx, cfg), secs, DEFAULT_V2_QUOTE_FIELDS);
+			for (const row of rows) {
+				const code = row.code.slice(4);
+				if (!code) continue;
+				lastQuotes.set(code, { ...row, at: nowMs() });
+				evaluateRules(code, row, { replay: transport !== 'v2-rest-polling' });
 			}
-			for (const [market, list] of groups) {
-				const raw = await request(ctx, cfg.fqgateBaseUrl, '/v1/market/realtime/quote', {
-					method: 'POST',
-					body: { securities: list.map((code) => ({ market, code })), fields: DEFAULT_QUOTE_FIELDS },
-					timeoutMs: cfg.requestTimeoutMs,
-				});
-				const rows = decodeRows(raw?.data);
-				for (const row of rows) {
-					const code = String(row.code ?? '').replace(/^[A-Z]+/, '');
-					if (!code) continue;
-					lastQuotes.set(code, { ...row, at: nowMs() });
-					evaluateRules(code, row, { replay: true });
-				}
-			}
-			ctx.logger.info('ths-watch: 断线补偿评估完成');
+			ctx.logger.info(`ths-watch: ${transport === 'v2-rest-polling' ? 'V2 快照' : '断线补偿'}评估完成`);
 		} catch (error) {
 			ctx.logger.warn(`ths-watch: 补偿评估失败 ${error?.message ?? error}`);
 		}
@@ -1625,7 +1616,8 @@ function createWatchEngine(ctx, cfg, options) {
 				description: canTrade ? '行情监控与条件单引擎；仅在规则明确带 action 时执行交易' : '行情监控与提醒；当前用户未配置交易连接，不执行下单',
 				canTrade,
 				enabled: cfg.watchEnabled && watchIsMaster,
-				connected: stats.connectedAt !== null,
+				transport,
+				connected: transport === 'v2-rest-polling' || stats.connectedAt !== null,
 				connectedAt: stats.connectedAt,
 				reconnects: stats.reconnects,
 				pushes: stats.pushes,
@@ -1707,8 +1699,10 @@ function createWatchEngine(ctx, cfg, options) {
 				if (reconnectTimer) clearTimeout(reconnectTimer);
 				if (saveTimer) { clearTimeout(saveTimer); store.save(rules, ledger, ruleOwners, firedOnce); }
 				if (tradeDayTimer) clearInterval(tradeDayTimer);
+				if (snapshotTimer) clearInterval(snapshotTimer);
 				reconnectTimer = null;
 				tradeDayTimer = null;
+				snapshotTimer = null;
 				try { ws?.close(); } catch { /* noop */ }
 			};
 		});

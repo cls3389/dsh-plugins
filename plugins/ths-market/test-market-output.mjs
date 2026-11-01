@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeKlines, formatSearchResult, quoteFreshness, rankSearchItems } from './market-output.js';
+import { decodeKlines, decodeV2Klines, formatSearchResult, quoteFreshness, rankSearchItems } from './market-output.js';
 
 const cell = (value, type = 'float') => ({ type, value });
 const wire = {
@@ -19,6 +19,12 @@ test('K-lines expose complete compact OHLCV rows instead of wire wrappers', () =
   assert.deepEqual(result.rows[1], { date: '2026-10-30', open: 376.4, high: 387.6, low: 375.2, close: 383.6, volume: 22269954, amount: 8540915600 });
   assert.equal(result.truncatedByTool, false);
   assert.ok(JSON.stringify(result).length < 800);
+});
+
+test('V2 K-lines preserve UTC interval and finality metadata', () => {
+  const result = decodeV2Klines({ data_state: 'present', row_count: 1, items: [{ trading_date: '2026-10-30', start_time: '2026-10-30T01:30:00Z', end_time: '2026-10-30T01:31:00Z', is_final: true, open: 1363, high: 1364, low: 1357, close: 1357.07, volume: 153400, transaction_amount: 209084200 }] }, { symbol: 'USHA600519', interval: '1m', count: 1 });
+  assert.deepEqual(result.rows[0], { date: '2026-10-30', startTime: '2026-10-30T01:30:00Z', endTime: '2026-10-30T01:31:00Z', tradingDate: '2026-10-30', isFinal: true, open: 1363, high: 1364, low: 1357, close: 1357.07, volume: 153400, amount: 209084200 });
+  assert.equal(result.symbol, 'USHA600519');
 });
 
 test('intraday timestamps are formatted without claiming a different timezone', () => {

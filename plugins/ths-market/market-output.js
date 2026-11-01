@@ -53,6 +53,32 @@ export function decodeKlines(data, options = {}) {
   };
 }
 
+/** V2 bars have explicit UTC boundaries and completion state; no local clock guessing. */
+export function decodeV2Klines(data, options = {}) {
+  const rows = (Array.isArray(data?.items) ? data.items : []).map((bar) => {
+    const row = {
+      date: bar.trading_date ?? bar.start_time ?? null,
+      open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+    };
+    if (bar.start_time != null) row.startTime = bar.start_time;
+    if (bar.end_time != null) row.endTime = bar.end_time;
+    if (bar.trading_date != null) row.tradingDate = bar.trading_date;
+    if (bar.is_final != null) row.isFinal = bar.is_final;
+    if (bar.volume != null) row.volume = bar.volume;
+    if (bar.transaction_amount != null) row.amount = bar.transaction_amount;
+    if (bar.open_interest != null) row.openInterest = bar.open_interest;
+    return row;
+  });
+  return {
+    symbol: options.symbol ?? `${options.market ?? ''}${options.code ?? ''}`,
+    interval: options.interval, adjust: options.adjust ?? 'None', count: rows.length,
+    requestedCount: options.count ?? null,
+    startDate: rows[0]?.date ?? null, endDate: rows.at(-1)?.date ?? null,
+    rows, truncatedByTool: false,
+    upstream: { dataState: data?.data_state ?? null, rowCount: data?.row_count ?? null, coverage: data?.coverage ?? null },
+  };
+}
+
 function compactText(text) {
   return String(text ?? '').toLowerCase().replace(/[\s_\-—–·()（）]/g, '').replace(/标准普尔/g, '标普');
 }
