@@ -14,6 +14,7 @@ import { identityOf } from '../feishu-principal/index.js';
 import { readTreasuryYieldCurve } from './yield-curve.js';
 import { decodeKlines, decodeV2Klines, formatSearchResult, mergeSearchItems, quoteFreshness, searchRefinements } from './market-output.js';
 import { DEFAULT_V2_QUOTE_FIELDS, DEFAULT_V2_SUBSCRIPTION_FIELDS, decodeV2Quote, fetchV2Quotes, normalizeV2LargeOrder, normalizeV2SearchItems, toV2Security, v2QuoteFields, v2SecurityTarget } from './fqgate-v2.js';
+import { dataCenterKlineOptions, decodeDataCenterKlines } from './data-center-klines.js';
 
 const name = 'ths-market';
 const inject = ['tools'];
@@ -388,7 +389,7 @@ function apply(ctx, config) {
 
 	register({
 		name: 'ths_klines',
-		description: '查询证券历史 K 线(FQGate)。interval 枚举:1m/5m/15m/30m/60m/120m/day/week/month/quarter/year;adjust 枚举:None/forward(前复权)/backward(后复权)。count 与 start_date/end_date 二选一。指数代码同 ths_quote,如 USHI1A0001。',
+		description: '查询证券历史 K 线。分钟(1m/5m/15m/30m/60m/120m)使用数据中心且仅支持前复权，日线及以上使用 FQGate V2。count 与 start_date/end_date 二选一。指数代码同 ths_quote,如 USHI1A0001。',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -413,17 +414,19 @@ function apply(ctx, config) {
 			const range = args.count != null
 				? { type: 'count', count: args.count }
 				: { type: 'date_range', start_date: date(args.start_date), end_date: date(args.end_date ?? args.start_date) };
-			// tonghuashun-plugin 2.0.7 的分钟 bars 返回 source_data_contract_violation；
-			// 用户允许此类 V2 未覆盖能力显式保留 V1。日/周/月等仍使用 V2。
 			if (['1m', '5m', '15m', '30m', '60m', '120m'].includes(args.interval)) {
-				const body = { market: security.market, code: security.code, interval: args.interval };
-				if (args.count != null) body.count = args.count;
-				if (args.start_date) body.start_date = args.start_date;
-				if (args.end_date) body.end_date = args.end_date;
-				if (args.adjust) body.adjust = args.adjust;
-				const raw = await fqFor(exec).post('/v1/market/history/klines', body);
-				const klines = decodeKlines(raw?.data ?? raw, { ...security, interval: args.interval, adjust: args.adjust, count: args.count });
-				return { klines, compatibility: 'v1-intraday-bars', ...(klines.count === 0 ? { warning: '当前数据连接未返回分钟 K 线；V2 分钟 bars 在当前 2.0.7 服务端也报 source_data_contract_violation。' } : {}) };
+				if (!args.count) throw new Error('数据中心分钟 K 目前支持 count；指定历史日期范围请使用日线接口');
+				const count = Math.min(1000, Math.max(1, args.count));
+				const params = dataCenterKlineOptions(security, args.interval, args.adjust ?? 'forward');
+				const query = new URLSearchParams({
+					...params, trade_class: 'intraday', trade_date: '-1', begin_time: String(-count), end_time: '0',
+				});
+				const data = await dcFor(exec).get(`/api/market/quota/kline?${query}`);
+				const klines = decodeDataCenterKlines(data, {
+					symbol: `${security.market}${security.code}`, interval: args.interval,
+					adjust: 'forward', count,
+				});
+				return { klines, source: 'ths-data-center', ...(klines.count === 0 ? { warning: '数据中心未返回分钟 K 线，请核对交易日期与证券代码。' } : {}) };
 			}
 			const raw = await fqFor(exec).post('/v2/market/bars', {
 				security: v2SecurityTarget(security), interval: args.interval, range,
