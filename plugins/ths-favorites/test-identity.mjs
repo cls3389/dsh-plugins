@@ -8,7 +8,14 @@ const stateDir = mkdtempSync(join(tmpdir(), 'ths-fav-web-'));
 const tools = new Map();
 const ctx = { tools: { register: (def) => tools.set(def.name, def) }, logger: { info() {}, warn() {} } };
 apply(ctx, { stateDir, defaultAgentId: 'u_webowner', defaultAppId: 'cli_default' });
+// syncTableEnabled 默认关闭:运维侧批量刷多维表工具不进常规注册面。
+assert.equal(tools.size, 11);
+assert.equal(tools.has('ths_sync_table'), false);
+// 显式开启后注册,且不影响其他工具数量。
+tools.clear();
+apply(ctx, { stateDir, defaultAgentId: 'u_webowner', defaultAppId: 'cli_default', syncTableEnabled: true });
 assert.equal(tools.size, 12);
+assert.equal(tools.has('ths_sync_table'), true);
 // 无身份 Web 调用走 web-owner；构造一个不访问网络的未登录查询，错误信息不应是身份拒绝。
 const result = await tools.get('ths_get_self_stocks').execute({}, { agent: {} });
 const text = JSON.stringify(result);

@@ -2236,7 +2236,9 @@ function createScopedTools(api, agentId) {
   });
 
   // 12. ths_sync_table — 标的行情同步到飞书多维表（fuyao-feishu-sync 服务）
-  tools.push({
+  // syncTableEnabled 默认关闭:该工具是运维侧批量刷多维表的入口,不属于自选管理常规能力;
+  // 需要的身份在 profile config 显式 syncTableEnabled: true 并配置 syncTableBaseUrl。
+  if (pickPluginConfig(api).syncTableEnabled === true) tools.push({
     name: "ths_sync_table",
     label: "同步多维表标的行情",
     description:
@@ -2257,7 +2259,7 @@ function createScopedTools(api, agentId) {
     },
     async execute(_toolCallId, params) {
       const config = pickPluginConfig(api);
-      const baseUrl = String(config.syncTableBaseUrl || "http://172.18.0.1:39871").replace(/\/+$/, "");
+      const baseUrl = String(config.syncTableBaseUrl || "http://127.0.0.1:39871").replace(/\/+$/, "");
       const timeoutMs = Number(config.syncTimeoutMs) > 0 ? Number(config.syncTimeoutMs) : 300000;
       const body = JSON.stringify({
         force: Boolean(params?.force),
@@ -2302,7 +2304,7 @@ const SCOPED_TOOL_NAMES = [
   "ths_delete_group",
   "ths_share_group",
   "ths_sort_group",
-  "ths_sync_table",
+  "ths_sync_table", // 仅当 syncTableEnabled: true 时才会出现在 createScopedTools 产物中
 ];
 
 /* ── DSH 插件桥(2026-10-29 移植)──────────────────────────────

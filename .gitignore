@@ -11,3 +11,5 @@ plugins/feishu-channel/_dev/
 plugins/media-tools/*.bak-*
 
 plugins/model-config/policy.json.bak-*
+node_modules/
+plugins/ths-favorites/node_modules/
