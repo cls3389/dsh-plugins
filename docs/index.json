@@ -195,8 +195,8 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793425449,
+          "version": "0.1.1",
+          "publishTimestamp": 1793435065,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -479,7 +479,7 @@
       "versions": [
         {
           "version": "0.1.3",
-          "publishTimestamp": 1793334676,
+          "publishTimestamp": 1793459126,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
@@ -686,12 +686,12 @@
       },
       "versions": [
         {
-          "version": "0.3.0",
-          "publishTimestamp": 1793509771,
+          "version": "0.3.1",
+          "publishTimestamp": 1793512279,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "ca31d03d1caa27097f16bcf1ce18b7f71811b3cc",
+            "commit": "4bdac33be61ab2dd7f862c2d3cb7a5d2bbf2d0bd",
             "path": "plugins/ths-market"
           },
           "engines": {}
