@@ -752,6 +752,39 @@
       ]
     },
     {
+      "name": "@dsh-friends/feishu-bitable-sync",
+      "title": {
+        "zh": "行情同步飞书多维表",
+        "en": "Feishu Bitable Market Sync"
+      },
+      "description": {
+        "zh": "FQGate V2 与同花顺数据中心驱动，定时或手动同步标的跟踪、每日情绪与涨停明细。",
+        "en": "Scheduled or manual sync of holdings, market sentiment and limit-up details using FQGate V2 and THS Data Center."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-bitable-sync"
+      },
+      "metadata": {
+        "keywords": ["dsh-plugin", "feishu", "bitable", "market"]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793543042,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "3ba13cdfdacbd29c22a92f839290d4612c1baee7",
+            "path": "plugins/feishu-bitable-sync"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/zread",
       "title": {
         "zh": "Zread 开源仓库阅读",
