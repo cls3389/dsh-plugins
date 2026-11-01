@@ -653,6 +653,16 @@
       },
       "versions": [
         {
+          "version": "0.1.6",
+          "publishTimestamp": 1793534593,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "113abd1dabb64c904c3dd077756884aa39a18ae3",
+            "path": "plugins/ths-favorites"
+          }
+        },
+        {
           "version": "0.1.5",
           "publishTimestamp": 1793420654,
           "source": {
