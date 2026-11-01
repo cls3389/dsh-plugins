@@ -1,0 +1,24 @@
+{
+  "name": "@dsh-friends/feishu-bitable-sync",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "feishu-bitable.js",
+    "data-sources.js",
+    "sync-engine.js",
+    "scheduler.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "行情批量同步飞书多维表(标的跟踪/每日情绪/涨停明细):数据源为 FQGate V2 + 同花顺数据中心,交易时段定时 + 工具手动触发,多维表写入用飞书自建应用 tenant 凭据",
+  "license": "MIT"
+}

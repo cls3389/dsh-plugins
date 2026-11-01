@@ -1,0 +1,45 @@
+# 安装后按本机实际情况修改：表 ID、飞书应用凭据、数据中心 Key。
+# 凭据建议用环境变量引用（dataCenterApiKeyEnv / appSecretEnv），不要把生产密钥写进仓库。
+- insert:
+    - id: feishu-bitable-sync
+      name: '@dsh-friends/feishu-bitable-sync'
+      config:
+        # ── 数据源 ──
+        fqgateBaseUrl: http://192.168.5.111:18000
+        dataCenterBaseUrl: http://127.0.0.1:17890
+        dataCenterApiKey: ''
+        requestTimeoutMs: 20000
+
+        # ── 飞书多维表（自建应用需开通 bitable:app 权限并被加为多维表协作者）──
+        appId: cli_replace_me
+        appSecret: ''
+        appToken: ''          # 多维表 app_token（URL 里 b/ 后面那串）
+
+        # ── 三张表的 table_id ──
+        holdingsTableId: ''   # 标的跟踪表
+        overviewTableId: ''   # 每日情绪总览表
+        detailTableId: ''     # 涨停明细表
+
+        # 标的跟踪表列映射（列名与表内一致；改表列名须同步改这里）
+        codeField: 证券代码
+        fieldMap:
+          lastPrice: 现价
+          changeRatio: 涨跌幅
+          change5d: 5日涨跌
+          change10d: 10日涨跌
+          change20d: 20日涨跌
+        sentimentIndexCodes:
+          上证: '000001.SH'
+          深证: '399001.SZ'
+          创业板: '399006.SZ'
+          科创50: '000688.SH'
+
+        # ── 调度 ──
+        schedulerEnabled: false   # true 时启用交易时段定时器（建议只在单一身份开启）
+        dailyRunAt: '15:30'       # 交易日收盘全量同步时点
+        intradayEnabled: true     # 盘中整分同步（9:15-11:30, 13:00-15:00）
+        intradayIntervalMinutes: 5
+        batchDelayMs: 300         # 多维表批量写间隔
+
+        # 持久化（收盘价缓存 / 运行状态）
+        stateDir: /data/dsh/storages/feishu-bitable-sync
