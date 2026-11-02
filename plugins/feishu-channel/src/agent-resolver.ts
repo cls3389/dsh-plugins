@@ -1,6 +1,6 @@
 import { relative as relativePath, resolve as resolvePath, sep } from 'node:path';
 import type { Context } from '@deepseek-ai/cordis';
-import type { Agent, AgentSetup } from '@deepseek-ai/dsh-agent';
+import type { Agent, AgentSetup, AgentSetupCommit } from '@deepseek-ai/dsh-agent';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 import { userKey } from '@dsh-friends/feishu-principal';
 import type { Config } from './config.js';
@@ -109,7 +109,7 @@ interface GuardedExecution {
   readonly arguments?: Readonly<Record<string, unknown>>;
 }
 interface ChannelTools {
-  schemas(agent: Agent): Array<{ name: string }>;
+  schemas(agent?: Agent): Array<{ name: string }>;
   restrict(filter: { allow: string[] }): () => void;
   guard(check: (exec: GuardedExecution) => string | undefined): () => void;
 }
@@ -135,7 +135,7 @@ const FENCED_PATH_ARGS: Readonly<Record<string, string[]>> = {
  * never from model-controlled input; subagents inherit this guard through the
  * parent scope chain, so delegation cannot widen the fence.
  */
-function fenceUserWorkspace(exec: GuardedExecution, root: string): string | undefined {
+function fenceUserWorkspace(exec: GuardedExecution, root: string, agentId?: string): string | undefined {
   if (!FENCED_FS_TOOLS.has(exec.name)) return undefined;
   const keys = FENCED_PATH_ARGS[exec.name];
   if (keys === undefined) return undefined;
@@ -145,6 +145,12 @@ function fenceUserWorkspace(exec: GuardedExecution, root: string): string | unde
     const raw = args[key];
     if (typeof raw !== 'string' || raw.length === 0) continue;
     const target = resolvePath(root, raw);
+    // 身份级技能目录：agents/<agentId>/.dsh/skills/ 是固定路径，放行读取。
+    if (agentId !== undefined) {
+      const skillRoot = resolvePath(root, '..', '..', '..', agentId, '.dsh', 'skills');
+      const skillRelative = relativePath(skillRoot, target);
+      if (skillRelative !== undefined && !skillRelative.startsWith(`..${sep}`) && skillRelative !== '..') continue;
+    }
     const relative = relativePath(root, target);
     if (relative === undefined || relative.startsWith(`..${sep}`) || relative === '..') {
       return `tool "${exec.name}" is fenced to the Feishu user workspace ${root} by the business channel`;
@@ -222,18 +228,16 @@ const AGENT_PROTO_ALLOW: Readonly<Record<string, readonly string[]>> = {
     'grep',
     'glob',
     'read_image',
-    'working_directory',
+    'feishu_im_user_message',
+    'feishu_im_user_fetch_resource',
+    'feishu_im_bot_image',
     'feishu_send_image',
-    'schedule_*',
-    'subagent',
-    'subagent_fork',
-    'workflow',
-    'present',
-    'ask_user_question',
+    'feishu_send_file',
     'skill',
     'read',
     'grep',
     'glob',
+    'ask_user_question',
   ],
 };
 
@@ -262,11 +266,13 @@ function restrictChannelTools(ctx: Context, config: Config, agent: Agent): void 
   if (!patterns?.length) return;
   const tools = agent.ctx.get('tools') as ChannelTools | undefined;
   if (!tools) throw new Error('DSH tools service is unavailable');
-  const allow = tools
-    .schemas(agent)
+  // Registry restriction validates inherited names; scoped-only tools are
+  // already explicitly admitted by this channel's per-Agent guard.
+  const globalAllow = tools
+    .schemas(undefined)
     .map((tool) => tool.name)
     .filter((name) => patterns.some((pattern) => toolNameMatches(name, pattern)));
-  const removeRestriction = tools.restrict({ allow });
+  const removeRestriction = tools.restrict({ allow: globalAllow });
 
   const bindingRoot = bindingCwdOf(ctx, agent);
   const removeGuard = tools.guard((exec) => {
@@ -275,7 +281,8 @@ function restrictChannelTools(ctx: Context, config: Config, agent: Agent): void 
       : `tool "${exec.name}" is not available through the Feishu business channel`;
     if (denied !== undefined) return denied;
     if (bindingRoot !== undefined) {
-      const fenced = fenceUserWorkspace(exec, bindingRoot);
+      const agentId = (agent as UserBoundAgent).identity?.agentId;
+      const fenced = fenceUserWorkspace(exec, bindingRoot, agentId);
       if (fenced !== undefined) return fenced;
     }
     return undefined;
@@ -302,6 +309,35 @@ export function toolNameMatches(name: string, pattern: string): boolean {
   return new RegExp(`^${escaped}$`).test(name);
 }
 
+/** Minimal shape of the agentPresets registry service used for preset mounting. */
+interface AgentPresets {
+  readonly defaultId?: string | undefined;
+  retain(id: string | undefined): Promise<unknown>;
+  mount(agentCtx: Context, id: string | undefined): Promise<{ id: string }>;
+}
+
+/**
+ * Compose an Agent under the profile's default preset so preset-scoped plugins
+ * (persona / time-context / tool-web …) actually mount for channel sessions.
+ * Mirrors dsh-api-session-controller.composeAgent: mount inside the
+ * creation-time setup callback, before the registry publishes the agent.
+ */
+function presetComposition(ctx: Context): {
+  setup?: (agentCtx: Context, agent: Agent) => Promise<void>;
+} {
+  const presets = ctx.get('agentPresets') as AgentPresets | undefined;
+  if (!presets) return {};
+  return {
+    setup: async (agentCtx) => {
+      // defaultId may be a getter or a plain field depending on the registry version.
+      const wanted = typeof (presets as { defaultId?: unknown }).defaultId === 'string'
+        ? (presets as { defaultId: string }).defaultId
+        : undefined;
+      await presets.mount(agentCtx, wanted);
+    },
+  };
+}
+
 /** Resume existing Lark sessions through the same Agent registry as Web hosts. */
 export async function resolveAgent(
   ctx: Context,
@@ -321,18 +357,33 @@ export async function resolveAgent(
   }
   const options = agentOptions(config, ctx);
   const modelSetup = extras.selections?.setup(extras.modelOverride?.(sessionId));
+  const preset = presetComposition(ctx);
   const setup: AgentSetup = (agentCtx, agent) => {
     const delegated = modelSetup?.(agentCtx, agent);
+    const presetReady = preset.setup?.(agentCtx, agent);
     const commit = () => {
       // Apply before AgentRegistry publishes agent/created and before callers
       // build the model catalog: never advertise tools the guard will deny.
       bindUserIdentity(agent, extras);
       restrictChannelTools(ctx, config, agent);
+      // Synchronous sub-setups already produced their commits; async ones are
+      // settled below and invoked in the same commit pass.
+      (delegated as AgentSetupCommit | undefined)?.commit?.();
     };
-    if (delegated instanceof Promise) {
-      return delegated.then((ready) => ({ commit: () => { commit(); ready?.commit(); } }));
+    const settle = (): Promise<AgentSetupCommit | void> | undefined =>
+      delegated instanceof Promise ? delegated : undefined;
+    const chain = [settle(), presetReady].filter(Boolean);
+    if (chain.length === 0) {
+      return { commit };
     }
-    return { commit: () => { commit(); delegated?.commit(); } };
+    return Promise.all(chain).then((settled) => ({
+      commit: () => {
+        commit();
+        for (const ready of settled) {
+          (ready as AgentSetupCommit | undefined)?.commit?.();
+        }
+      },
+    }));
   };
   const withOptions = <T extends object>(base: T): T => ({
     ...base,
@@ -360,7 +411,14 @@ export async function resolveAgent(
         : /not found|does not exist|ENOENT/i.test(String(error));
     if (!missing) throw error;
     const created = await agents.create(
-      withOptions({ sessionId: sessionId as SessionId, meta: { cwd } }),
+      withOptions({
+        sessionId: sessionId as SessionId,
+        // Preset composition happens inside the setup callback (before the
+        // factory snapshots the header), so the mounted id is not known here;
+        // future resumes reconstruct it from the agentPreset projection and
+        // re-mount via the same setup path above.
+        meta: { cwd },
+      }),
     );
     bindUserIdentity(created.agent, extras);
     await syncWorkingDirectory(ctx, created.agent, cwd);

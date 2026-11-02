@@ -34,8 +34,8 @@
     "test": "pnpm run build:vendor && vitest run"
   },
   "dependencies": {
-    "@dsh-friends/feishu-principal": "^0.2.0",
-    "@dsh-friends/pdf-tools": "^0.1.0",
+    "@dsh-friends/feishu-principal": "link:/data/dsh/home/dsh-management/dsh-plugins/plugins/feishu-principal",
+    "@dsh-friends/pdf-tools": "link:/data/dsh/home/dsh-management/dsh-plugins/plugins/pdf-tools",
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@sinclair/typebox": "0.34.49",
     "image-size": "^2.0.4",

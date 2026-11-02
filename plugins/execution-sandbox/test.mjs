@@ -1,79 +1,83 @@
 import assert from 'node:assert/strict';
-
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { Context } from '@deepseek-ai/cordis';
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local';
-import { sandboxCreateArgs, DockerBashExecutor, apply } from './index.js';
-import { ToolRuntime } from '@deepseek-ai/dsh-tools';
-import { apply as applyBash } from '@deepseek-ai/dsh-tool-bash';
-import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
+import { sandboxCreateArgs, DockerSandboxProvider, apply } from './index.js';
+const run = promisify(execFile);
 
 const args = sandboxCreateArgs('test-sandbox', '/workspace/user', {});
 assert(args.includes('--read-only'));
 assert(args.includes('--network'));
 assert(!args.some((arg) => arg.includes('/var/run/docker.sock')));
 assert(!args.includes('--privileged'));
+assert(!args.some((arg) => /ALL_PROXY|HTTP_PROXY|SOCKS/i.test(arg)));
+// Default wall-clock timezone is Asia/Shanghai; timeZone: null opts out.
+assert(args.some((arg) => arg === 'TZ=Asia/Shanghai'));
+const tzOff = sandboxCreateArgs('test-sandbox', '/workspace/user', { timeZone: null });
+assert(!tzOff.some((arg) => /^TZ=/.test(arg)));
 
 const directory = mkdtempSync(join(tmpdir(), 'dsh-execution-sandbox-'));
-const config = { image: 'dsh-user-sandbox:bookworm', workspaceRoots: [directory], timeoutMs: { get: () => 60000 }, maxTimeoutMs: { get: () => 60000 }, maxOutputBytes: { get: () => 64000 }, maxSpillBytes: { get: () => 67108864 }, graceMs: { get: () => 3000 } };
+const config = { image: 'dsh-user-sandbox:bookworm', workspaceRoots: [directory] };
 const ctx = new Context();
-const subprocess = new LocalSubprocessRuntime(ctx, {});
-const agent = { session: { id: 'test-user' }, ctx };
+new LocalSubprocessRuntime(ctx, {});
 ctx.provide('workingDirectory', { get: () => directory, ensure: async () => directory });
-let executor;
-let scopedExecutor;
+let provider;
 try {
-  new SystemPrompt(ctx, {});
-  ctx.provide('sandboxPolicy', { defaultMode: 'workspace-write', resolve: () => ({ mode: 'workspace-write', workspaceRoot: directory }) });
-  ctx.provide('shellEnv', { collect: () => ({}) });
-  const tools = new ToolRuntime(ctx, {});
-  executor = new DockerBashExecutor(ctx, config);
-  async function run(command) {
-    const spec = executor.resolve({ command, workdir: directory, agent, agent });
-    const handle = await executor.execute(spec);
-    const result = await handle.result();
-    assert.equal(result.exitCode, 0, JSON.stringify(result));
-    return result;
+  apply(ctx, config);
+  provider = ctx.sandbox;
+  const policy = { mode: 'workspace-write', workspaceRoot: directory, sessionId: 'test-user' };
+  const wrapped = await provider.confine(['bash', '-c', "python3 - <<'PY'\nfrom pathlib import Path\nPath('calculation.json').write_text('{\"answer\": 42}')\nprint('workspace write ok')\ntry:\n open('/data/dsh/.credentials.yaml')\n raise Exception('host credential must not be mounted')\nexcept FileNotFoundError:\n print('host files isolated')\nPY\nnode -e \"console.log('node', process.version)\"\nhostname\ncurl --connect-timeout 2 -s -o /dev/null -w 'http=%{http_code}\\n' https://example.com; printf 'curl_exit=%s\\n' \"$?\""], policy);
+  assert.equal(wrapped.argv[0], 'docker');
+  assert(wrapped.argv.includes('exec'));
+  const [program, ...argv] = wrapped.argv;
+  let result;
+  try {
+    result = await run(program, argv, { cwd: directory, timeout: 30000, maxBuffer: 128000 });
+  } catch (error) {
+    result = error;
   }
-  const result = await run("python - <<'PY'\nfrom pathlib import Path\nimport os\nprint('uid', os.getuid())\nPath('calculation.json').write_text('{\"answer\": 42}')\nprint('workspace write ok')\ntry:\n    open('/data/dsh/.credentials.yaml')\n    raise Exception('host credential must not be mounted')\nexcept FileNotFoundError:\n    print('host files isolated')\nPY\nnode -e \"console.log('node', process.version)\"\nprintf 'PATH=%s\\n' \"$PATH\"");
-  assert.match(result.stdout.text, /workspace write ok/);
-  assert.match(result.stdout.text, /host files isolated/);
+  const stdout = result.stdout ?? '';
+  assert.equal(result.code ?? 0, 0, JSON.stringify(result));
+  assert.match(stdout, /workspace write ok/);
+  assert.match(stdout, /host files isolated/);
+  assert.match(stdout, /node v22\./);
+  assert.match(stdout, /http=000/);
+  assert.match(stdout, /curl_exit=6/);
   assert.equal(JSON.parse(readFileSync(join(directory, 'calculation.json'), 'utf8')).answer, 42);
-  const networking = await executor.execute(executor.resolve({ command: 'curl --connect-timeout 2 https://example.com', workdir: directory, agent }));
-  const networkResult = await networking.result();
-  assert.notEqual(networkResult.exitCode, 0);
-  const background = await executor.execute(executor.resolve({ command: 'echo background-ok', workdir: directory, agent }));
-  assert.match((await background.result()).stdout.text, /background-ok/);
-  const timeout = await executor.execute(executor.resolve({ command: 'sleep 30', workdir: directory, agent, timeoutMs: 1000 }));
-  const timeoutResult = await timeout.result();
-  assert.equal(timeoutResult.timedOut, true);
-  assert.throws(() => executor.resolve({ command: 'pwd', workdir: tmpdir(), agent }), /不能切换到其他用户/);
-  assert.throws(() => executor.resolve({ command: 'pwd', workdir: directory }), /缺少可信会话身份/);
-  const failureCtx = new Context();
-  const failureDispose = failureCtx.effect(() => () => Promise.resolve());
-  new LocalSubprocessRuntime(failureCtx, {});
-  failureCtx.provide('workingDirectory', { get: () => directory });
-  const missing = new DockerBashExecutor(failureCtx, { ...config, image: 'dsh-user-sandbox:definitely-missing' });
-  await assert.rejects(() => missing.execute(missing.resolve({ command: 'echo must-not-run-on-host', workdir: directory, agent })), /拒绝在宿主执行/);
-  await failureDispose();
-  const agentCtx = ctx.isolate('shell').isolate('workingDirectory');
-  agentCtx.provide('workingDirectory', { get: () => directory, ensure: async () => directory });
-  agentCtx.provide('session', agent.session);
-  scopedExecutor = new DockerBashExecutor(agentCtx, config);
-  applyBash(agentCtx, {});
-  const native = await tools.execute({ name: 'bash', callId: 'native', arguments: { command: 'echo native-agent-ok', workdir: directory, description: 'test native sandbox' }, agent, signal: new AbortController().signal });
-  assert.equal(native.isError, false, JSON.stringify(native));
-  const scoped = await scopedExecutor.execute(scopedExecutor.resolve({ command: 'echo scoped-ok', workdir: directory }));
-  assert.match((await scoped.result()).stdout.text, /scoped-ok/);
-  console.log('PASS: DSH executor, native tool binding, shell/Python/Node, workspace write, host isolation, no network, timeout, fail closed');
+  const analysis = await provider.confine(['python3', '-c', `import os
+import numpy as np
+import pandas as pd
+assert os.environ['OPENBLAS_NUM_THREADS'] == '1'
+prices = pd.DataFrame({
+    'A': pd.Series([100.0, 100.0, 110.0, 110.0], index=pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04'])),
+    'B': pd.Series([100.0, 110.0, 110.0], index=pd.to_datetime(['2024-01-01', '2024-01-03', '2024-01-04'])),
+})
+prices = prices.reindex(pd.date_range('2024-01-01', '2024-01-04', freq='D')).ffill()
+correlation = prices.pct_change(fill_method=None).corr().loc['A', 'B']
+assert abs(correlation - 1.0) < 1e-12, correlation
+assert np.array_equal(np.array([1, 2]) + np.array([3, 4]), np.array([4, 6]))
+print('scientific packages and date alignment ok', np.__version__, pd.__version__)`
+  ], policy);
+  result = await run(analysis.argv[0], analysis.argv.slice(1), { cwd: directory, timeout: 30000, maxBuffer: 128000 });
+  assert.match(result.stdout, /scientific packages and date alignment ok/);
+  const bars = Array.from({ length: 65 }, (_, index) => ({ date: new Date(Date.UTC(2026, 0, 1 + index)).toISOString(), open: 100 + index, high: 103 + index, low: 98 + index, close: 101 + index, volume: 1000000 + index, amount: (1000000 + index) * (101 + index) }));
+  writeFileSync(join(directory, 'bars.json'), JSON.stringify({ source: 'fqgate-v2', adjust: 'forward', rows: bars }));
+  const argsForTools = sandboxCreateArgs('test-sandbox', directory, {});
+  const mountIndex = argsForTools.findIndex((arg) => arg.endsWith(':/opt/dsh-tools:ro'));
+  assert(mountIndex > 0 && argsForTools[mountIndex - 1] === '--volume');
+  assert(argsForTools[mountIndex].startsWith('/'));
+  const analysisCli = await provider.confine(['bash', '-c', `if echo denied > /opt/dsh-tools/should-not-write; then exit 91; fi; test -w . && test ! -w /opt/dsh-tools; market-analysis bars.json --chart analysis.png --title '测试股票 · 前复权' --csv indicators.csv > analysis.json && python3 -c "import json; d=json.load(open('analysis.json')); assert d['bars']==65 and d['adjust']=='forward'; print('market-analysis CLI, indicators and chart ok', d['latest']['ma5'])" && fc-list :lang=zh | head -1`], policy);
+  result = await run(analysisCli.argv[0], analysisCli.argv.slice(1), { cwd: directory, timeout: 30000, maxBuffer: 128000 });
+  assert.match(result.stdout, /market-analysis CLI, indicators and chart ok/);
+  assert(existsSync(join(directory, 'analysis.png')));
+  assert(existsSync(join(directory, 'indicators.csv')));
+  await assert.rejects(() => provider.confine(['bash', '-c', 'pwd'], { mode: 'workspace-write', workspaceRoot: tmpdir(), sessionId: 'test-user' }), /outside configured Docker sandbox roots/);
+  console.log('PASS: Docker sandbox provider, workspace write, host isolation, no network, cross-workspace rejection');
 } finally {
-  await executor.disposeEffect();
-  await scopedExecutor.disposeEffect();
-  await assert.rejects(() => scopedExecutor.execute(scopedExecutor.resolve({ command: 'echo should-not-run', workdir: directory })), /已关闭/);
-  const idleCtx = ctx.isolate('shell');
-  const idle = new DockerBashExecutor(idleCtx, config);
-  await idle.disposeEffect();
-  rmSync(directory, { recursive: true, force: true });
+  if (provider) await provider.dispose();
+  if (existsSync(directory)) rmSync(directory, { recursive: true, force: true });
 }

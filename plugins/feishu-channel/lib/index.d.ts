@@ -295,6 +295,8 @@ interface LarkChannelOptions {
   readonly sessions: SessionStore;
   readonly toolContexts: OfficialToolContexts;
   readonly resolveAgent: (sessionId: string, cwd: string) => Promise<Agent>;
+  /** Identity root (agents/), used to locate agents/<agentId>/.dsh/skills. */
+  readonly agentsRoot: string;
   readonly logger: ChannelLogger;
   readonly streamFactory?: OfficialTurnControllerFactory;
   /** /model and /effort slash commands; omitted disables model switching. */

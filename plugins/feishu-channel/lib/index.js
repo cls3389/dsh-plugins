@@ -11,7 +11,7 @@ import * as fs$1 from "node:fs";
 import fs, { createReadStream, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readUsers, userKey, workspaceFor } from "@dsh-friends/feishu-principal";
 import * as fsPromises from "node:fs/promises";
-import { chmod, cp, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as dns from "node:dns/promises";
 import * as net from "node:net";
 import { Readable } from "node:stream";
@@ -1205,7 +1205,7 @@ const FENCED_PATH_ARGS = {
 * never from model-controlled input; subagents inherit this guard through the
 * parent scope chain, so delegation cannot widen the fence.
 */
-function fenceUserWorkspace(exec, root) {
+function fenceUserWorkspace(exec, root, agentId) {
 	if (!FENCED_FS_TOOLS.has(exec.name)) return void 0;
 	const keys = FENCED_PATH_ARGS[exec.name];
 	if (keys === void 0) return void 0;
@@ -1214,7 +1214,12 @@ function fenceUserWorkspace(exec, root) {
 	for (const key of keys) {
 		const raw = args[key];
 		if (typeof raw !== "string" || raw.length === 0) continue;
-		const relative$1 = relative(root, resolve(root, raw));
+		const target = resolve(root, raw);
+		if (agentId !== void 0) {
+			const skillRelative = relative(resolve(root, "..", "..", "..", agentId, ".dsh", "skills"), target);
+			if (skillRelative !== void 0 && !skillRelative.startsWith(`..${sep}`) && skillRelative !== "..") continue;
+		}
+		const relative$1 = relative(root, target);
 		if (relative$1 === void 0 || relative$1.startsWith(`..${sep}`) || relative$1 === "..") return `tool "${exec.name}" is fenced to the Feishu user workspace ${root} by the business channel`;
 	}
 }
@@ -1283,18 +1288,16 @@ const AGENT_PROTO_ALLOW = {
 		"grep",
 		"glob",
 		"read_image",
-		"working_directory",
+		"feishu_im_user_message",
+		"feishu_im_user_fetch_resource",
+		"feishu_im_bot_image",
 		"feishu_send_image",
-		"schedule_*",
-		"subagent",
-		"subagent_fork",
-		"workflow",
-		"present",
-		"ask_user_question",
+		"feishu_send_file",
 		"skill",
 		"read",
 		"grep",
-		"glob"
+		"glob",
+		"ask_user_question"
 	]
 };
 /** Effective allowlist: explicit bot config wins; otherwise the identity manifest proto set; otherwise the patch baseline. */
@@ -1317,14 +1320,15 @@ function restrictChannelTools(ctx, config, agent) {
 	if (!patterns?.length) return;
 	const tools = agent.ctx.get("tools");
 	if (!tools) throw new Error("DSH tools service is unavailable");
-	const allow = tools.schemas(agent).map((tool) => tool.name).filter((name) => patterns.some((pattern) => toolNameMatches(name, pattern)));
-	const removeRestriction = tools.restrict({ allow });
+	const globalAllow = tools.schemas(void 0).map((tool) => tool.name).filter((name) => patterns.some((pattern) => toolNameMatches(name, pattern)));
+	const removeRestriction = tools.restrict({ allow: globalAllow });
 	const bindingRoot = bindingCwdOf(ctx, agent);
 	const removeGuard = tools.guard((exec) => {
 		const denied = patterns.some((pattern) => toolNameMatches(exec.name, pattern)) ? void 0 : `tool "${exec.name}" is not available through the Feishu business channel`;
 		if (denied !== void 0) return denied;
 		if (bindingRoot !== void 0) {
-			const fenced = fenceUserWorkspace(exec, bindingRoot);
+			const agentId = agent.identity?.agentId;
+			const fenced = fenceUserWorkspace(exec, bindingRoot, agentId);
 			if (fenced !== void 0) return fenced;
 		}
 	});
@@ -1344,6 +1348,20 @@ function toolNameMatches(name, pattern) {
 	const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
 	return new RegExp(`^${escaped}$`).test(name);
 }
+/**
+* Compose an Agent under the profile's default preset so preset-scoped plugins
+* (persona / time-context / tool-web …) actually mount for channel sessions.
+* Mirrors dsh-api-session-controller.composeAgent: mount inside the
+* creation-time setup callback, before the registry publishes the agent.
+*/
+function presetComposition(ctx) {
+	const presets = ctx.get("agentPresets");
+	if (!presets) return {};
+	return { setup: async (agentCtx) => {
+		const wanted = typeof presets.defaultId === "string" ? presets.defaultId : void 0;
+		await presets.mount(agentCtx, wanted);
+	} };
+}
 /** Resume existing Lark sessions through the same Agent registry as Web hosts. */
 async function resolveAgent(ctx, config, sessionId, cwd, extras = {}) {
 	const agents = ctx.get("agents");
@@ -1357,20 +1375,22 @@ async function resolveAgent(ctx, config, sessionId, cwd, extras = {}) {
 	}
 	const options = agentOptions(config, ctx);
 	const modelSetup = extras.selections?.setup(extras.modelOverride?.(sessionId));
+	const preset = presetComposition(ctx);
 	const setup = (agentCtx, agent) => {
 		const delegated = modelSetup?.(agentCtx, agent);
+		const presetReady = preset.setup?.(agentCtx, agent);
 		const commit = () => {
 			bindUserIdentity(agent, extras);
 			restrictChannelTools(ctx, config, agent);
+			delegated?.commit?.();
 		};
-		if (delegated instanceof Promise) return delegated.then((ready) => ({ commit: () => {
+		const settle = () => delegated instanceof Promise ? delegated : void 0;
+		const chain = [settle(), presetReady].filter(Boolean);
+		if (chain.length === 0) return { commit };
+		return Promise.all(chain).then((settled) => ({ commit: () => {
 			commit();
-			ready?.commit();
+			for (const ready of settled) ready?.commit?.();
 		} }));
-		return { commit: () => {
-			commit();
-			delegated?.commit();
-		} };
 	};
 	const withOptions = (base) => ({
 		...base,
@@ -9333,31 +9353,6 @@ async function pdfMessageContent(agent, fileName, bytes, logger, contentType) {
 	}
 }
 //#endregion
-//#region src/skill-sync.ts
-/**
-* Provision identity-level skills into a user's fenced workspace.
-* Existing files are never overwritten; reference updates must be deliberate.
-*/
-async function syncIdentitySkills(agentsRoot, agentId, userCwd) {
-	if (!agentId) return;
-	const source = join(agentsRoot, agentId, ".dsh", "skills");
-	const target = join(userCwd, ".dsh", "skills");
-	try {
-		await mkdir(target, {
-			recursive: true,
-			mode: 448
-		});
-		await cp(source, target, {
-			recursive: true,
-			force: false,
-			errorOnExist: false
-		});
-	} catch (error) {
-		if (error.code === "ENOENT") return;
-		throw error;
-	}
-}
-//#endregion
 //#region src/dedup-store.ts
 /** JSON backing file for Feishu message IDs; contains no message content. */
 var DedupStore = class {
@@ -12289,7 +12284,6 @@ var LarkChannel = class {
 			recursive: true,
 			mode: 448
 		});
-		await syncIdentitySkills(this.options.config.workspaceRoot ?? agentsRootDefault(), this.options.config.agentId, binding.cwd);
 		await this.options.sessions.save();
 		this.options.toolContexts.bind(binding.sessionId, {
 			messageId: message.messageId,
@@ -19795,6 +19789,22 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 	}
 	const disposers = [];
 	const registered = [];
+	let imagePreviewCounter = 0;
+	const sentImagePreviews = /* @__PURE__ */ new Map();
+	const registerImagePreview = async (path) => {
+		const { readFile } = await import("node:fs/promises");
+		const bytes = await readFile(path);
+		const mediaType = /\.jpe?g$/i.test(path) ? "image/jpeg" : /\.webp$/i.test(path) ? "image/webp" : "image/png";
+		const attachment = await ctx.get("attachments")?.saveImage({
+			data: bytes,
+			mediaType,
+			name: path.split("/").pop() ?? "image"
+		});
+		if (!attachment) return void 0;
+		const previewId = `feishu-sent-${++imagePreviewCounter}`;
+		sentImagePreviews.set(previewId, attachment);
+		return previewId;
+	};
 	const host = {
 		config: hostConfig,
 		logger: ctx.logger,
@@ -19812,7 +19822,7 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 	};
 	disposers.push(tools.register({
 		name: "feishu_send_image",
-		description: "把本地图片发送到当前飞书对话。支持 ths_qr_login 的 output、image_generate/image_edit 的 image_path，以及 feishu_group_image、browser_screenshot 等工作区图片。",
+		description: "把本地图片发送到当前飞书对话，并回显实际发送的图片供模型检查。支持 ths_qr_login 的 output、image_generate/image_edit 的 image_path，以及 feishu_group_image、browser_screenshot 等工作区图片。",
 		parameters: {
 			type: "object",
 			properties: { path: {
@@ -19826,10 +19836,20 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 				type: "object",
 				additionalProperties: true
 			},
-			render: (_args, value) => [{
-				type: "text",
-				text: JSON.stringify(value)
-			}]
+			render: (_args, value) => {
+				const result = value;
+				const blocks = [{
+					type: "text",
+					text: JSON.stringify(value)
+				}];
+				const attachment = result.previewId === void 0 ? void 0 : sentImagePreviews.get(result.previewId);
+				if (attachment) blocks.push({
+					type: "image",
+					attachment
+				});
+				sentImagePreviews.delete(result.previewId ?? "");
+				return blocks;
+			}
 		},
 		async execute(args, exec) {
 			const { path: inputPath } = args;
@@ -19859,9 +19879,11 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 				}
 			});
 			if (sent.code !== 0) throw new Error(`图片发送失败: ${sent.msg ?? sent.code}`);
+			const previewId = await registerImagePreview(path);
 			return {
 				sent: true,
-				messageId: sent.data?.message_id
+				messageId: sent.data?.message_id,
+				...previewId === void 0 ? {} : { previewId }
 			};
 		}
 	}));
@@ -19892,7 +19914,13 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 			const ticket = sessionId === void 0 ? void 0 : contexts.get(sessionId);
 			if (!ticket) throw new Error("当前对话没有可信飞书用户身份");
 			const { realpathSync } = await import("node:fs");
-			const path = realpathSync(resolve(String(inputPath)));
+			const rawPath = String(inputPath);
+			let base;
+			if (exec.agent) {
+				const workingDirectory = exec.agent.ctx.get("workingDirectory");
+				base = workingDirectory ? await workingDirectory.ensure(exec.agent, exec.signal) : void 0;
+			}
+			const path = realpathSync(resolve(base ?? process.cwd(), rawPath));
 			const agentsRoot = realpathSync(resolve(process.env.DSH_HOME ?? "/data/dsh", "home", "agents"));
 			if (!path.startsWith(`${agentsRoot}/`)) throw new Error("文件路径必须在当前用户工作区 agents/ 目录下");
 			const { stat } = await import("node:fs/promises");
@@ -20016,6 +20044,7 @@ function apply(ctx, config) {
 			toolContexts,
 			logger: ctx.logger,
 			resolveAgent: resolveBound,
+			agentsRoot,
 			models
 		}));
 	}

@@ -184,11 +184,11 @@ describe('Lark Agent compatibility services', () => {
     });
 
     expect(captured).toBeTypeOf('function');
-    const commit = await (captured as (ctx: unknown, agent: Agent) => Promise<{ commit(): void }>)(
+    const prepared = await (captured as (ctx: unknown, agent: Agent) => Promise<{ commit(): void }>)(
       { effect: vi.fn() },
       { id: 'lark-session' } as unknown as Agent,
     );
-    commit.commit();
+    prepared.commit();
     expect(registry.ref('lark-session')?.current).toEqual({
       provider: 'cpa',
       model: 'kimi-k3',
@@ -198,5 +198,74 @@ describe('Lark Agent compatibility services', () => {
       agentOptions: { provider: 'cpa', model: 'deepseek-v4-flash' },
       setup: expect.any(Function),
     });
+  });
+
+  it('mounts the default agent preset inside the resume setup', async () => {
+    const ctx = new Context();
+    const agent = { session: { id: 'lark-session' } } as Agent;
+    let captured: unknown;
+    const resume = vi.fn(async (options: { setup?: unknown }) => {
+      captured = options.setup;
+      return { agent, dispose: async () => {} };
+    });
+    ctx.provide('agents', { get: () => undefined, resume, create: vi.fn() });
+    const mount = vi.fn(async () => ({ id: 'member' }));
+    ctx.provide('agentPresets', { defaultId: 'member', mount });
+
+    await resolveAgent(ctx, {} as Config, 'lark-session', '/workspace');
+    expect(mount).not.toHaveBeenCalled();
+    const prepared = await (captured as (ctx: unknown, agent: Agent) => Promise<unknown>)(
+      {} as never,
+      agent,
+    );
+    expect(mount).toHaveBeenCalledWith(expect.anything(), 'member');
+    expect(prepared).toEqual({ commit: expect.any(Function) });
+  });
+
+  it('records the mounted preset on newly created session metadata', async () => {
+    const ctx = new Context();
+    const agent = { session: { id: 'lark-session' } } as Agent;
+    const resume = vi.fn(async () => {
+      throw Object.assign(new Error('session not found'), { code: 'SESSION_NOT_FOUND' });
+    });
+    // The create stub awaits setup (which mounts the preset) before returning,
+    // mirroring agents.create()'s contract. The resolver builds meta before
+    // setup runs, so the header carries cwd only; the mounted id stays
+    // reconstructible from the agentPreset projection and this re-mount path.
+    const create = vi.fn(async (options: { setup?: unknown; meta?: Record<string, unknown> }) => {
+      await (options.setup as ((a: unknown, b: unknown) => Promise<unknown>) | undefined)?.({} as never, agent);
+      return { agent, dispose: async () => {} };
+    });
+    ctx.provide('agents', { get: () => undefined, resume, create });
+    const mount = vi.fn(async (_ctx: unknown, _id: string | undefined) => ({ id: 'member' }));
+    ctx.provide('agentPresets', { defaultId: 'member', mount });
+
+    const created = await resolveAgent(ctx, {} as Config, 'lark-session', '/workspace');
+    expect(created).toBe(agent);
+    expect(mount).toHaveBeenCalledWith(expect.anything(), 'member');
+    expect(create).toHaveBeenCalledWith({
+      sessionId: 'lark-session',
+      agentOptions: {},
+      meta: { cwd: '/workspace' },
+      setup: expect.any(Function),
+    });
+  });
+
+  it('skips preset mounting gracefully when the presets service is absent', async () => {
+    const ctx = new Context();
+    const agent = { session: { id: 'lark-session' } } as Agent;
+    let captured: unknown;
+    const resume = vi.fn(async (options: { setup?: unknown }) => {
+      captured = options.setup;
+      return { agent, dispose: async () => {} };
+    });
+    ctx.provide('agents', { get: () => undefined, resume, create: vi.fn() });
+
+    await resolveAgent(ctx, {} as Config, 'lark-session', '/workspace');
+    const prepared = await (captured as (ctx: unknown, agent: Agent) => Promise<unknown>)(
+      {} as never,
+      agent,
+    );
+    expect(prepared).toEqual({ commit: expect.any(Function) });
   });
 });
