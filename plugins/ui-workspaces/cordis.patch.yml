@@ -1,0 +1,9 @@
+# 飞书会话注册表聚合；支持绝对路径与 * 通配。
+- insert:
+    - id: ui-workspaces
+      name: '@dsh-friends/ui-workspaces'
+      config:
+        intervalMs: 3000
+        registryFiles:
+          - /data/dsh/lark/workspace.json
+          - /data/dsh/lark/bots/*/workspace.json

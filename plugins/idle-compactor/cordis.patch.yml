@@ -1,0 +1,9 @@
+# idleMinutes<=0 关闭；dryRun=true 只记录日志不实际压缩。
+- insert:
+    - id: idle-compactor
+      name: '@dsh-friends/idle-compactor'
+      config:
+        idleMinutes: 60
+        sweepIntervalMinutes: 5
+        timeoutMs: 180000
+        dryRun: false

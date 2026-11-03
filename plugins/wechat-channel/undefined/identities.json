@@ -1,0 +1,20 @@
+{
+  "users": {
+    "u_mvwq8kehe6f42aec": {
+      "identities": [
+        {
+          "channel": "feishu",
+          "appId": "cli_test",
+          "openId": "ou_aaa",
+          "boundAt": "2026-10-31T18:20:49.865Z"
+        },
+        {
+          "channel": "wechat",
+          "appId": "account:main",
+          "openId": "friend@im",
+          "boundAt": "2026-10-31T18:21:53.394Z"
+        }
+      ]
+    }
+  }
+}

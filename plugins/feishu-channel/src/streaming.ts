@@ -6,6 +6,18 @@ import {
 } from '../vendor/openclaw-lark/dist/card/tool-use-trace-store.js';
 import type { LarkRuntimeConfig } from './runtime-config.js';
 
+export interface NotificationCardState {
+  cardMessageId: string | null;
+  cardKitCardId: string | null;
+  cardKitSequence: number;
+}
+
+export interface NotificationStreamOptions {
+  uuid: string;
+  state?: NotificationCardState;
+  checkpoint(state: NotificationCardState): void;
+}
+
 export interface OfficialTurnController {
   readonly cardMessageId: string | null;
   readonly currentPhase: string;
@@ -27,7 +39,8 @@ export type OfficialTurnControllerFactory = (deps: {
   sessionKey: string;
   accountId: string | undefined;
   chatId: string;
-  replyToMessageId: string;
+  replyToMessageId: string | undefined;
+  notification?: NotificationStreamOptions;
   replyInThread: false;
   toolUseDisplay: {
     mode: 'on';
@@ -58,10 +71,11 @@ export class OfficialTurnStream {
   constructor(
     private readonly sessionKey: string,
     chatId: string,
-    replyToMessageId: string,
+    replyToMessageId: string | undefined,
     cfg: LarkRuntimeConfig,
     factory: OfficialTurnControllerFactory = defaultFactory,
     accountId?: string,
+    notification?: NotificationStreamOptions,
   ) {
     this.controller = factory({
       cfg,
@@ -70,6 +84,7 @@ export class OfficialTurnStream {
       accountId,
       chatId,
       replyToMessageId,
+      ...(notification ? { notification } : {}),
       replyInThread: false,
       toolUseDisplay: {
         mode: 'on',

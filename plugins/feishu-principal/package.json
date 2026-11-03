@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "types": "./index.d.ts",
+  "scripts": {
+    "test": "node --test test.mjs test-multiprocess.mjs"
+  },
   "exports": {
     ".": {
       "types": "./index.d.ts",
@@ -14,6 +17,8 @@
   },
   "files": [
     "index.js",
+    "index.d.ts",
+    "identities.js",
     "cordis.patch.yml",
     "locale/*.json",
     "README.md"

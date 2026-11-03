@@ -41,6 +41,7 @@ import { formatLarkError } from '../core/api-error';
 import { getLarkAccount } from '../core/accounts';
 import { AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError } from '../core/tool-client';
 import { getAppGrantedScopes, invalidateAppScopeCache, isAppScopeSatisfied } from '../core/app-scope-checker';
+import { appPermissionAuthUrl } from '../core/app-auth-url';
 import { LarkClient } from '../core/lark-client';
 import { createCardEntity, sendCardByCardId, updateCardKitCardForAuth } from '../card/cardkit';
 import { OwnerAccessDeniedError } from '../core/owner-policy';
@@ -464,7 +465,7 @@ function buildAppScopeMissingCard(params: {
   const { missingScopes, appId, operationId, brand } = params;
   const openDomain = brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn';
   const authUrl = appId
-    ? `${openDomain}/app/${appId}/auth?q=${encodeURIComponent(missingScopes.join(','))}&op_from=feishu-openclaw&token_type=user`
+    ? appPermissionAuthUrl(appId, missingScopes, brand)
     : `${openDomain}/`;
   const multiUrl = { url: authUrl, pc_url: '', android_url: '', ios_url: '' };
 
@@ -684,7 +685,7 @@ async function sendAppScopeCard(params: {
         `应用缺少以下权限：${missingScopes.join(', ')}，` +
         `请管理员在开放平台开通后重试。` +
         (appId
-          ? `\n权限管理：${account.brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn'}/app/${appId}/permission`
+          ? `\n一键申请地址：${appPermissionAuthUrl(appId, missingScopes, account.brand)}`
           : ''),
     });
   }

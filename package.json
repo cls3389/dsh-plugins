@@ -2,12 +2,16 @@
   "name": "dsh-plugins",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "DSH Friends 插件市场:插件 monorepo + format-1 市场索引(GitHub Pages 托管)",
   "repository": {
     "url": "git+https://github.com/cls3389/dsh-plugins.git"
   },
   "scripts": {
     "gen-index": "node scripts/gen-index.mjs",
-    "test": "cd plugins/interrupted-turn-resumer && node --test test-regressions.mjs && cd ../session-title-keeper && node test-regressions.mjs"
+    "test": "cd plugins/turn-resumer && node --test test-regressions.mjs && cd ../title-keeper && node test-regressions.mjs && cd ../zread && node --test test-regressions.mjs && cd ../.. && node --test lib/user-connections.test.mjs plugins/ths-market/test-user-isolation.mjs plugins/feishu-principal/test.mjs"
+  },
+  "dependencies": {
+    "tokenjuice": "^0.8.5"
   }
 }

@@ -1,0 +1,24 @@
+# 包内 patch：向配置树注册 wechat entry（insert），外层 profile patch 用 - id: wechat-channel 覆盖。
+# 默认值全部为空/未登录——不配置任何账号时插件只注册登录/关联工具，不启动轮询。
+- insert:
+    - id: wechat-channel
+      name: '@dsh-friends/wechat-channel'
+      config:
+        agentsRoot: ''
+        dataDir: ''
+        accountId: ''
+        botId: ''
+        token: ''
+        tokenEnv: ''
+        baseUrl: ''
+        workspaceRoot: ''
+        agentId: ''
+        appName: ''
+        provider: ''
+        model: ''
+        reasoningEffort: ''
+        allowedUsers: []
+        loginAllowUsers: []
+        agentToolAllow: []
+        botsFile: ''
+        bots: []

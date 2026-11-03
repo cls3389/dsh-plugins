@@ -1,0 +1,8 @@
+- id: feishu
+  disabled: true
+- id: feishu-messages
+  disabled: true
+- id: idle-compactor
+  disabled: true
+- id: browser
+  disabled: true

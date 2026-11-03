@@ -12,7 +12,8 @@
     "data-sources.js",
     "sync-engine.js",
     "scheduler.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "locale"
   ],
   "dsh": {
     "bundle": {

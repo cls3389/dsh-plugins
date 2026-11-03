@@ -62,7 +62,7 @@ function _optimizeMarkdownStyle(text: string, cardVersion = 2): string {
     //     "text\n\n<br>\n\n|" → "text\n<br>\n|"
     r = r.replace(/^((?!#{4,5} )(?!\*\*).+)\n\n(<br>)\n\n(\|)/gm, '$1\n$2\n$3');
     // 4d2. 表格前是加粗行时，<br> 紧贴加粗行，空行保留在后面
-    //     "**bold**\n\n<br>\n\n|" → "**bold**\n<br>\n\n|"
+    //     "**bold**\n<br>\n\n|" → "**bold**\n<br>\n\n|"
     r = r.replace(/^(\*\*.+)\n\n(<br>)\n\n(\|)/gm, '$1\n$2\n\n$3');
     // 4e. 表格后是普通文本（非标题、非加粗行）时，只需 <br>，去掉多余空行
     //     "| row |\n\n<br>\ntext" → "| row |\n<br>\ntext"

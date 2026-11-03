@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "命令输出压缩",
+    "description": "提供 bash_compact 工具，用 tokenjuice 压缩冗长的命令输出，保留错误上下文并减少上下文占用。"
+  }
+}

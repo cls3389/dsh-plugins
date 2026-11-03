@@ -96,6 +96,7 @@ describe('official Lark channel to DSH', () => {
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
+      agentsRoot: '/tmp/agents',
       resolveAgent: async (sessionId) => {
         const agent = {
           session: { id: sessionId },
@@ -141,6 +142,7 @@ describe('official Lark channel to DSH', () => {
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
+      agentsRoot: '/tmp/agents',
       resolveAgent,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
@@ -211,6 +213,7 @@ describe('official Lark channel to DSH', () => {
       },
       sessions,
       toolContexts: new OfficialToolContexts(),
+      agentsRoot: '/tmp/agents',
       resolveAgent: async () => agent,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       streamFactory: () => official,
@@ -276,6 +279,7 @@ describe('official Lark channel to DSH', () => {
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
+      agentsRoot: '/tmp/agents',
       resolveAgent: async () => agent,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       streamFactory: () => official,
@@ -304,6 +308,7 @@ describe('official Lark channel to DSH', () => {
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
+      agentsRoot: '/tmp/agents',
       resolveAgent: async () => agent,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       streamFactory: () => official,
@@ -335,6 +340,7 @@ describe('official Lark channel to DSH', () => {
       officialConfig: { channels: { feishu: {} } },
       sessions,
       toolContexts: new OfficialToolContexts(),
+      agentsRoot: '/tmp/agents',
       resolveAgent,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       models,

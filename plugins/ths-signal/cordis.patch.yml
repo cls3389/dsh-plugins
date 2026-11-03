@@ -1,0 +1,10 @@
+- insert:
+    - id: ths-signal
+      name: '@dsh-friends/ths-signal'
+      config:
+        signalTraderBaseUrl: http://127.0.0.1:8011
+        signalTraderWebuiToken: ''
+        signalTraderWebhookToken: ''
+        requestTimeoutMs: 15000
+        toolDeny: []
+        toolAllow: []

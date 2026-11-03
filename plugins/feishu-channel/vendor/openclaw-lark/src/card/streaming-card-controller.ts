@@ -276,6 +276,10 @@ export class StreamingCardController {
 
   constructor(deps: StreamingCardDeps) {
     this.deps = deps;
+    if (deps.notification?.state) {
+      this.cardKit = { ...deps.notification.state, originalCardKitCardId: deps.notification.state.cardKitCardId };
+      if (this.cardKit.cardMessageId) this.phase = 'streaming';
+    }
 
     this.guard = new UnavailableGuard({
       replyToMessageId: deps.replyToMessageId,
@@ -679,6 +683,7 @@ export class StreamingCardController {
             seqBefore: seqBeforeClose,
             seqAfter: this.cardKit.cardKitSequence,
           });
+          this.checkpointNotification();
           await setCardStreamingMode({
             cfg: this.deps.cfg,
             cardId: idleEffectiveCardId,
@@ -729,6 +734,7 @@ export class StreamingCardController {
             seqBefore: seqBeforeUpdate,
             seqAfter: this.cardKit.cardKitSequence,
           });
+          this.checkpointNotification();
           await updateCardKitCard({
             cfg: this.deps.cfg,
             cardId: idleEffectiveCardId,
@@ -751,6 +757,7 @@ export class StreamingCardController {
       }
     } catch (err) {
       log.warn('final card update failed', { error: String(err) });
+      if (this.deps.notification) throw err;
     } finally {
       clearToolUseTraceRun(this.deps.sessionKey);
     }
@@ -838,6 +845,10 @@ export class StreamingCardController {
     }
   }
 
+  private checkpointNotification(): void {
+    this.deps.notification?.checkpoint({ cardMessageId: this.cardKit.cardMessageId, cardKitCardId: this.cardKit.cardKitCardId ?? this.cardKit.originalCardKitCardId, cardKitSequence: this.cardKit.cardKitSequence });
+  }
+
   // ------------------------------------------------------------------
   // Internal: card creation
   // ------------------------------------------------------------------
@@ -858,7 +869,7 @@ export class StreamingCardController {
       try {
         try {
           // Step 1: Create card entity
-          const cId = await createCardEntity({
+          const cId = this.cardKit.cardKitCardId ?? await createCardEntity({
             cfg: this.deps.cfg,
             card: buildStreamingThinkingCard(this.deps.toolUseDisplay.showToolUse),
             accountId: this.deps.accountId,
@@ -875,7 +886,8 @@ export class StreamingCardController {
           if (cId) {
             this.cardKit.cardKitCardId = cId;
             this.cardKit.originalCardKitCardId = cId;
-            this.cardKit.cardKitSequence = 1;
+            this.cardKit.cardKitSequence = Math.max(1, this.cardKit.cardKitSequence);
+            this.checkpointNotification();
             this.disposeShutdownHook = registerShutdownHook(`streaming-card:${cId}`, () => this.abortCard());
             log.info('created CardKit entity', {
               cardId: cId,
@@ -887,6 +899,7 @@ export class StreamingCardController {
               cfg: this.deps.cfg,
               to: this.deps.chatId,
               cardId: cId,
+              ...(this.deps.notification ? { uuid: this.deps.notification.uuid } : {}),
               replyToMessageId: this.deps.replyToMessageId,
               replyInThread: this.deps.replyInThread,
               accountId: this.deps.accountId,
@@ -903,6 +916,7 @@ export class StreamingCardController {
             }
 
             this.cardKit.cardMessageId = result.messageId;
+            this.checkpointNotification();
             this.flush.setCardMessageReady(true);
             if (!this.transition('streaming', 'ensureCardCreated.cardkit')) {
               this.disposeShutdownHook?.();
@@ -918,6 +932,7 @@ export class StreamingCardController {
           if (this.guard.terminate('ensureCardCreated.cardkitFlow', cardKitErr)) {
             return;
           }
+          if (this.deps.notification) throw cardKitErr;
           // CardKit flow failed — fall back to regular IM card
           const apiDetail = extractApiDetail(cardKitErr);
           log.warn('CardKit flow failed, falling back to IM', { apiDetail });
@@ -952,6 +967,7 @@ export class StreamingCardController {
           log.info('sent fallback IM card', { messageId: result.messageId });
         }
       } catch (err) {
+        if (this.deps.notification) throw err;
         if (this.isStaleCreate(epoch)) return;
         if (this.guard.terminate('ensureCardCreated.outer', err)) {
           return;

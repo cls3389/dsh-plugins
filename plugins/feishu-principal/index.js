@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { homedir } from 'node:os';
+import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { bindIdentity, listIdentities, resolveIdentity } from './identities.js';
@@ -19,21 +19,14 @@ export function assertOpenId(openId) {
  * 身份簇解析:渠道身份 → userId(identity cluster)。
  * userId 不是先验自然人;首个渠道身份自动建档,更多身份靠显式 bind 并入。
  * userKey 保留旧名(目录键),语义升级为 identity-cluster 键。
- * 缓存会在 bindIdentity 合并身份后整体失效(跨模块约定:identities.js 调 invalidateUserKeyCache)。
+ * 每次读取注册表最新快照，其他进程 bind 后目录键立即跟随，不保留进程级归属缓存。
  */
-const userKeyCache = new Map();
-export function invalidateUserKeyCache() {
-  userKeyCache.clear();
-}
+// Kept for callers using the previous cache-invalidation API.
+export function invalidateUserKeyCache() {}
 
-export function userKey(openId, appId) {
+export function userKey(openId, appId, unionId) {
   assertOpenId(openId);
-  const cacheKey = appId ? `${appId}:${openId}` : openId;
-  if (!userKeyCache.has(cacheKey)) {
-    const resolved = resolveIdentity({ channel: 'feishu', appId: appId ?? 'unscoped', openId });
-    userKeyCache.set(cacheKey, resolved.userId);
-  }
-  return userKeyCache.get(cacheKey);
+  return resolveIdentity({ channel: 'feishu', appId: appId ?? 'unscoped', openId, ...(unionId ? { unionId } : {}) }).userId;
 }
 
 /** bindIdentity + 缓存失效的统一入口(管理员绑定身份簇)。 */
@@ -49,19 +42,73 @@ export function bindIdentityWithCache(userId, identity, options = {}) {
   return result;
 }
 
-export function principalKey(openId, appId, defaultAppId) {
+export function principalKey(openId, appId, defaultAppId, unionId) {
   if (appId) {
     if (!defaultAppId || !/^cli_[a-z0-9]+$/i.test(appId) || !/^cli_[a-z0-9]+$/i.test(defaultAppId)) throw new Error('飞书应用身份无效');
   }
-  // 登录态键跟随身份簇 userId(不再是 openId+appId 派生 hash):
-  // 同簇身份共享登录态,不同簇天然隔离;bind 合并后旧簇登录态随档案目录迁移。
-  return userKey(openId, appId ?? defaultAppId);
+  // 登录态键跟随身份簇 userId:同簇身份共享登录态,不同簇天然隔离。
+  // union_id 让同一自然人跨 bot 归并到同一簇 → 一个飞书账号一个身份。
+  return userKey(openId, appId ?? defaultAppId, unionId);
 }
 
-export function workspaceFor(appRoot, openId, appId) {
+/**
+ * Channel-neutral identity resolver. Unlike userKey(), this accepts arbitrary
+ * provider subject IDs (for example Weixin ilink_user_id) and never applies
+ * Feishu's ou_<hex> validation.
+ */
+export function resolveAgentIdentity({ channel, appId, subjectId, displayName }, options = {}) {
+  if (typeof channel !== 'string' || !channel || typeof appId !== 'string' || !appId || typeof subjectId !== 'string' || !subjectId) {
+    throw new Error('身份三元组不完整:需要 channel/appId/subjectId');
+  }
+  return resolveIdentity({ channel, appId, openId: subjectId, ...(displayName !== undefined ? { displayName } : {}) }, options);
+}
+
+/**
+ * 用户中心根目录(2026-11-02 迁移): /data/dsh/home/users/<u_xxx>
+ * 每用户档案: config/ + <agentId>/{workspace,memory};身份注册表、渠道绑定与运行日志另存。
+ */
+export const USER_ROOT = path.join(process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh'), 'home', 'users');
+
+/** 新布局: users/<userId>/<agentId>/workspace */
+function workspaceNewLayout(userId, agentId) {
+  const safeAgent = /^[a-z0-9][a-z0-9-]{0,63}$/.test(agentId ?? '') ? agentId : null;
+  if (!safeAgent) return null;
+  const directory = path.join(USER_ROOT, userId, safeAgent, 'workspace');
+  if (!directory.startsWith(`${USER_ROOT}${path.sep}`)) return null;
+  return directory;
+}
+
+/**
+ * 旧签名的用户档案路径解析(agents/<agentId>/users/<userId>)。
+ * 新代码优先 workspaceForIdentity(用户中心布局);此函数留给兼容期调用方
+ * 与身份簇一致性测试——同一身份簇必须落到同一路径,换 bot 不换档案。
+ */
+export function workspaceFor(appRoot, openId, appId, unionId) {
+  assertOpenId(openId);
+  const userId = userKey(openId, appId, unionId);
+  return path.join(path.resolve(appRoot), 'users', userId);
+}
+
+/** Resolve a user archive from a previously trusted channel-neutral identity. */
+export function workspaceForIdentity(appRoot, identity) {
   const root = path.resolve(appRoot);
-  const directory = path.join(root, 'users', userKey(openId, appId));
-  if (!directory.startsWith(`${root}${path.sep}`)) throw new Error('用户工作区路径越界');
+  const userId = identity?.userId;
+  if (typeof userId !== 'string' || !/^u_[a-z0-9_-]{1,63}$/.test(userId)) throw new Error('用户身份 userId 无效');
+  // 用户中心唯一布局(2026-11-02 定稿): users/<userId>/<agentId>/workspace。无 agentId 视为配置错误。
+  const agentId = identity?.agentId ?? (typeof appRoot === 'string' ? path.basename(root) : undefined);
+  const fresh = workspaceNewLayout(userId, agentId);
+  if (fresh) return fresh;
+  throw new Error(`用户 ${userId} 缺少有效 agentId,无法定位用户中心工作区`);
+}
+
+/** 记忆目录(新布局): users/<userId>/<agentId>/memory — 在 workspace 围栏外,钩子强制。 */
+export function memoryForIdentity(identity) {
+  const userId = identity?.userId;
+  const agentId = identity?.agentId;
+  if (typeof userId !== 'string' || !/^u_[a-z0-9_-]{1,63}$/.test(userId)) throw new Error('用户身份 userId 无效');
+  if (typeof agentId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(agentId)) throw new Error('身份目录名无效');
+  const directory = path.join(USER_ROOT, userId, agentId, 'memory');
+  if (!directory.startsWith(`${USER_ROOT}${path.sep}`)) throw new Error('记忆路径越界');
   return directory;
 }
 
@@ -97,18 +144,58 @@ function validUrl(value) {
   try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; }
 }
 
+/**
+ * 唯一查找:身份 → usersFile users.<u_xxx> 段(2026-11-02 收敛,应用域/ou_ 顶层键已废弃)。
+ * 字符串入参(ou_ openId,飞书)内部经 resolveIdentity 归一 userId;身份对象直接用。
+ */
+function userForIdentity(users, identity, cfg) {
+  let userId = typeof identity === 'string' ? undefined : identity?.userId;
+  if (typeof userId !== 'string' || !/^u_/.test(userId)) {
+    const subject = typeof identity === 'string' ? identity : identity?.subjectId ?? identity?.openId;
+    if (typeof subject === 'string' && subject) {
+      const channel = typeof identity === 'string' ? 'feishu' : identity?.channel ?? 'feishu';
+      const appId = (typeof identity === 'string' ? cfg?.defaultAppId : identity?.appId ?? cfg?.defaultAppId) ?? 'unscoped';
+      try {
+        userId = resolveAgentIdentity({ channel, appId, subjectId: subject }).userId;
+      } catch { return undefined; }
+    }
+  }
+  if (typeof userId !== 'string' || !/^u_/.test(userId)) return undefined;
+  return users[userId];
+}
+
+/**
+ * 按渠道身份取 users 段条目。
+ * 支持三种登记形态：
+ *  1. `applications[appId][openId]`：应用域显式配置（配置用到该段时，非默认应用只看它，
+ *     查不到即无权限——应用之间不互相继承，避免一个 bot 的授权串到另一个）；
+ *  2. `users[openId]`：按渠道身份登记（旧格式）；
+ *  3. 身份簇 userId（现行生产格式，user-connections.json）。
+ */
 function userForApp(users, openId, appId, defaultAppId) {
-  return appId && appId !== defaultAppId ? users.applications?.[appId]?.[openId] : users[openId];
+  if (typeof openId !== 'string' || !openId) return undefined;
+  const apps = users.applications;
+  const hasAppScoping = apps && typeof apps === 'object' && !Array.isArray(apps);
+  if (hasAppScoping && appId && appId !== defaultAppId) {
+    return apps[appId]?.[openId]; // 非默认应用：只认该应用域配置
+  }
+  if (users[openId]) return users[openId];
+  return userForIdentity(users, { channel: 'feishu', appId: appId ?? defaultAppId ?? 'unscoped', subjectId: openId }, { defaultAppId });
 }
 
 export function connectionForUser(openId, cfg, kind, appId) {
-  assertOpenId(openId);
-  const user = userForApp(readUsers(cfg.usersFile), openId, appId, cfg.defaultAppId);
+  // 渠道身份对象({channel,appId,subjectId,userId})或飞书 ou_ openId 字符串;统一归一 userId 查 users 段。
+  const isIdentityObject = openId && typeof openId === 'object';
+  if (!isIdentityObject) assertOpenId(openId);
+  const users = readUsers(cfg.usersFile);
+  const directUser = typeof openId === 'string' ? userForApp(users, openId, appId, cfg.defaultAppId) : undefined;
+  const user = directUser
+    ?? userForIdentity(users, openId, { ...cfg, ...(appId !== undefined ? { defaultAppId: cfg.defaultAppId } : {}) });
   // Public market data remains available before enrollment; private services never do.
   if (kind === 'market' && !user) return cfg;
   if (!user || user.enabled === false) {
     const guidance = kind === 'trading' ? '请联系管理员开通并配置独立的 xiadan 交易连接；同花顺自选扫码登录不能开通交易功能'
-      : kind === 'aiSignal' ? '请联系管理员开通并配置独立的 AI 分时连接' : '请联系管理员开通并配置该业务连接';
+      : kind === 'aiSignal' ? '请联系管理员开通并配置独立的 AI 分时交易连接' : '请联系管理员开通并配置该业务连接';
     throw new Error(`当前用户尚未配置或启用该业务连接；${guidance}`);
   }
   if (kind === 'market') {
@@ -135,7 +222,7 @@ export function connectionForUser(openId, cfg, kind, appId) {
   if (kind === 'aiSignal') {
     const connection = user.aiSignal;
     if (user.features?.aiSignal === false || !connection || !validUrl(connection.baseUrl)) {
-      throw new Error('当前用户未配置 AI 分时项目连接');
+      throw new Error('当前用户未配置 AI 分时交易项目连接');
     }
     return {
       ...cfg,
@@ -172,7 +259,7 @@ export function identityOf(agent) {
     ...(larkUser.agentId !== undefined ? { agentId: larkUser.agentId } : {}),
     ...(larkUser.appId !== undefined ? { appId: larkUser.appId } : {}),
     subjectId: larkUser.openId,
-    userId: userKey(larkUser.openId, larkUser.appId),
+    userId: userKey(larkUser.openId, larkUser.appId, larkUser.unionId),
     context: {
       ...(larkUser.chatId !== undefined ? { chatId: larkUser.chatId } : {}),
       ...(larkUser.accountId !== undefined ? { accountId: larkUser.accountId } : {}),
@@ -237,8 +324,9 @@ export function apply(ctx, config) {
   // 基座身份服务(渠道无关):业务插件不再感知 larkUser,统一经 identityOf 双读。
   ctx.provide('agentIdentity', {
     resolve({ channel, appId, subjectId, displayName }) {
-      return resolveIdentity({ channel, appId, openId: subjectId, ...(displayName !== undefined ? { displayName } : {}) });
+      return resolveAgentIdentity({ channel, appId, subjectId, displayName });
     },
+    workspaceForIdentity,
     identityOf,
     userIdOf(agentOrExec) {
       return identityOf(agentOrExec?.agent ?? agentOrExec)?.userId;

@@ -1,0 +1,3 @@
+- insert:
+    - id: output-compactor
+      name: '@dsh-friends/output-compactor'

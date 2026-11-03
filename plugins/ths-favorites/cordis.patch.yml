@@ -1,11 +1,17 @@
-# 安装后修改持久化目录和默认飞书应用 ID；多应用状态按 appId+openId 隔离。
-# ths_sync_table 默认不注册；需要批量刷多维表的身份显式 syncTableEnabled: true。
+# 2026-11-02 起本插件只是薄壳：自选股/登录业务全部在 ths-data-hub(127.0.0.1:17896)。
+# 用户 cookie/登录态由中心按身份目录管理；JS 不再保存任何状态或协议。
 - insert:
     - id: ths-favorites
       name: '@dsh-friends/ths-favorites'
       config:
-        stateDir: /data/dsh/storages/ths-favorites
+        dataHubBaseUrl: http://127.0.0.1:17896
+        dataHubToken: ''
+        dataHubTokenFile: ''
+        dataHubTimeoutMs: 20000
         defaultAppId: cli_replace_me
+        # 仅 Web 单用户（无飞书身份）走中心 owner 账号；留空则 Web 也要求飞书身份。
+        defaultAgentId: ''
+        # ths_sync_table 默认不注册；需要的身份显式开启。
         # syncTableEnabled: true
         # syncTableBaseUrl: http://127.0.0.1:39871
         # syncTimeoutMs: 300000

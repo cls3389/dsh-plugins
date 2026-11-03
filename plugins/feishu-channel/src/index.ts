@@ -5,6 +5,7 @@ import { LarkClient } from '../vendor/openclaw-lark/dist/core/lark-client.js';
 import { registerSessionController, resolveAgent } from './agent-resolver.js';
 import { LarkChannel } from './channel.js';
 import { agentsRootDefault, type Config, dataDirectory, resolveBots, resolveCredentials } from './config.js';
+import { agentOptions } from './agent-resolver.js';
 import { consoleExporter } from './console-exporter.js';
 import {
   ModelCommands,
@@ -13,13 +14,15 @@ import {
   type ModelsLlm,
 } from './model-selection.js';
 import { SessionStore } from './session-store.js';
+import type { FeishuNotificationInput, PreviousSessionInput } from './notifications.js';
+export type { FeishuNotificationInput, NotificationRecord, PreviousSessionInput } from './notifications.js';
 import { OfficialToolContexts, officialConfig, registerOfficialTools } from './tools.js';
 
 export { LarkChannel } from './channel.js';
 export { Config } from './config.js';
 export { OfficialTurnStream } from './streaming.js';
 
-export const name = 'feishu';
+export const name = 'feishu-channel';
 
 /** One Agent runtime, one WebSocket per Feishu application, isolated session stores. */
 
@@ -36,6 +39,48 @@ function resolveAgentsRoot(config: Config, bots: Config[]): string {
 export function apply(ctx: Context, config: Config): void {
   ctx.logger.exporter(consoleExporter());
   const bots = resolveBots(config);
+  // 启动期路由校验(2026-11-04):manifest/bot 钉死的 provider 必须已有 adapter、模型必须在目录中。
+  // 背景事故:manifest 钉 cpa 而端点已删,服务照常 active,第一条消息才以 generic 错误炸给终端用户。
+  // llm 服务就绪后校验,不通过则 process.exit(1) fail-fast,由 systemd 重启循环把配置错误暴露到 journal。
+  ctx.inject(['llm'], () => {
+    const llm = ctx.get('llm') as {
+      listProviders(): Array<{ id: string }>;
+      listModels(provider: string): Promise<Array<{ id: string }>> | Array<{ id: string }>;
+    };
+    void (async () => {
+      // model-catalog 等动态 provider 注册是异步的(凭据等待+目录同步),
+      // 校验前先等最多 20s 让 registry 稳定,避免抢跑误杀。
+      const providerIds = () => new Set(llm.listProviders().map((entry) => entry.id));
+      for (let waited = 0; waited < 20; waited++) {
+        const routes = bots
+          .map((bot) => ({ bot, route: agentOptions(bot, ctx) }))
+          .filter((entry) => entry.route?.provider && entry.route.model);
+        if (routes.length > 0 && routes.every((entry) => providerIds().has(entry.route!.provider!))) break;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      const providers = providerIds();
+      for (const bot of bots) {
+        const route = agentOptions(bot, ctx);
+        if (!route?.provider || !route.model) continue;
+        const label = `${bot.agentId ?? 'primary'}(${bot.appId ?? '?'})`;
+        if (!providers.has(route.provider)) {
+          throw new Error(
+            `[lark] bot ${label} 的模型路由 ${route.provider}/${route.model} 没有对应 provider adapter,拒绝启动——请修正 agents/<id>/manifest.yml 或 profile 配置`,
+          );
+        }
+        const models = await Promise.resolve(llm.listModels(route.provider)).catch(() => [] as Array<{ id: string }>);
+        if (models.length > 0 && !models.some((entry) => entry.id === route.model)) {
+          throw new Error(
+            `[lark] bot ${label} 的模型 ${route.provider}/${route.model} 不在该 provider 目录中(共 ${models.length} 个模型),拒绝启动——请修正 agents/<id>/manifest.yml`,
+          );
+        }
+      }
+      ctx.logger.info(`[lark] startup model check passed for ${bots.length} bot(s)`);
+    })().catch((error: unknown) => {
+      ctx.logger.error(`[lark] startup model check FAILED: ${String(error)}`);
+      process.exit(1);
+    });
+  });
   // 身份中心拆分(2026-10-30):companion/guests 等 profile 无主 bot 凭据,全靠 botsFile 条目。
   // 只要有任一 bot(主条目或 file bot)即可启动;上游凭据取主条目,缺省用第一个 file bot。
   const credentials = resolveCredentials(config) ?? (bots.find((bot) => bot.accountId !== 'default') && bots[0]?.appId && bots[0]?.appSecret
@@ -54,12 +99,13 @@ export function apply(ctx: Context, config: Config): void {
   LarkClient.setGlobalConfig(upstream);
 
   const toolContexts = new OfficialToolContexts();
-  const disposeTools = registerOfficialTools(
+  const disposeTools = config.officialTools === false ? () => {} : registerOfficialTools(
     ctx,
     config as unknown as Record<string, unknown>,
     credentials,
     toolContexts,
     upstream,
+    config.officialTools === 'messages' ? 'messages' : 'all',
   );
   const selections = new ModelSelectionRegistry();
   const appForAccount = new Map(bots.map((bot) => [bot.accountId ?? 'default', bot.appId]));
@@ -72,6 +118,8 @@ export function apply(ctx: Context, config: Config): void {
       accountId: ticket.accountId,
       appId: appForAccount.get(ticket.accountId),
       agentId: agentForAccount.get(ticket.accountId),
+      // 飞书 union_id：跨应用人标识，身份簇按它归并（一个飞书账号=一个身份）。
+      ...(ticket.senderUnionId ? { unionId: ticket.senderUnionId } : {}),
     } : undefined;
   };
   const channels: LarkChannel[] = [];
@@ -113,9 +161,21 @@ export function apply(ctx: Context, config: Config): void {
       toolContexts,
       logger: ctx.logger,
       resolveAgent: resolveBound,
+      agentsRoot,
       models,
     }));
   }
+
+  const notificationChannel = (appId: string) => {
+    const matched = channels.filter((channel) => channel.appId === appId);
+    if (matched.length !== 1) throw new Error('Feishu notification application is unavailable or ambiguous');
+    return matched[0]!;
+  };
+  ctx.provide('feishuNotifications', {
+    deliver: (input: FeishuNotificationInput): Promise<void> => notificationChannel(input.ownerAppId).deliverNotification(input),
+    rebindPreviousSession: (input: PreviousSessionInput): Promise<void> => notificationChannel(input.ownerAppId).rebindPreviousSession(input),
+    status: (eventId?: string, ownerAppId?: string) => channels.filter((channel) => !ownerAppId || channel.appId === ownerAppId).flatMap((channel) => channel.notificationStatus(eventId)),
+  });
 
   ctx.on('agent/assistant-stream', ({ agent, frame }) => {
     for (const channel of channels) channel.assistantFrame(agent.session.id, frame);
@@ -139,7 +199,7 @@ export function apply(ctx: Context, config: Config): void {
       });
     }
   });
-  // 闲置自动压缩已抽到独立插件 @dsh-friends/idle-compaction（2026-10-30），
+  // 闲置自动压缩已抽到独立插件 @dsh-friends/idle-compactor（2026-10-30），
   // 事件驱动判定闲置，对进程内所有会话宿主生效；本插件不再内嵌巡检。
   ctx.effect(() => async () => {
     disposeTools();

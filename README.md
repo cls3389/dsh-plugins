@@ -8,8 +8,8 @@
 ```
 dsh-plugins/
 ├── plugins/                  # 插件源码（每个子目录一个可安装插件）
-│   ├── interrupted-turn-resumer/   # 中断任务自动续接
-│   └── session-title-keeper/       # 会话标题增量维护
+│   ├── turn-resumer/   # 中断任务自动续接
+│   └── title-keeper/       # 会话标题增量维护
 ├── scripts/gen-index.mjs     # 索引生成脚本
 ├── docs/index.json           # 生成的市场索引（GitHub Pages 托管根）
 └── package.json
@@ -19,10 +19,10 @@ dsh-plugins/
 
 | 插件 | 作用 |
 |---|---|
-| `@dsh-friends/interrupted-turn-resumer` | DSH 进程中断恢复后自动续接未完成任务，每个轮次最多补发一次继续消息 |
+| `@dsh-friends/turn-resumer` | DSH 进程中断恢复后自动续接未完成任务，每个轮次最多补发一次继续消息 |
 | `@larksuite/dsh-lark` | 官方飞书渠道:飞书里对话 DSH,/model 切模型、卡片审批(需自备飞书应用凭据) |
 | `@dsh-friends/onepanel` | 1Panel 面板工具：多服务器管理计划任务、容器、应用与宿主状态，servers.json 热读免重启 |
-| `@dsh-friends/session-title-keeper` | 定时扫描会话，把停留在 fallback 截断版或漏更新的标题用 LLM 重算写回 |
+| `@dsh-friends/title-keeper` | 定时扫描会话，把停留在 fallback 截断版或漏更新的标题用 LLM 重算写回 |
 | `@dsh-friends/zread` | 免克隆搜索 GitHub 公开仓库文档、Issue、Commit、目录结构与源码，原生 HTTP 无 MCP 中间层 |
 
 需要保存运行时状态的插件默认写入 `$DSH_HOME`（未设则 `~/.dsh`）；各插件的前置条件与

@@ -1,0 +1,31 @@
+{
+  "name": "@dsh-friends/ths-wencai",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test test-adapter.mjs"
+  },
+  "description": "问财条件选股与信息检索：本人登录准入、公共答案共享与账号池轮询、个人问题隔离；常规数值数据优先行情工具",
+  "license": "MIT",
+  "peerDependencies": {
+    "@dsh-friends/feishu-principal": "*"
+  },
+  "peerDependenciesMeta": {
+    "@dsh-friends/feishu-principal": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,19 @@
+- id: sandbox
+  disabled: true
+- id: bash-sandbox
+  config:
+    timeoutMs: 60000
+- insert:
+    - id: claw-sandbox
+      name: '@dsh-friends/claw-sandbox'
+      config:
+        image: dsh-user-sandbox:bookworm
+        uid: 1000
+        gid: 1000
+        network: none
+        workspaceRoots:
+          - /data/dsh/home/agents
+          - /data/dsh/home/users
+        memory: 1g
+        cpus: 1
+        pidsLimit: 128

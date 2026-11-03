@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import * as Lark from "@larksuiteoapi/node-sdk";
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import * as os from "node:os";
 import { homedir, tmpdir } from "node:os";
 import * as path$1 from "node:path";
@@ -8,8 +8,9 @@ import path, { basename, dirname, join, relative, resolve, sep } from "node:path
 import { AsyncLocalStorage } from "node:async_hooks";
 import { URLSearchParams as URLSearchParams$1, fileURLToPath } from "node:url";
 import * as fs$1 from "node:fs";
-import fs, { createReadStream, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { readUsers, userKey, workspaceFor } from "@dsh-friends/feishu-principal";
+import fs, { closeSync, createReadStream, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { listIdentities, readUsers, userKey, workspaceForIdentity } from "@dsh-friends/feishu-principal";
+import z from "@deepseek-ai/schemastery";
 import * as fsPromises from "node:fs/promises";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as dns from "node:dns/promises";
@@ -17,7 +18,6 @@ import * as net from "node:net";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
-import z from "@deepseek-ai/schemastery";
 import { isPdf, readPdf } from "@dsh-friends/pdf-tools/reader";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
@@ -1143,6 +1143,186 @@ function getResolvedConfig(fallback) {
 	}
 }
 //#endregion
+//#region src/config.ts
+const Config = z.object({
+	appId: z.string().required(false),
+	appName: z.string().required(false),
+	appSecret: z.string().required(false),
+	appSecretEnv: z.string().required(false),
+	domain: z.union([z.const("feishu"), z.const("lark")]).required(false),
+	defaultCwd: z.string().required(false),
+	workspaceRoot: z.string().required(false),
+	dataDir: z.string().required(false),
+	provider: z.string().required(false),
+	model: z.string().required(false),
+	reasoningEffort: z.string().required(false),
+	allowedChats: z.array(z.string()).required(false),
+	allowedUsers: z.array(z.string()).required(false),
+	groupMentionMode: z.union([
+		z.const("always"),
+		z.const("never"),
+		z.const("ambient")
+	]).required(false),
+	replyMode: z.const("streaming").required(false),
+	tools: z.object({ deny: z.array(z.string()).required(false) }).required(false),
+	officialTools: z.union([z.boolean(), z.const("messages")]).required(false),
+	agentToolAllow: z.array(z.string()).required(false),
+	mcpEndpoint: z.string().required(false),
+	accountId: z.string().required(false),
+	agentId: z.string().required(false),
+	botsFile: z.string().required(false),
+	bots: z.array(z.object({
+		accountId: z.string(),
+		appId: z.string(),
+		appSecret: z.string(),
+		appName: z.string().required(false),
+		agentId: z.string().required(false),
+		workspaceRoot: z.string().required(false),
+		dataDir: z.string().required(false),
+		defaultCwd: z.string().required(false),
+		domain: z.union([z.const("feishu"), z.const("lark")]).required(false)
+	})).required(false)
+});
+/**
+* Minimal manifest.yml reader: proto plus an optional three-key model block.
+* No YAML dependency — the identity manifest format is deliberately tiny.
+*/
+function readAgentManifest(agentsRoot, agentId) {
+	let text;
+	try {
+		text = readFileSync(join(agentsRoot, agentId, "manifest.yml"), "utf8");
+	} catch {
+		return;
+	}
+	const manifest = {};
+	let inModel = false;
+	for (const line of text.split(/\r?\n/)) {
+		const trimmed = line.replace(/\s+#.*$/, "").trimEnd();
+		if (trimmed === "" || trimmed.startsWith("#")) continue;
+		if (/^model:\s*$/.test(trimmed)) {
+			inModel = true;
+			continue;
+		}
+		if (/^\S/.test(trimmed)) inModel = false;
+		if (inModel) {
+			const kv = /^\s+(provider|name|reasoningEffort):\s*(\S+)\s*$/.exec(trimmed);
+			if (kv) {
+				manifest.model ??= {};
+				manifest.model[kv[1]] = kv[2];
+				continue;
+			}
+		}
+		const proto = /^proto:\s*(guest|companion|owner)\s*$/.exec(trimmed);
+		if (proto) manifest.proto = proto[1];
+		else {
+			const name = /^displayName:\s*(\S.*?)\s*$/.exec(trimmed);
+			if (name) manifest.displayName = name[1];
+		}
+	}
+	return manifest.proto === void 0 && manifest.model === void 0 && manifest.displayName === void 0 ? void 0 : manifest;
+}
+/**
+* 热读 manifest:每次 agent 挂载时重读 agents/<agentId>/manifest.yml(2026-11-04)。
+* 背景:manifest 曾在 resolveBots(服务启动)时读一次,改模型必须重启整个身份服务;
+* 且钉死的 provider 被删后启动期无校验,错误漏到第一条消息才炸给终端用户。
+* 读失败(文件被删/语法坏)回退启动快照,不放大故障。
+*/
+function effectiveManifest(config) {
+	if (config.agentId && config.agentsRoot) return readAgentManifest(config.agentsRoot, config.agentId) ?? config.manifest;
+	return config.manifest;
+}
+/** Resolve independent account/storage/workspace settings without sharing session registries. */
+function resolveBots(config) {
+	const primary = resolveCredentials(config);
+	const { bots: _additional, botsFile, ...base } = config;
+	const agentsRoot = base.workspaceRoot ?? agentsRootDefault();
+	const resolveOne = (entry, accountId, primaryBot) => {
+		const agentId = entry.agentId;
+		if (!primaryBot && !agentId) throw new Error(`Feishu bot ${accountId} requires agentId (identity directory under the agents root)`);
+		const manifest = agentId ? readAgentManifest(agentsRoot, agentId) : void 0;
+		const dataDir = entry.dataDir ?? (primaryBot ? void 0 : join(larkBotsRoot(), accountId));
+		const workspaceRoot = agentId ? entry.workspaceRoot ?? join(agentsRoot, agentId) : entry.workspaceRoot;
+		return {
+			...base,
+			...entry,
+			...manifest ? { manifest } : {},
+			...dataDir ? { dataDir } : {},
+			...workspaceRoot ? { workspaceRoot } : {},
+			agentsRoot,
+			accountId
+		};
+	};
+	const bots = primary ? [resolveOne({
+		...base,
+		...primary
+	}, "default", true)] : [];
+	const seen = new Set(bots.map((bot) => bot.accountId));
+	const appIds = new Set(bots.map((bot) => bot.appId));
+	const dataDirs = new Set(bots.map((bot) => bot.dataDir !== void 0 ? resolve(dataDirectory(bot)) : "").filter(Boolean));
+	let fileBots = [];
+	if (botsFile) {
+		const parsed = JSON.parse(readFileSync(botsFile, "utf8"));
+		if (!Array.isArray(parsed)) throw new Error("Feishu botsFile must contain a JSON array");
+		fileBots = parsed;
+	}
+	for (const bot of [...fileBots, ...config.bots ?? []]) {
+		const accountId = bot.accountId.toLowerCase();
+		if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(accountId) || accountId === "default" || seen.has(accountId)) throw new Error(`invalid or duplicate Feishu bot accountId: ${bot.accountId}`);
+		if (!bot.appId || !bot.appSecret) throw new Error(`Feishu bot ${accountId} requires appId/appSecret`);
+		if (bot.agentId !== void 0 && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(bot.agentId)) throw new Error(`Feishu bot ${accountId} has invalid agentId: ${String(bot.agentId)}`);
+		const resolved = resolveOne(bot, accountId, false);
+		if (resolved.dataDir === void 0) throw new Error(`Feishu bot ${accountId} requires dataDir`);
+		if (appIds.has(bot.appId) || dataDirs.has(resolve(resolved.dataDir))) throw new Error(`duplicate Feishu bot appId/dataDir: ${accountId}`);
+		seen.add(accountId);
+		appIds.add(bot.appId);
+		dataDirs.add(resolve(resolved.dataDir));
+		bots.push(resolved);
+	}
+	return bots;
+}
+/** Default per-account storage root: $DSH_HOME/lark/bots/<accountId>. */
+function larkBotsRoot() {
+	return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark", "bots");
+}
+/** Default identity root: $DSH_HOME/home/agents (agents/<agentId>/ tiers). */
+function agentsRootDefault() {
+	return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "home", "agents");
+}
+function resolveCredentials(config) {
+	const appId = config.appId ?? process.env.FEISHU_APP_ID;
+	const appSecret = config.appSecret ?? (config.appSecretEnv ? resolveSecretRef(config.appSecretEnv) : void 0) ?? process.env.FEISHU_APP_SECRET;
+	return appId && appSecret ? {
+		appId,
+		appSecret
+	} : void 0;
+}
+/**
+* appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
+* (feishu profile 下 credentials 服务未挂载;与 image-tools 同款兜底,只匹配 refs 段内缩进行)。
+*/
+function resolveSecretRef(ref) {
+	const fromEnv = process.env[ref];
+	if (fromEnv) return fromEnv;
+	try {
+		const text = readFileSync(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml"), "utf8");
+		const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		let inRefs = false;
+		for (const line of text.split(/\r?\n/)) {
+			if (/^refs:\s*$/.test(line)) {
+				inRefs = true;
+				continue;
+			}
+			if (!inRefs) continue;
+			if (/^\S/.test(line)) break;
+			const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
+			if (match?.[1] && !match[1].startsWith("\"")) return match[1];
+		}
+	} catch {}
+}
+function dataDirectory(config) {
+	return config.dataDir ?? join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark");
+}
+//#endregion
 //#region src/agent-resolver.ts
 /**
 * 双写身份载体:larkUser(兼容期保留)+ identity(基座契约)。
@@ -1157,8 +1337,9 @@ function bindUserIdentity(agent, extras) {
 		channel: "feishu",
 		...user.agentId !== void 0 ? { agentId: user.agentId } : {},
 		...user.appId !== void 0 ? { appId: user.appId } : {},
+		...user.unionId !== void 0 ? { unionId: user.unionId } : {},
 		subjectId: user.openId,
-		userId: userKey(user.openId, user.appId),
+		userId: userKey(user.openId, user.appId, user.unionId),
 		context: {
 			chatId: user.chatId,
 			...user.accountId !== void 0 ? { accountId: user.accountId } : {}
@@ -1171,7 +1352,7 @@ async function syncWorkingDirectory(ctx, agent, cwd) {
 }
 function agentOptions(config, ctx) {
 	const selection = ctx.get("agentDefaultModel")?.currentSelection();
-	const manifestModel = config.manifest?.model;
+	const manifestModel = effectiveManifest(config)?.model;
 	const provider = config.provider ?? manifestModel?.provider ?? selection?.provider;
 	const model = config.model ?? manifestModel?.name ?? selection?.model;
 	const effort = config.reasoningEffort ?? manifestModel?.reasoningEffort;
@@ -1303,7 +1484,7 @@ const AGENT_PROTO_ALLOW = {
 /** Effective allowlist: explicit bot config wins; otherwise the identity manifest proto set; otherwise the patch baseline. */
 function effectiveAllowPatterns(config) {
 	if (config.agentToolAllow !== void 0) return config.agentToolAllow;
-	const proto = config.manifest?.proto;
+	const proto = effectiveManifest(config)?.proto;
 	return (proto !== void 0 ? AGENT_PROTO_ALLOW[proto] : void 0) ?? config.agentToolAllow;
 }
 /** Inherit shared tools, add sender extras, and recalculate on group speaker changes. */
@@ -7188,6 +7369,7 @@ async function sendCardByCardId(params) {
 		params: { receive_id_type: receiveIdType },
 		data: {
 			receive_id: target,
+			...params.uuid ? { uuid: params.uuid } : {},
 			msg_type: "interactive",
 			content: contentPayload
 		}
@@ -7372,7 +7554,7 @@ function i18nPlainText(zh, en) {
 	};
 }
 function buildAuthCard(params) {
-	const { verificationUriComplete, expiresMin, scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo, filteredScopes, appId, showBatchAuthHint, brand } = params;
+	const { verificationUriComplete, expiresMin, scope, capabilityLabel: capabilityLabelText, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo, filteredScopes, appId, showBatchAuthHint, brand } = params;
 	const inAppUrl = toInAppWebUrl(verificationUriComplete, brand);
 	const multiUrl = {
 		url: inAppUrl,
@@ -7382,6 +7564,7 @@ function buildAuthCard(params) {
 	};
 	const scopeParams = {
 		scope,
+		capabilityLabel: capabilityLabelText,
 		isBatchAuth,
 		totalAppScopes,
 		alreadyGranted,
@@ -7457,7 +7640,7 @@ function buildAuthCard(params) {
 }
 /** scope 字符串 → 可读描述（支持多语言） */
 function formatScopeDescription(locale, params) {
-	const { scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo } = params;
+	const { scope, capabilityLabel, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo } = params;
 	const t = CARD_TEXTS[locale];
 	const scopes = scope?.split(/\s+/).filter(Boolean);
 	if (isBatchAuth && scopes && scopes.length > 0) {
@@ -7473,7 +7656,7 @@ function formatScopeDescription(locale, params) {
 		return message;
 	}
 	if (!scopes?.length) return t.scopeDesc;
-	return t.scopeDesc + "\n\n" + t.requiredScopes + "\n" + scopes.map((s) => `- ${s}`).join("\n");
+	return (capabilityLabel ? locale === "zh_cn" ? `**本次授权能力域：${capabilityLabel}**（共 ${scopes.length} 项权限，一次补齐）\n\n` : `**Capability being granted: ${capabilityLabel}** (${scopes.length} scopes in one go)\n\n` : "") + t.scopeDesc + "\n\n" + t.requiredScopes + "\n" + scopes.map((s) => `- ${s}`).join("\n");
 }
 function toInAppWebUrl(targetUrl, brand) {
 	const lkMeta = encodeURIComponent(JSON.stringify({ "page-meta": {
@@ -7960,7 +8143,108 @@ function createToolLogger(api, toolName) {
 */
 const log$6 = larkLogger("tools/oauth");
 const json$2 = formatToolResult;
-const FeishuOAuthSchema = Type.Object({ action: Type.Union([Type.Literal("authorize"), Type.Literal("revoke")], { description: "authorize: 为当前用户发送授权卡片；revoke: 撤销当前用户已保存的授权凭据" }) }, { description: "飞书用户撤销授权工具。仅在用户明确说\"撤销授权\"、\"取消授权\"、\"退出登录\"、\"清除授权\"时调用。【严禁调用场景】用户说\"重新授权\"、\"发起授权\"、\"重新发起\"、\"授权失败\"、\"授权过期\"时，绝对不要调用此工具，授权流程由系统自动处理。" });
+const FeishuOAuthSchema = Type.Object({
+	action: Type.Union([Type.Literal("authorize"), Type.Literal("revoke")], { description: "authorize: 为当前用户发送授权卡片；revoke: 撤销当前用户已保存的授权凭据" }),
+	capability: Type.Optional(Type.String({ description: "按能力一次性授权该能力的全部 scope（推荐）。可选值：bitable=多维表格, sheet=电子表格, doc=文档, im=群聊消息, drive=云盘, wiki=知识库, all=全部。传入后无需再列 scope：会从应用已开通的用户权限里展开该能力域的完整集合，再减去当前已授权的，一次补齐剩余部分。" })),
+	scope: Type.Optional(Type.String({ description: "需要用户授权的空格分隔 scope 列表。仅在需要精确补单个权限时使用；一般场景请用 capability，一次补全整个能力域。" }))
+}, { description: "飞书用户授权工具。当消息/文档/多维表格等工具提示缺少用户权限或未授权时使用。优先用 capability 参数按能力授权（如 capability=\"bitable\" 即授予多维表格全套权限），会一次性补齐该能力下所有缺失 scope，无需逐个授权；返回 awaiting_authorization 时把卡片里的权限数量与能力名原样告知用户即可，不要重复发起。仅在用户明确说\"撤销授权\"、\"取消授权\"、\"退出登录\"、\"清除授权\"时调用 revoke。" });
+/**
+* 按能力分组的 scope 清单。
+*
+* 设计意图：用户表达的是"我需要用多维表格"，那就应该一次拿到多维表格所需的
+* 全部权限，而不是每次报错后再补一个。分组按飞书官方权限前缀归类，
+* 只列「支持 user 身份」的 scope（tenant-only 的塞进去会让整批请求 400）。
+*/
+const CAPABILITY_PREFIXES = {
+	bitable: ["base:", "bitable:"],
+	sheet: ["sheets:"],
+	doc: ["docx:", "docs:document"],
+	im: ["im:"],
+	drive: ["drive:", "space:document"],
+	wiki: ["wiki:"]
+};
+/** 能力域的中文名，用于日志/返回/授权卡片文案。 */
+const CAPABILITY_LABELS = {
+	bitable: "多维表格",
+	sheet: "电子表格",
+	doc: "文档",
+	im: "群聊消息",
+	drive: "云盘",
+	wiki: "知识库",
+	all: "全部能力"
+};
+/**
+* 静态兜底清单：仅在「查不到应用已开通 scope」（缺 self_manage 等）时使用。
+* 正常路径永远走前缀动态展开，所以这里的清单不必也不该追求齐全。
+*/
+const CAPABILITY_SCOPES_FALLBACK = {
+	bitable: [
+		"base:app:create",
+		"base:app:update",
+		"base:table:create",
+		"base:table:read",
+		"base:table:update",
+		"base:field:create",
+		"base:field:delete",
+		"base:field:read",
+		"base:field:update",
+		"base:view:read",
+		"base:record:create",
+		"base:record:delete",
+		"base:record:retrieve",
+		"base:record:update",
+		"bitable:app",
+		"bitable:app:readonly"
+	],
+	sheet: [
+		"sheets:spreadsheet.meta:read",
+		"sheets:spreadsheet:read",
+		"sheets:spreadsheet:create",
+		"sheets:spreadsheet:write_only"
+	],
+	doc: [
+		"docx:document:create",
+		"docx:document:readonly",
+		"docx:document:write_only",
+		"docs:document.media:upload"
+	],
+	im: [
+		"im:chat:read",
+		"im:message:readonly",
+		"im:message.group_msg:get_as_user",
+		"im:message.p2p_msg:get_as_user"
+	],
+	drive: [
+		"drive:drive",
+		"drive:drive.metadata:readonly",
+		"space:document:retrieve"
+	],
+	wiki: ["wiki:node:read", "wiki:node:create"]
+};
+/** 能力域中文名（未知能力原样返回）。 */
+function capabilityLabel(capability) {
+	return CAPABILITY_LABELS[capability.trim().toLowerCase()] ?? capability;
+}
+/**
+* 展开 capability 为该能力域的全部 scope。
+*
+* @param capability 能力名
+* @param appGranted 应用已开通的 user scope；非空时按前缀动态展开，空则用静态兜底
+* @returns 未识别的能力返回 undefined
+*/
+function expandCapability(capability, appGranted = []) {
+	const key = capability.trim().toLowerCase();
+	if (key === "all") return appGranted.length > 0 ? [...appGranted] : Object.values(CAPABILITY_SCOPES_FALLBACK).flat();
+	const prefixes = CAPABILITY_PREFIXES[key];
+	if (prefixes === void 0) return void 0;
+	if (appGranted.length > 0) return appGranted.filter((s) => prefixes.some((p) => s.startsWith(p)));
+	const fallback = CAPABILITY_SCOPES_FALLBACK[key];
+	return fallback === void 0 ? [] : [...fallback];
+}
+/** 已识别的能力名列表（用于错误提示）。 */
+function capabilityNames() {
+	return Object.keys(CAPABILITY_PREFIXES);
+}
 const pendingFlows = /* @__PURE__ */ new Map();
 /**
 * 使用刚获取的 UAT 调用 /authen/v1/user_info，
@@ -8008,14 +8292,80 @@ function registerFeishuOAuthTool(api) {
 			const account = acct;
 			try {
 				switch (p.action) {
-					case "authorize": return await executeAuthorize({
-						account,
-						senderOpenId,
-						scope: "im:chat:read im:message:readonly im:message.group_msg:get_as_user im:message.p2p_msg:get_as_user",
-						isBatchAuth: false,
-						cfg,
-						ticket
-					});
+					case "authorize": {
+						const capabilityKey = String(p.capability ?? "").trim();
+						const capabilityName = capabilityKey ? capabilityLabel(capabilityKey) : "";
+						const requested = String(p.scope ?? "").split(/\s+/).filter(Boolean);
+						let appGranted = [];
+						try {
+							appGranted = await getAppGrantedScopes(LarkClient.fromAccount(account).sdk, account.appId, "user");
+						} catch (e) {
+							log$6.warn(`authorize: failed to list app user scopes: ${e}`);
+						}
+						let targetScopes;
+						let unknownCapability;
+						if (capabilityKey) {
+							const expanded = expandCapability(capabilityKey, appGranted);
+							if (expanded === void 0) {
+								unknownCapability = capabilityKey;
+								targetScopes = [];
+							} else targetScopes = expanded;
+						} else if (requested.length > 0) targetScopes = requested;
+						else targetScopes = expandCapability("im", appGranted) ?? [];
+						if (unknownCapability !== void 0) return json$2({
+							error: `未知能力 "${unknownCapability}"。可选值：${capabilityNames().join("、")}、all。`,
+							available: capabilityNames()
+						});
+						if (targetScopes.length === 0) return json$2({
+							error: capabilityKey ? `应用侧未开通「${capabilityName}」(${capabilityKey}) 的任何用户权限，无法发起授权。` : "应用侧未开通任何用户权限，无法发起授权。",
+							capability: capabilityKey || void 0,
+							app_id: account.appId
+						});
+						const existingToken = await getStoredToken(account.appId, senderOpenId).catch(() => null);
+						const grantedScopes = new Set(String(existingToken?.scope ?? "").split(/\s+/).filter(Boolean));
+						const missingScopes = targetScopes.filter((s) => !grantedScopes.has(s));
+						if (missingScopes.length === 0) {
+							log$6.info(`authorize: capability=${capabilityKey || "(im baseline)"} all ${targetScopes.length} scope(s) already granted, skip`);
+							return json$2({
+								success: true,
+								message: capabilityKey ? `「${capabilityName}」能力的 ${targetScopes.length} 项权限已全部授权，无需重复授权。` : "所需权限已全部授权，无需重复授权。",
+								authorized: true,
+								capability: capabilityKey || void 0,
+								capability_label: capabilityName || void 0,
+								granted_count: targetScopes.length,
+								scope: existingToken?.scope
+							});
+						}
+						const appGrantedSet = new Set(filterSensitiveScopes(appGranted));
+						const requestable = appGranted.length > 0 ? missingScopes.filter((s) => appGrantedSet.has(s)) : missingScopes;
+						const appNotOpened = missingScopes.filter((s) => !appGranted.includes(s));
+						const sensitiveSkipped = missingScopes.filter((s) => appGranted.includes(s) && !appGrantedSet.has(s));
+						if (appNotOpened.length > 0) log$6.warn(`authorize: capability=${capabilityKey || "(im baseline)"} app has not opened these scopes, skipped: [${appNotOpened.join(", ")}]`);
+						if (sensitiveSkipped.length > 0) log$6.info(`authorize: capability=${capabilityKey || "(im baseline)"} high-sensitive scopes not requested automatically: [${sensitiveSkipped.join(", ")}]`);
+						const scope = requestable.join(" ");
+						log$6.info(`authorize: capability=${capabilityKey || "(im baseline)"}` + (capabilityName ? `(${capabilityName})` : "") + ` domain=${targetScopes.length} granted=${targetScopes.length - missingScopes.length} missing=${missingScopes.length} requesting=${requestable.length}` + (sensitiveSkipped.length > 0 ? ` sensitive_skipped=${sensitiveSkipped.length}` : ""));
+						if (requestable.length === 0) {
+							const reasons = [];
+							if (appNotOpened.length > 0) reasons.push(`应用侧未开通：${appNotOpened.join("、")}（需管理员在开放平台开通并发布版本）`);
+							if (sensitiveSkipped.length > 0) reasons.push(`属高敏感权限、不主动索要：${sensitiveSkipped.join("、")}（如确需，请明确告知要单独授权）`);
+							return json$2({
+								error: `「${capabilityName || "目标"}」没有可发起的用户授权：\n- ${reasons.join("\n- ")}`,
+								capability: capabilityKey || void 0,
+								app_not_opened: appNotOpened.length > 0 ? appNotOpened : void 0,
+								sensitive_skipped: sensitiveSkipped.length > 0 ? sensitiveSkipped : void 0,
+								app_id: account.appId
+							});
+						}
+						return await executeAuthorize({
+							account,
+							senderOpenId,
+							scope,
+							isBatchAuth: false,
+							capability: capabilityKey || void 0,
+							cfg,
+							ticket
+						});
+					}
 					case "revoke":
 						await revokeUAT(account.appId, senderOpenId);
 						return json$2({
@@ -8037,7 +8387,7 @@ function registerFeishuOAuthTool(api) {
 * 可被 feishu_oauth 和 feishu_oauth_batch_auth 共享调用
 */
 async function executeAuthorize(params) {
-	const { account, senderOpenId, scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo, skipSyntheticMessage, showBatchAuthHint, forceAuth, onAuthComplete, cfg, ticket } = params;
+	const { account, senderOpenId, scope, capability, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo, skipSyntheticMessage, showBatchAuthHint, forceAuth, onAuthComplete, cfg, ticket } = params;
 	const { appId, appSecret, brand, accountId } = account;
 	let effectiveScope = scope;
 	const existing = forceAuth ? null : await getStoredToken(appId, senderOpenId);
@@ -8145,6 +8495,7 @@ async function executeAuthorize(params) {
 		verificationUriComplete: deviceAuth.verificationUriComplete,
 		expiresMin: Math.round(deviceAuth.expiresIn / 60),
 		scope: filteredScope,
+		capabilityLabel: capability ? capabilityLabel(capability) : void 0,
 		isBatchAuth,
 		totalAppScopes,
 		alreadyGranted,
@@ -8331,7 +8682,8 @@ async function executeAuthorize(params) {
 		}
 	});
 	const scopeCount = filteredScope.split(/\s+/).filter(Boolean).length;
-	let message = isBatchAuth ? `已发送批量授权请求卡片，共需授权 ${scopeCount} 个权限。请在卡片中完成授权。` : "已发送授权请求卡片，请用户在卡片中点击链接完成授权。授权完成后请重新执行之前的操作。";
+	const capabilityName = capability ? capabilityLabel(capability) : "";
+	let message = isBatchAuth ? `已发送批量授权请求卡片，共需授权 ${scopeCount} 个权限。请在卡片中完成授权。` : capability ? `已发送「${capabilityName}」授权卡片，共 ${scopeCount} 项权限，一次补齐。请在卡片中点击链接完成授权，之后重新执行之前的操作即可。` : "已发送授权请求卡片，请用户在卡片中点击链接完成授权。授权完成后请重新执行之前的操作。";
 	if (batchInfo) message += batchInfo;
 	if (unavailableScopes.length > 0) {
 		const permissionUrl = appPermissionAuthUrl(appId, unavailableScopes, brand);
@@ -8341,6 +8693,10 @@ async function executeAuthorize(params) {
 		success: true,
 		message,
 		awaiting_authorization: true,
+		capability: capability || void 0,
+		capability_label: capabilityName || void 0,
+		scope_count: scopeCount,
+		scopes: filteredScope.split(/\s+/).filter(Boolean),
 		filtered_scopes: unavailableScopes.length > 0 ? unavailableScopes : void 0,
 		app_permission_url: unavailableScopes.length > 0 ? appPermissionAuthUrl(appId, unavailableScopes, brand) : void 0
 	});
@@ -9129,175 +9485,6 @@ async function handleInvokeErrorWithAutoAuth(err, cfg) {
 	return json$1({ error: formatLarkError(err) });
 }
 //#endregion
-//#region src/config.ts
-const Config = z.object({
-	appId: z.string().required(false),
-	appName: z.string().required(false),
-	appSecret: z.string().required(false),
-	appSecretEnv: z.string().required(false),
-	domain: z.union([z.const("feishu"), z.const("lark")]).required(false),
-	defaultCwd: z.string().required(false),
-	workspaceRoot: z.string().required(false),
-	dataDir: z.string().required(false),
-	provider: z.string().required(false),
-	model: z.string().required(false),
-	reasoningEffort: z.string().required(false),
-	allowedChats: z.array(z.string()).required(false),
-	allowedUsers: z.array(z.string()).required(false),
-	groupMentionMode: z.union([
-		z.const("always"),
-		z.const("never"),
-		z.const("ambient")
-	]).required(false),
-	replyMode: z.const("streaming").required(false),
-	tools: z.object({ deny: z.array(z.string()).required(false) }).required(false),
-	officialTools: z.union([z.boolean(), z.const("messages")]).required(false),
-	agentToolAllow: z.array(z.string()).required(false),
-	mcpEndpoint: z.string().required(false),
-	accountId: z.string().required(false),
-	agentId: z.string().required(false),
-	botsFile: z.string().required(false),
-	bots: z.array(z.object({
-		accountId: z.string(),
-		appId: z.string(),
-		appSecret: z.string(),
-		appName: z.string().required(false),
-		agentId: z.string().required(false),
-		workspaceRoot: z.string().required(false),
-		dataDir: z.string().required(false),
-		defaultCwd: z.string().required(false),
-		domain: z.union([z.const("feishu"), z.const("lark")]).required(false)
-	})).required(false)
-});
-/**
-* Minimal manifest.yml reader: proto plus an optional three-key model block.
-* No YAML dependency — the identity manifest format is deliberately tiny.
-*/
-function readAgentManifest(agentsRoot, agentId) {
-	let text;
-	try {
-		text = readFileSync(join(agentsRoot, agentId, "manifest.yml"), "utf8");
-	} catch {
-		return;
-	}
-	const manifest = {};
-	let inModel = false;
-	for (const line of text.split(/\r?\n/)) {
-		const trimmed = line.replace(/\s+#.*$/, "").trimEnd();
-		if (trimmed === "" || trimmed.startsWith("#")) continue;
-		if (/^model:\s*$/.test(trimmed)) {
-			inModel = true;
-			continue;
-		}
-		if (/^\S/.test(trimmed)) inModel = false;
-		if (inModel) {
-			const kv = /^\s+(provider|name|reasoningEffort):\s*(\S+)\s*$/.exec(trimmed);
-			if (kv) {
-				manifest.model ??= {};
-				manifest.model[kv[1]] = kv[2];
-				continue;
-			}
-		}
-		const proto = /^proto:\s*(guest|companion|owner)\s*$/.exec(trimmed);
-		if (proto) manifest.proto = proto[1];
-		else {
-			const name = /^displayName:\s*(\S.*?)\s*$/.exec(trimmed);
-			if (name) manifest.displayName = name[1];
-		}
-	}
-	return manifest.proto === void 0 && manifest.model === void 0 && manifest.displayName === void 0 ? void 0 : manifest;
-}
-/** Resolve independent account/storage/workspace settings without sharing session registries. */
-function resolveBots(config) {
-	const primary = resolveCredentials(config);
-	const { bots: _additional, botsFile, ...base } = config;
-	const agentsRoot = base.workspaceRoot ?? agentsRootDefault();
-	const resolveOne = (entry, accountId, primaryBot) => {
-		const agentId = entry.agentId;
-		if (!primaryBot && !agentId) throw new Error(`Feishu bot ${accountId} requires agentId (identity directory under the agents root)`);
-		const manifest = agentId ? readAgentManifest(agentsRoot, agentId) : void 0;
-		const dataDir = entry.dataDir ?? (primaryBot ? void 0 : join(larkBotsRoot(), accountId));
-		const workspaceRoot = agentId ? entry.workspaceRoot ?? join(agentsRoot, agentId) : entry.workspaceRoot;
-		return {
-			...base,
-			...entry,
-			...manifest ? { manifest } : {},
-			...dataDir ? { dataDir } : {},
-			...workspaceRoot ? { workspaceRoot } : {},
-			accountId
-		};
-	};
-	const bots = primary ? [resolveOne({
-		...base,
-		...primary
-	}, "default", true)] : [];
-	const seen = new Set(bots.map((bot) => bot.accountId));
-	const appIds = new Set(bots.map((bot) => bot.appId));
-	const dataDirs = new Set(bots.map((bot) => bot.dataDir !== void 0 ? resolve(dataDirectory(bot)) : "").filter(Boolean));
-	let fileBots = [];
-	if (botsFile) {
-		const parsed = JSON.parse(readFileSync(botsFile, "utf8"));
-		if (!Array.isArray(parsed)) throw new Error("Feishu botsFile must contain a JSON array");
-		fileBots = parsed;
-	}
-	for (const bot of [...fileBots, ...config.bots ?? []]) {
-		const accountId = bot.accountId.toLowerCase();
-		if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(accountId) || accountId === "default" || seen.has(accountId)) throw new Error(`invalid or duplicate Feishu bot accountId: ${bot.accountId}`);
-		if (!bot.appId || !bot.appSecret) throw new Error(`Feishu bot ${accountId} requires appId/appSecret`);
-		if (bot.agentId !== void 0 && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(bot.agentId)) throw new Error(`Feishu bot ${accountId} has invalid agentId: ${String(bot.agentId)}`);
-		const resolved = resolveOne(bot, accountId, false);
-		if (resolved.dataDir === void 0) throw new Error(`Feishu bot ${accountId} requires dataDir`);
-		if (appIds.has(bot.appId) || dataDirs.has(resolve(resolved.dataDir))) throw new Error(`duplicate Feishu bot appId/dataDir: ${accountId}`);
-		seen.add(accountId);
-		appIds.add(bot.appId);
-		dataDirs.add(resolve(resolved.dataDir));
-		bots.push(resolved);
-	}
-	return bots;
-}
-/** Default per-account storage root: $DSH_HOME/lark/bots/<accountId>. */
-function larkBotsRoot() {
-	return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark", "bots");
-}
-/** Default identity root: $DSH_HOME/home/agents (agents/<agentId>/ tiers). */
-function agentsRootDefault() {
-	return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "home", "agents");
-}
-function resolveCredentials(config) {
-	const appId = config.appId ?? process.env.FEISHU_APP_ID;
-	const appSecret = config.appSecret ?? (config.appSecretEnv ? resolveSecretRef(config.appSecretEnv) : void 0) ?? process.env.FEISHU_APP_SECRET;
-	return appId && appSecret ? {
-		appId,
-		appSecret
-	} : void 0;
-}
-/**
-* appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
-* (feishu profile 下 credentials 服务未挂载;与 media-tools 同款兜底,只匹配 refs 段内缩进行)。
-*/
-function resolveSecretRef(ref) {
-	const fromEnv = process.env[ref];
-	if (fromEnv) return fromEnv;
-	try {
-		const text = readFileSync(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml"), "utf8");
-		const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		let inRefs = false;
-		for (const line of text.split(/\r?\n/)) {
-			if (/^refs:\s*$/.test(line)) {
-				inRefs = true;
-				continue;
-			}
-			if (!inRefs) continue;
-			if (/^\S/.test(line)) break;
-			const match = line.match(new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`));
-			if (match?.[1] && !match[1].startsWith("\"")) return match[1];
-		}
-	} catch {}
-}
-function dataDirectory(config) {
-	return config.dataDir ?? join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark");
-}
-//#endregion
 //#region src/pdf.ts
 const MAX_TEXT_CHARS = 5e5;
 const MAX_PDF_PAGES = 20;
@@ -9389,6 +9576,181 @@ var DedupStore = class {
 		}
 	}
 };
+//#endregion
+//#region src/notifications.ts
+function validateNotification(input) {
+	for (const key of [
+		"sessionId",
+		"ownerOpenId",
+		"ownerAppId",
+		"eventId",
+		"text"
+	]) if (typeof input?.[key] !== "string" || !input[key].trim()) throw new Error(`Notification ${key} is required`);
+	if (input.eventId.length > 512 || input.text.length > 1e6) throw new Error("Notification exceeds size limit");
+}
+/** One bot owns one durable journal. No TTL: a completed event remains deduplicated. */
+var NotificationQueue = class {
+	records = /* @__PURE__ */ new Map();
+	scheduled = /* @__PURE__ */ new Set();
+	timers = /* @__PURE__ */ new Map();
+	stopped = false;
+	running = false;
+	constructor(path, execute, warn) {
+		this.path = path;
+		this.execute = execute;
+		this.warn = warn;
+		if (!existsSync(path)) return;
+		const journal = JSON.parse(readFileSync(path, "utf8"));
+		if (journal.version !== 1 || !Array.isArray(journal.records)) throw new Error("Invalid notification journal");
+		for (const record of journal.records) {
+			if (record.status !== "completed" || !record.inputHash) validateNotification(record.input);
+			if (!record.chatId || !record.currentSessionId || ![
+				"accepted",
+				"running",
+				"completed"
+			].includes(record.status)) throw new Error("Invalid notification record");
+			this.records.set(record.input.eventId, record);
+		}
+	}
+	accept(input, target) {
+		if (this.stopped) throw new Error("Feishu notification channel is stopping");
+		const existing = this.records.get(input.eventId);
+		if (existing) {
+			if ((existing.inputHash ?? inputHash(existing.input)) !== inputHash(input)) throw new Error("Notification eventId payload conflict");
+			this.schedule(existing);
+			return;
+		}
+		const now = Date.now();
+		const record = {
+			input: { ...input },
+			inputHash: inputHash(input),
+			...target,
+			status: "accepted",
+			acceptedAt: now,
+			updatedAt: now,
+			attempts: 0,
+			nextAttemptAt: 0
+		};
+		this.records.set(input.eventId, record);
+		try {
+			this.persist();
+		} catch (error) {
+			this.records.delete(input.eventId);
+			throw error;
+		}
+		this.schedule(record);
+	}
+	start() {
+		this.running = true;
+		for (const record of this.records.values()) this.schedule(record);
+	}
+	stop() {
+		this.stopped = true;
+		for (const timer of this.timers.values()) clearTimeout(timer);
+		this.timers.clear();
+	}
+	checkpoint(record, patch) {
+		Object.assign(record, patch, { updatedAt: Date.now() });
+		if (patch.status === "completed") {
+			const completed = [...this.records.values()].filter((item) => item.status === "completed").sort((a, b) => b.updatedAt - a.updatedAt);
+			for (const item of completed.slice(100)) {
+				item.inputHash ??= inputHash(item.input);
+				item.input.text = "";
+				if (item.result) item.result = {
+					kind: item.result.kind,
+					text: ""
+				};
+			}
+		}
+		this.persist();
+	}
+	status(eventId) {
+		return structuredClone([...this.records.values()].filter((record) => !eventId || record.input.eventId === eventId));
+	}
+	schedule(record) {
+		const id = record.input.eventId;
+		if (!this.running || this.stopped || record.status === "completed" || this.scheduled.has(id)) return;
+		this.scheduled.add(id);
+		const delay = Math.max(0, record.nextAttemptAt - Date.now());
+		const timer = setTimeout(() => {
+			this.timers.delete(id);
+			if (this.stopped) {
+				this.scheduled.delete(id);
+				return;
+			}
+			this.run(record);
+		}, delay);
+		timer.unref();
+		this.timers.set(id, timer);
+	}
+	async run(record) {
+		try {
+			this.checkpoint(record, {
+				status: "running",
+				attempts: record.attempts + 1
+			});
+			await this.execute(record);
+			if (!this.stopped) this.checkpoint(record, {
+				status: "completed",
+				completedAt: Date.now(),
+				nextAttemptAt: 0
+			});
+		} catch (error) {
+			if (!this.stopped) {
+				try {
+					this.checkpoint(record, {
+						status: "accepted",
+						lastError: String(error),
+						nextAttemptAt: Date.now() + Math.min(6e4, 1e3 * 2 ** Math.min(record.attempts - 1, 6))
+					});
+				} catch (persistError) {
+					this.warn(`notification retry checkpoint failed: ${String(persistError)}`);
+				}
+				this.warn(`notification ${record.input.eventId} deferred: ${String(error)}`);
+			}
+		} finally {
+			this.scheduled.delete(record.input.eventId);
+			this.schedule(record);
+		}
+	}
+	persist() {
+		mkdirSync(dirname(this.path), {
+			recursive: true,
+			mode: 448
+		});
+		const temporary = `${this.path}.${randomUUID()}.tmp`;
+		const fd = openSync(temporary, "wx", 384);
+		try {
+			writeFileSync(fd, `${JSON.stringify({
+				version: 1,
+				records: [...this.records.values()]
+			}, null, 2)}\n`);
+			fsyncSync(fd);
+		} finally {
+			closeSync(fd);
+		}
+		renameSync(temporary, this.path);
+		const directory = openSync(dirname(this.path), "r");
+		try {
+			fsyncSync(directory);
+		} finally {
+			closeSync(directory);
+		}
+	}
+};
+function inputHash(input) {
+	return createHash("sha256").update(JSON.stringify([
+		input.sessionId,
+		input.ownerOpenId,
+		input.ownerAppId,
+		input.eventId,
+		input.text
+	])).digest("hex");
+}
+/** Feishu's idempotency key has a 50-character bound. */
+function notificationUuid(eventId) {
+	return createHash("sha256").update(eventId).digest("hex").slice(0, 48);
+}
 //#endregion
 //#region vendor/openclaw-lark/dist/core/shutdown-hooks.js
 /**
@@ -11307,6 +11669,13 @@ var StreamingCardController = class {
 	}
 	constructor(deps) {
 		this.deps = deps;
+		if (deps.notification?.state) {
+			this.cardKit = {
+				...deps.notification.state,
+				originalCardKitCardId: deps.notification.state.cardKitCardId
+			};
+			if (this.cardKit.cardMessageId) this.phase = "streaming";
+		}
 		this.guard = new UnavailableGuard({
 			replyToMessageId: deps.replyToMessageId,
 			getCardMessageId: () => this.cardKit.cardMessageId,
@@ -11601,6 +11970,7 @@ var StreamingCardController = class {
 						seqBefore: seqBeforeClose,
 						seqAfter: this.cardKit.cardKitSequence
 					});
+					this.checkpointNotification();
 					await setCardStreamingMode({
 						cfg: this.deps.cfg,
 						cardId: idleEffectiveCardId,
@@ -11638,6 +12008,7 @@ var StreamingCardController = class {
 						seqBefore: seqBeforeUpdate,
 						seqAfter: this.cardKit.cardKitSequence
 					});
+					this.checkpointNotification();
 					await updateCardKitCard({
 						cfg: this.deps.cfg,
 						cardId: idleEffectiveCardId,
@@ -11658,6 +12029,7 @@ var StreamingCardController = class {
 			}
 		} catch (err) {
 			log$2.warn("final card update failed", { error: String(err) });
+			if (this.deps.notification) throw err;
 		} finally {
 			clearToolUseTraceRun(this.deps.sessionKey);
 		}
@@ -11727,6 +12099,13 @@ var StreamingCardController = class {
 			clearToolUseTraceRun(this.deps.sessionKey);
 		}
 	}
+	checkpointNotification() {
+		this.deps.notification?.checkpoint({
+			cardMessageId: this.cardKit.cardMessageId,
+			cardKitCardId: this.cardKit.cardKitCardId ?? this.cardKit.originalCardKitCardId,
+			cardKitSequence: this.cardKit.cardKitSequence
+		});
+	}
 	async ensureCardCreated() {
 		if (this.guard.shouldSkip("ensureCardCreated.precheck")) return;
 		if (this.cardKit.cardMessageId || this.phase === "creation_failed" || this.isTerminalPhase) return;
@@ -11740,7 +12119,7 @@ var StreamingCardController = class {
 		this.cardCreationPromise = (async () => {
 			try {
 				try {
-					const cId = await createCardEntity({
+					const cId = this.cardKit.cardKitCardId ?? await createCardEntity({
 						cfg: this.deps.cfg,
 						card: buildStreamingThinkingCard(this.deps.toolUseDisplay.showToolUse),
 						accountId: this.deps.accountId
@@ -11755,7 +12134,8 @@ var StreamingCardController = class {
 					if (cId) {
 						this.cardKit.cardKitCardId = cId;
 						this.cardKit.originalCardKitCardId = cId;
-						this.cardKit.cardKitSequence = 1;
+						this.cardKit.cardKitSequence = Math.max(1, this.cardKit.cardKitSequence);
+						this.checkpointNotification();
 						this.disposeShutdownHook = registerShutdownHook(`streaming-card:${cId}`, () => this.abortCard());
 						log$2.info("created CardKit entity", {
 							cardId: cId,
@@ -11765,6 +12145,7 @@ var StreamingCardController = class {
 							cfg: this.deps.cfg,
 							to: this.deps.chatId,
 							cardId: cId,
+							...this.deps.notification ? { uuid: this.deps.notification.uuid } : {},
 							replyToMessageId: this.deps.replyToMessageId,
 							replyInThread: this.deps.replyInThread,
 							accountId: this.deps.accountId
@@ -11779,6 +12160,7 @@ var StreamingCardController = class {
 							return;
 						}
 						this.cardKit.cardMessageId = result.messageId;
+						this.checkpointNotification();
 						this.flush.setCardMessageReady(true);
 						if (!this.transition("streaming", "ensureCardCreated.cardkit")) {
 							this.disposeShutdownHook?.();
@@ -11790,6 +12172,7 @@ var StreamingCardController = class {
 				} catch (cardKitErr) {
 					if (this.isStaleCreate(epoch)) return;
 					if (this.guard.terminate("ensureCardCreated.cardkitFlow", cardKitErr)) return;
+					if (this.deps.notification) throw cardKitErr;
 					const apiDetail = extractApiDetail(cardKitErr);
 					log$2.warn("CardKit flow failed, falling back to IM", { apiDetail });
 					this.cardKit.cardKitCardId = null;
@@ -11816,6 +12199,7 @@ var StreamingCardController = class {
 					log$2.info("sent fallback IM card", { messageId: result.messageId });
 				}
 			} catch (err) {
+				if (this.deps.notification) throw err;
 				if (this.isStaleCreate(epoch)) return;
 				if (this.guard.terminate("ensureCardCreated.outer", err)) return;
 				log$2.warn("thinking card failed, falling back to static", { error: String(err) });
@@ -12000,7 +12384,7 @@ const defaultFactory = (deps) => new StreamingCardController(deps);
 var OfficialTurnStream = class {
 	controller;
 	queue = Promise.resolve();
-	constructor(sessionKey, chatId, replyToMessageId, cfg, factory = defaultFactory, accountId) {
+	constructor(sessionKey, chatId, replyToMessageId, cfg, factory = defaultFactory, accountId, notification) {
 		this.sessionKey = sessionKey;
 		this.controller = factory({
 			cfg,
@@ -12009,6 +12393,7 @@ var OfficialTurnStream = class {
 			accountId,
 			chatId,
 			replyToMessageId,
+			...notification ? { notification } : {},
 			replyInThread: false,
 			toolUseDisplay: {
 				mode: "on",
@@ -12099,23 +12484,28 @@ var LarkChannel = class {
 	activeBySession = /* @__PURE__ */ new Map();
 	queues = /* @__PURE__ */ new Map();
 	client;
+	notifications;
 	constructor(options) {
 		this.options = options;
+		this.notifications = new NotificationQueue(join(dataDirectory(options.config), "notifications.json"), (record) => this.enqueue(record.chatId, () => this.dispatchNotification(record)), (message) => options.logger.warn(message));
 		this.dedup = new MessageDedup({ persistence: new DedupStore(join(dataDirectory(options.config), "message-dedup.json")) });
 	}
 	async start() {
-		await this.options.sessions.load();
 		const client = LarkClient.fromCfg(this.options.officialConfig, this.options.config.accountId ?? "default");
 		this.client = client;
 		const probe = await client.probe();
 		if (client.account.appId || this.options.config.agentId) {
-			const identityName = this.options.config.manifest?.displayName ?? this.options.config.appName ?? probe.botName ?? this.options.config.agentId;
+			const identityName = effectiveManifest(this.options.config)?.displayName ?? this.options.config.appName ?? probe.botName ?? this.options.config.agentId;
 			const botName = this.options.config.appName ?? probe.botName;
 			this.options.sessions.setAgentIdentity(this.options.config.agentId, identityName, client.account.appId ?? this.options.config.appId, botName);
+		}
+		await this.options.sessions.load();
+		if (client.account.appId || this.options.config.agentId) {
 			this.options.sessions.rebindCwd();
 			await this.options.sessions.save();
 			this.options.logger.info(`workspace identity agent=${this.options.config.agentId ?? "(unset)"} app=${client.account.appId ?? this.options.config.appId ?? "?"} name=${this.options.config.appName ?? probe.botName ?? "飞书应用"}`);
 		}
+		this.startNotifications();
 		await client.startWS({
 			handlers: {
 				"im.message.receive_v1": (event) => this.receive(event),
@@ -12126,6 +12516,7 @@ var LarkChannel = class {
 		});
 	}
 	async stop() {
+		this.notifications.stop();
 		this.abort.abort();
 		this.client?.disconnect();
 		this.dedup.dispose();
@@ -12162,14 +12553,146 @@ var LarkChannel = class {
 			}
 			return;
 		}
-		const next = (this.queues.get(message.chatId) ?? Promise.resolve()).catch(() => {}).then(() => this.dispatch(message));
-		this.queues.set(message.chatId, next);
-		await next;
+		const senderUnionId = event.sender?.sender_id?.union_id;
+		await this.enqueue(message.chatId, () => this.dispatch(message, senderUnionId));
+	}
+	get appId() {
+		return this.options.config.appId;
+	}
+	/** Resolve only existing owner/app/chat bindings and durably accept before returning. */
+	async deliverNotification(input) {
+		validateNotification(input);
+		await this.options.sessions.load();
+		const target = this.notificationTarget(input);
+		this.notifications.accept(input, {
+			chatId: target.chatId,
+			currentSessionId: target.binding.sessionId
+		});
+	}
+	notificationStatus(eventId) {
+		return this.notifications.status(eventId);
+	}
+	async rebindPreviousSession(input) {
+		await this.options.sessions.load();
+		this.notificationTarget({
+			...input,
+			text: "alias",
+			eventId: "alias"
+		});
+		this.options.sessions.addPreviousSession(input.sessionId, input.previousSessionId, input.ownerOpenId);
+		await this.options.sessions.save();
+	}
+	/** Startup replay runs after SessionStore identity initialization, before the WS lifetime await. */
+	startNotifications() {
+		this.notifications.start();
+	}
+	notificationTarget(input) {
+		if (!input.ownerAppId || input.ownerAppId !== this.appId) throw new Error("Notification application mismatch");
+		const target = this.options.sessions.notificationTarget(input.sessionId);
+		if (!target || target.binding.openId !== input.ownerOpenId) throw new Error("Notification session owner mismatch");
+		return target;
+	}
+	enqueue(chatId, operation) {
+		const next = (this.queues.get(chatId) ?? Promise.resolve()).catch(() => {}).then(operation);
+		this.queues.set(chatId, next);
+		next.finally(() => {
+			if (this.queues.get(chatId) === next) this.queues.delete(chatId);
+		}).catch(() => {});
+		return next;
+	}
+	async dispatchNotification(record) {
+		let target = this.notificationTarget(record.input);
+		if (target.chatId !== record.chatId) throw new Error("Notification chat binding changed");
+		const binding = target.binding;
+		this.options.toolContexts.bind(binding.sessionId, {
+			messageId: `notification:${record.input.eventId}`,
+			chatId: target.chatId,
+			accountId: this.options.config.accountId ?? "default",
+			startTime: Date.now(),
+			senderOpenId: binding.openId,
+			...binding.unionId ? { senderUnionId: binding.unionId } : {},
+			...binding.chatType ? { chatType: binding.chatType } : {}
+		});
+		const agent = await this.options.resolveAgent(binding.sessionId, binding.cwd);
+		if (agent.status === "running") await agent.whenIdle();
+		target = this.notificationTarget(record.input);
+		if (target.binding.sessionId !== binding.sessionId || target.chatId !== record.chatId) throw new Error("Notification binding changed while waiting");
+		const stream = new OfficialTurnStream(binding.sessionId, target.chatId, void 0, this.options.officialConfig, this.options.streamFactory, this.options.config.accountId ?? "default", {
+			uuid: notificationUuid(record.input.eventId),
+			...record.card ? { state: record.card } : {},
+			checkpoint: (card) => this.notifications.checkpoint(record, { card })
+		});
+		let settle;
+		const done = new Promise((resolve) => {
+			settle = resolve;
+		});
+		const turn = {
+			chatId: target.chatId,
+			sessionId: binding.sessionId,
+			agent,
+			stream,
+			done,
+			settle,
+			committedText: "",
+			liveAnswer: "",
+			liveReasoning: "",
+			closed: false,
+			tools: /* @__PURE__ */ new Map(),
+			notification: record
+		};
+		this.activeByChat.set(target.chatId, turn);
+		this.activeBySession.set(binding.sessionId, turn);
+		try {
+			await stream.start();
+			if (!stream.messageId) throw new Error("Notification card creation did not produce a message id");
+			this.notifications.checkpoint(record, { currentSessionId: binding.sessionId });
+			if (record.result) {
+				turn.committedText = record.result.text;
+				await this.finishTurn(turn, record.result.kind, record.result.error);
+			} else {
+				const history = agent.session.snapshotEvents?.() ?? [];
+				const pending = [...agent.inbox?.nextTurn ?? [], ...agent.inbox?.nextStep ?? []].find((message) => message.id === record.input.eventId);
+				const seen = notificationClaimed(history, record.input.eventId);
+				if (pending) {
+					turn.expectedTurn = nextTurn(history);
+					agent.inbox.remove(pending.id);
+					agent.followup(pending);
+					await done;
+				} else if (seen || record.claimedTurn !== void 0) {
+					const recovered = recoverNotification(history, record.input.eventId, record.claimedTurn);
+					if (!recovered) throw new Error("Notification was submitted; waiting for its durable turn outcome");
+					this.notifications.checkpoint(record, { result: recovered });
+					turn.committedText = recovered.text;
+					await this.finishTurn(turn, recovered.kind, recovered.error);
+				} else {
+					if (agent.status === "running") throw new Error("Notification agent became busy");
+					turn.expectedTurn = nextTurn(history);
+					agent.followup({
+						id: record.input.eventId,
+						role: "user",
+						content: [{
+							type: "text",
+							text: record.input.text
+						}],
+						source: { kind: "schedule" }
+					});
+					await done;
+				}
+			}
+			if (turn.completionError) throw turn.completionError;
+			if (!record.result) throw new Error("Notification turn was interrupted before durable settlement");
+		} finally {
+			this.activeByChat.delete(turn.chatId);
+			this.activeBySession.delete(turn.sessionId);
+			turn.closed = true;
+			turn.settle();
+		}
 	}
 	/** Fold DSH live model deltas directly into the official controller. */
 	assistantFrame(sessionId, frame) {
 		const turn = this.activeBySession.get(sessionId);
 		if (!turn || turn.closed) return;
+		if (turn.notification && turn.expectedTurn === void 0) return;
 		if (frame.type === "start") {
 			turn.liveAnswer = "";
 			turn.liveReasoning = "";
@@ -12192,6 +12715,15 @@ var LarkChannel = class {
 	async sessionEvent(sessionId, event) {
 		const turn = this.activeBySession.get(sessionId);
 		if (!turn || turn.closed) return;
+		if (turn.notification) {
+			if (event.type === "turn/start" && turn.expectedTurn === event.data.turn) return;
+			if (event.type === "user/message" && event.data.id === turn.notification.input.eventId) {
+				this.notifications.checkpoint(turn.notification, { claimedTurn: turn.expectedTurn });
+				return;
+			}
+			if (turn.expectedTurn === void 0) return;
+			if ("turn" in event.data && event.data.turn !== turn.expectedTurn) return;
+		}
 		if (event.type === "assistant/message") {
 			const committed = event.data.message.content.filter((block) => block.type === "text").map((block) => block.text).join("");
 			if (committed) turn.committedText += (turn.committedText ? "\n\n" : "") + committed;
@@ -12247,7 +12779,7 @@ var LarkChannel = class {
 		if (groupMentionMode === "ambient") return mentioned || !message.mentions.some((mention) => !mention.isBot);
 		return true;
 	}
-	async dispatch(message) {
+	async dispatch(message, senderUnionId) {
 		const text = message.content.trim();
 		if (text === "/new") {
 			this.options.sessions.reset(message.chatId, message.senderId);
@@ -12279,7 +12811,8 @@ var LarkChannel = class {
 				if (timeout) clearTimeout(timeout);
 			}
 		}
-		const binding = this.options.sessions.get(message.chatId, message.senderId, resolvedName);
+		const binding = this.options.sessions.get(message.chatId, message.senderId, resolvedName, senderUnionId);
+		this.options.sessions.setChatType(message.chatId, message.chatType);
 		await mkdir(binding.cwd, {
 			recursive: true,
 			mode: 448
@@ -12291,6 +12824,7 @@ var LarkChannel = class {
 			accountId: this.options.config.accountId ?? "default",
 			startTime: message.createTime ?? Date.now(),
 			senderOpenId: message.senderId,
+			...senderUnionId !== void 0 ? { senderUnionId } : {},
 			chatType: message.chatType,
 			...message.threadId !== void 0 ? { threadId: message.threadId } : {}
 		});
@@ -12344,12 +12878,20 @@ var LarkChannel = class {
 		if (turn.closed) return;
 		turn.closed = true;
 		try {
+			if (turn.notification) this.notifications.checkpoint(turn.notification, { result: {
+				kind,
+				text: turnText(turn),
+				...error ? { error } : {}
+			} });
 			if (kind === "aborted") await turn.stream.abort();
 			else if (kind === "error") await turn.stream.fail(error ?? "Turn failed");
 			else {
 				await turn.stream.complete(turnText(turn));
 				if (!turn.stream.messageId && turnText(turn).trim()) await this.send(turn.chatId, turnText(turn));
 			}
+		} catch (error) {
+			turn.completionError = error;
+			if (!turn.notification) throw error;
 		} finally {
 			this.activeByChat.delete(turn.chatId);
 			this.activeBySession.delete(turn.sessionId);
@@ -12364,6 +12906,11 @@ var LarkChannel = class {
 		const turn = this.activeByChat.get(chatId);
 		if (!turn) {
 			await this.send(chatId, "No active turn.");
+			return;
+		}
+		if (turn.notification) {
+			turn.agent.cancel({ kind: "user" }, { keepInbox: true });
+			await this.finishTurn(turn, "aborted");
 			return;
 		}
 		turn.closed = true;
@@ -12409,6 +12956,40 @@ var LarkChannel = class {
 		});
 	}
 };
+function notificationClaimed(events, id) {
+	const pending = /* @__PURE__ */ new Map();
+	for (const event of events) {
+		if (event.type === "user/message" && event.data.id === id) return true;
+		if (event.type !== "agent/inbox/spliced") continue;
+		const list = pending.get(event.data.target) ?? [];
+		pending.set(event.data.target, list);
+		if (list.splice(event.data.start, event.data.removedCount ?? 0, ...event.data.inserted.map((message) => message.id)).includes(id) && event.data.outcome !== "canceled") return true;
+	}
+	return false;
+}
+function nextTurn(events) {
+	return events.reduce((max, event) => event.type === "turn/start" ? Math.max(max, event.data.turn) : max, 0) + 1;
+}
+function recoverNotification(events, id, expected) {
+	let current = 0;
+	let target = expected;
+	const texts = [];
+	const pending = [];
+	for (const event of events) {
+		if (event.type === "agent/inbox/spliced" && event.data.target === "next-turn") {
+			if (pending.splice(event.data.start, event.data.removedCount ?? 0, ...event.data.inserted.map((message) => message.id)).includes(id) && event.data.outcome !== "canceled" && current > 0) target = current;
+		}
+		if (event.type === "turn/start") current = event.data.turn;
+		if (event.type === "user/message" && event.data.id === id) target = current;
+		if (target === void 0 || current !== target) continue;
+		if (event.type === "assistant/message") texts.push(event.data.message.content.filter((block) => block.type === "text").map((block) => block.text).join(""));
+		if (event.type === "turn/end" && event.data.turn === target) return {
+			kind: event.data.reason.kind,
+			text: texts.filter(Boolean).join("\n\n"),
+			..."error" in event.data.reason ? { error: event.data.reason.error.message } : {}
+		};
+	}
+}
 function turnText(turn) {
 	return [turn.committedText, turn.liveAnswer].filter(Boolean).join("\n\n");
 }
@@ -12767,6 +13348,8 @@ var SessionStore = class {
 	agentsRoot;
 	cwd;
 	userNames = /* @__PURE__ */ new Map();
+	/** openId → union_id：注册表/恢复会话时按人（而非按应用）解析身份簇。 */
+	userUnionIds = /* @__PURE__ */ new Map();
 	recoveredUsers = /* @__PURE__ */ new Map();
 	identity;
 	loaded = false;
@@ -12802,7 +13385,7 @@ var SessionStore = class {
 		if (!this.identity) return;
 		for (const [chatId, binding] of this.bindings) {
 			if (!binding.openId) continue;
-			const cwd = this.cwdFor(binding.openId);
+			const cwd = this.cwdFor(binding.openId, binding.unionId);
 			if (cwd !== binding.cwd) this.bindings.set(chatId, {
 				...binding,
 				cwd
@@ -12810,15 +13393,17 @@ var SessionStore = class {
 		}
 	}
 	async load() {
+		if (this.loaded) return;
 		try {
 			const data = JSON.parse(await readFile(this.path, "utf8"));
 			for (const [chatId, binding] of Object.entries(data)) if (typeof binding.sessionId === "string" && typeof binding.cwd === "string") {
 				const openId = binding.openId;
 				if (openId) {
+					if (binding.unionId) this.userUnionIds.set(openId, binding.unionId);
 					const configured = this.configuredDisplayName(openId);
-					this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${userKey(openId, this.identity?.appId).slice(0, 12)}`);
+					this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${(this.existingUserId(openId) ?? openId).slice(0, 12)}`);
 				} else {
-					const match = /\/users\/((?:[a-f0-9]{24})|(?:u_[a-z0-9_-]{1,63}))$/.exec(binding.cwd);
+					const match = /\/users\/(u_[a-z0-9_-]{1,63})\/[a-z0-9][a-z0-9-]{0,63}\/workspace$/.exec(binding.cwd);
 					if (match) this.recoveredUsers.set(match[1], binding.cwd);
 				}
 				this.bindings.set(chatId, {
@@ -12826,6 +13411,9 @@ var SessionStore = class {
 					cwd: binding.cwd,
 					...validModel(binding.model) ? { model: binding.model } : {},
 					...binding.openId ? { openId: binding.openId } : {},
+					...binding.unionId ? { unionId: binding.unionId } : {},
+					...binding.chatType ? { chatType: binding.chatType } : {},
+					...Array.isArray(binding.previousSessionIds) ? { previousSessionIds: binding.previousSessionIds.filter((id) => typeof id === "string") } : {},
 					...binding.displayName ? { displayName: binding.displayName } : {}
 				});
 			}
@@ -12834,39 +13422,57 @@ var SessionStore = class {
 		}
 		this.loaded = true;
 	}
-	/** Admin-configured display name: top-level domain, or the applications.<appId> tier. */
+	/** Existing scoped identity lookup; display-name reads must never enroll a user. */
+	existingUserId(openId) {
+		const appId = this.identity?.appId;
+		if (!appId) return void 0;
+		const dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh");
+		return Object.entries(listIdentities({ identitiesFile: join(dshHome, "identities.json") })).find(([, user]) => user.identities.some((identity) => identity.channel === "feishu" && identity.appId === appId && identity.openId === openId))?.[0];
+	}
+	/** Admin-configured name: current users.<userId>, with legacy app/openId fallbacks. */
 	configuredDisplayName(openId) {
 		if (!openId) return void 0;
 		const appId = this.identity?.appId;
 		const users = readUsers(join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lark", "user-connections.json"));
-		return (appId ? users.applications?.[appId] : void 0)?.[openId]?.displayName?.trim() || users[openId]?.displayName?.trim();
+		const appIdUsers = appId ? users.applications?.[appId] : void 0;
+		const userId = this.existingUserId(openId);
+		return (userId ? users.users?.[userId]?.displayName?.trim() || users[userId]?.displayName?.trim() : void 0) || appIdUsers?.[openId]?.displayName?.trim() || users[openId]?.displayName?.trim();
 	}
-	cwdFor(openId) {
+	cwdFor(openId, unionId) {
 		if (!openId || !this.identity) return this.cwd;
-		return workspaceFor(this.identity.path, openId, this.identity.appId);
+		const userId = userKey(openId, this.identity.appId, unionId);
+		return workspaceForIdentity(this.identity.path, {
+			userId,
+			agentId: this.identity.agentId,
+			appId: this.identity.appId
+		});
 	}
-	get(chatId, openId, displayName) {
-		const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? "") || (openId ? `用户 ${userKey(openId, this.identity?.appId).slice(0, 8)}` : void 0);
+	get(chatId, openId, displayName, unionId) {
+		const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? "") || (openId ? `用户 ${userKey(openId, this.identity?.appId, unionId).slice(0, 8)}` : void 0);
 		if (openId) this.userNames.set(openId, resolvedName);
-		const cwd = this.cwdFor(openId);
+		if (openId && unionId) this.userUnionIds.set(openId, unionId);
+		const cwd = this.cwdFor(openId, unionId);
 		const existing = this.bindings.get(chatId);
 		if (existing) {
-			if (openId && existing.cwd !== cwd) {
+			if (openId && (existing.cwd !== cwd || existing.openId !== openId)) {
+				const { unionId: _union, previousSessionIds: _aliases, ...sameChat } = existing;
 				const moved = {
-					...existing,
+					...existing.openId === openId ? existing : sameChat,
 					cwd,
-					...openId ? {
-						openId,
-						displayName: resolvedName
-					} : {}
+					openId,
+					...unionId ? { unionId } : {},
+					displayName: resolvedName
 				};
 				this.bindings.set(chatId, moved);
 				return moved;
 			}
-			if (openId && !existing.openId) this.bindings.set(chatId, {
+			if (openId && (!existing.openId || unionId && !existing.unionId)) this.bindings.set(chatId, {
 				...existing,
-				openId,
-				displayName: resolvedName
+				...openId ? {
+					openId,
+					displayName: resolvedName
+				} : {},
+				...unionId ? { unionId } : {}
 			});
 			return this.bindings.get(chatId);
 		}
@@ -12875,6 +13481,7 @@ var SessionStore = class {
 			cwd,
 			...openId ? {
 				openId,
+				...unionId ? { unionId } : {},
 				displayName: resolvedName
 			} : {}
 		};
@@ -12883,17 +13490,49 @@ var SessionStore = class {
 	}
 	reset(chatId, openId) {
 		const previous = this.bindings.get(chatId);
+		const owner = openId ?? previous?.openId;
+		const sameOwner = !openId || openId === previous?.openId;
+		const { unionId: _union, previousSessionIds: _aliases, ...preserved } = previous ?? {};
 		const created = {
+			...preserved,
+			...sameOwner && previous?.unionId ? { unionId: previous.unionId } : {},
 			sessionId: this.freshId(),
-			cwd: this.cwdFor(openId),
-			...previous?.model ? { model: previous.model } : {},
-			...openId ? {
-				openId,
-				displayName: this.userNames.get(openId)
+			cwd: sameOwner && previous ? previous.cwd : this.cwdFor(owner),
+			...sameOwner && previous ? { previousSessionIds: [...previous.previousSessionIds ?? [], previous.sessionId] } : {},
+			...owner ? {
+				openId: owner,
+				displayName: this.userNames.get(owner)
 			} : {}
 		};
 		this.bindings.set(chatId, created);
 		return created;
+	}
+	/** Read-only lookup: never creates a binding or resolves a new identity. */
+	notificationTarget(sessionId) {
+		const matches = [...this.bindings].filter(([, binding]) => binding.sessionId === sessionId || binding.previousSessionIds?.includes(sessionId));
+		if (matches.length !== 1) return void 0;
+		return {
+			chatId: matches[0][0],
+			binding: { ...matches[0][1] }
+		};
+	}
+	setChatType(chatId, chatType) {
+		const binding = this.bindings.get(chatId);
+		if (binding) this.bindings.set(chatId, {
+			...binding,
+			chatType
+		});
+	}
+	addPreviousSession(sessionId, previousSessionId, openId) {
+		if (!/^lark-[a-zA-Z0-9-]{1,160}$/.test(previousSessionId)) throw new Error("Invalid previous session id");
+		const target = this.notificationTarget(sessionId);
+		if (!target || target.binding.sessionId !== sessionId || target.binding.openId !== openId) throw new Error("Session owner mismatch");
+		for (const [chatId, binding] of this.bindings) if (chatId !== target.chatId && (binding.sessionId === previousSessionId || binding.previousSessionIds?.includes(previousSessionId))) throw new Error("Previous session belongs to another chat");
+		if (previousSessionId === sessionId) throw new Error("Previous session must differ");
+		this.bindings.set(target.chatId, {
+			...target.binding,
+			previousSessionIds: [...new Set([...target.binding.previousSessionIds ?? [], previousSessionId])]
+		});
 	}
 	/** Chat-pinned override for one DSH session, when stored. */
 	overrideFor(sessionId) {
@@ -12909,10 +13548,8 @@ var SessionStore = class {
 	clearModel(chatId) {
 		const existing = this.bindings.get(chatId);
 		if (!existing?.model) return;
-		this.bindings.set(chatId, {
-			sessionId: existing.sessionId,
-			cwd: existing.cwd
-		});
+		const { model: _model, ...binding } = existing;
+		this.bindings.set(chatId, binding);
 	}
 	async save() {
 		if (!this.loaded) return;
@@ -12929,10 +13566,14 @@ var SessionStore = class {
 				...this.identity.appId ? { appId: this.identity.appId } : {},
 				sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === this.identity?.path).map((binding) => binding.sessionId),
 				users: Object.fromEntries([...[...this.userNames].map(([openId, displayName]) => {
-					const path = workspaceFor(this.identity.path, openId, this.identity.appId);
+					const path = workspaceForIdentity(this.identity.path, {
+						userId: userKey(openId, this.identity.appId, this.userUnionIds.get(openId)),
+						agentId: this.identity.agentId,
+						appId: this.identity.appId
+					});
 					const effective = this.configuredDisplayName(openId) || displayName;
 					const suffix = this.identity.botName && !effective?.includes(this.identity.botName) ? ` · ${this.identity.botName}` : "";
-					return [userKey(openId, this.identity.appId), {
+					return [userKey(openId, this.identity.appId, this.userUnionIds.get(openId)), {
 						displayName: `${effective}${suffix}`,
 						path,
 						sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId)
@@ -19579,14 +20220,14 @@ function registerOapiTools(api) {
 * 复用 oauth.ts 的 executeAuthorize() 函数。
 */
 const log = larkLogger("tools/oauth-batch-auth");
-const FeishuOAuthBatchAuthSchema = Type.Object({}, { description: "飞书批量授权工具。一次性授权应用已开通的所有用户权限（User Access Token scope）。【使用场景】用户明确要求'授权所有权限'、'一次性授权完成'时使用。【重要】禁止主动推荐此工具，仅在用户明确要求时使用。" });
+const FeishuOAuthBatchAuthSchema = Type.Object({}, { description: "飞书批量授权工具。一次性授权应用已开通的所有用户权限（User Access Token scope）。【首选场景】任何工具提示缺少用户权限/未授权时，优先用本工具一次性补全，不要用 feishu_oauth 一个个补。用户说'授权所有权限'、'一次性授权完成'时也用它。" });
 function registerFeishuOAuthBatchAuthTool(api) {
 	if (!api.config) return;
 	const cfg = api.config;
 	registerTool(api, {
 		name: "feishu_oauth_batch_auth",
 		label: "Feishu: OAuth Batch Authorization",
-		description: "飞书批量授权工具，一次性授权应用已开通的所有用户权限。仅在用户明确要求'授权所有权限'、'一次性授权'时使用。",
+		description: "飞书批量授权工具，一次性授权应用已开通的所有用户权限。缺少用户权限时的首选入口：一次补全全部缺失 scope，避免反复弹卡片逐个授权。用户说'授权所有权限'、'一次性授权'时也用它。",
 		parameters: FeishuOAuthBatchAuthSchema,
 		async execute(_toolCallId, _params) {
 			try {
@@ -19640,6 +20281,7 @@ function registerFeishuOAuthBatchAuthTool(api) {
 					account,
 					senderOpenId,
 					scope: scopesToAuthorize.join(" "),
+					capability: "all",
 					isBatchAuth: true,
 					totalAppScopes: appScopes.length,
 					alreadyGranted: alreadyGrantedScopes.length,
@@ -19969,7 +20611,7 @@ function registerOfficialTools(ctx, config, credentials, contexts, hostConfig = 
 }
 //#endregion
 //#region src/index.ts
-const name = "feishu";
+const name = "feishu-channel";
 /** One Agent runtime, one WebSocket per Feishu application, isolated session stores. */
 /** Resolve the shared agents root: the first bot's derived identity directory minus its agentId tier. */
 function resolveAgentsRoot(config, bots) {
@@ -19981,6 +20623,33 @@ function resolveAgentsRoot(config, bots) {
 function apply(ctx, config) {
 	ctx.logger.exporter(consoleExporter());
 	const bots = resolveBots(config);
+	ctx.inject(["llm"], () => {
+		const llm = ctx.get("llm");
+		(async () => {
+			const providerIds = () => new Set(llm.listProviders().map((entry) => entry.id));
+			for (let waited = 0; waited < 20; waited++) {
+				const routes = bots.map((bot) => ({
+					bot,
+					route: agentOptions(bot, ctx)
+				})).filter((entry) => entry.route?.provider && entry.route.model);
+				if (routes.length > 0 && routes.every((entry) => providerIds().has(entry.route.provider))) break;
+				await new Promise((resolve) => setTimeout(resolve, 1e3));
+			}
+			const providers = providerIds();
+			for (const bot of bots) {
+				const route = agentOptions(bot, ctx);
+				if (!route?.provider || !route.model) continue;
+				const label = `${bot.agentId ?? "primary"}(${bot.appId ?? "?"})`;
+				if (!providers.has(route.provider)) throw new Error(`[lark] bot ${label} 的模型路由 ${route.provider}/${route.model} 没有对应 provider adapter,拒绝启动——请修正 agents/<id>/manifest.yml 或 profile 配置`);
+				const models = await Promise.resolve(llm.listModels(route.provider)).catch(() => []);
+				if (models.length > 0 && !models.some((entry) => entry.id === route.model)) throw new Error(`[lark] bot ${label} 的模型 ${route.provider}/${route.model} 不在该 provider 目录中(共 ${models.length} 个模型),拒绝启动——请修正 agents/<id>/manifest.yml`);
+			}
+			ctx.logger.info(`[lark] startup model check passed for ${bots.length} bot(s)`);
+		})().catch((error) => {
+			ctx.logger.error(`[lark] startup model check FAILED: ${String(error)}`);
+			process.exit(1);
+		});
+	});
 	const credentials = resolveCredentials(config) ?? (bots.find((bot) => bot.accountId !== "default") && bots[0]?.appId && bots[0]?.appSecret ? {
 		appId: bots[0].appId,
 		appSecret: bots[0].appSecret
@@ -20010,7 +20679,8 @@ function apply(ctx, config) {
 			chatId: ticket.chatId,
 			accountId: ticket.accountId,
 			appId: appForAccount.get(ticket.accountId),
-			agentId: agentForAccount.get(ticket.accountId)
+			agentId: agentForAccount.get(ticket.accountId),
+			...ticket.senderUnionId ? { unionId: ticket.senderUnionId } : {}
 		} : void 0;
 	};
 	const channels = [];
@@ -20048,6 +20718,16 @@ function apply(ctx, config) {
 			models
 		}));
 	}
+	const notificationChannel = (appId) => {
+		const matched = channels.filter((channel) => channel.appId === appId);
+		if (matched.length !== 1) throw new Error("Feishu notification application is unavailable or ambiguous");
+		return matched[0];
+	};
+	ctx.provide("feishuNotifications", {
+		deliver: (input) => notificationChannel(input.ownerAppId).deliverNotification(input),
+		rebindPreviousSession: (input) => notificationChannel(input.ownerAppId).rebindPreviousSession(input),
+		status: (eventId, ownerAppId) => channels.filter((channel) => !ownerAppId || channel.appId === ownerAppId).flatMap((channel) => channel.notificationStatus(eventId))
+	});
 	ctx.on("agent/assistant-stream", ({ agent, frame }) => {
 		for (const channel of channels) channel.assistantFrame(agent.session.id, frame);
 	});

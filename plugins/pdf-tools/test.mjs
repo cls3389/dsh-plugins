@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { apply as applyPdf } from './index.js';
-import { apply as applyDocument } from '../document-tools/index.js';
+import { apply as applyDocument } from '../anydoc/index.js';
 import { readPdf, assertRenderablePage } from './reader.js';
 
 const temporary = await mkdtemp(join(tmpdir(), 'pdf-tools-test-'));

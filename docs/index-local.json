@@ -11,7 +11,7 @@
   "metadata": {},
   "plugins": [
     {
-      "name": "@dsh-friends/interrupted-turn-resumer",
+      "name": "@dsh-friends/turn-resumer",
       "title": {
         "zh": "中断任务续接",
         "en": "Interrupted Turn Resumer"
@@ -24,7 +24,7 @@
       "homepage": "https://github.com/dsh-friends/dsh-plugins#readme",
       "repository": {
         "url": "https://github.com/dsh-friends/dsh-plugins",
-        "directory": "plugins/interrupted-turn-resumer"
+        "directory": "plugins/turn-resumer"
       },
       "metadata": {
         "keywords": [
@@ -46,7 +46,7 @@
       ]
     },
     {
-      "name": "@dsh-friends/session-title-keeper",
+      "name": "@dsh-friends/title-keeper",
       "title": {
         "zh": "会话标题",
         "en": "Session Titles"
@@ -59,7 +59,7 @@
       "homepage": "https://github.com/dsh-friends/dsh-plugins#readme",
       "repository": {
         "url": "https://github.com/dsh-friends/dsh-plugins",
-        "directory": "plugins/session-title-keeper"
+        "directory": "plugins/title-keeper"
       },
       "metadata": {
         "keywords": [

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { intervalChanges, SyncEngine } from './sync-engine.js';
 import { dateToMs } from './feishu-bitable.js';
 import { createScheduler } from './scheduler.js';
-import { DataCenterClient } from './data-sources.js';
+import { DataCenterClient, FqgateClient } from './data-sources.js';
 
 const RICH_FIELDS = '涨停原因[20261030]';
 function richRow(code, sealMoney, continueDays = 1) {
@@ -29,6 +29,33 @@ function richPoolDc() {
   };
   return { dc, queries, get maxActive() { return maxActive; } };
 }
+
+test('FQGate hub client retains injected API key and sends Bearer authorization', async () => {
+  let authorization = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, opts) => {
+    authorization = opts.headers.Authorization;
+    return new Response(JSON.stringify({ code: 0, data: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    await new FqgateClient({ baseUrl: 'http://hub.test', apiKey: 'test-token' }).post('/v2/market/quotes/mainland', {});
+    assert.equal(authorization, 'Bearer test-token');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('FQGate hub read retries one transient gateway timeout only', async () => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) return new Response('{}', { status: 502 });
+    return new Response(JSON.stringify({ code: 0, data: { ok: true } }), { status: 200 });
+  };
+  try {
+    assert.deepEqual(await new FqgateClient({ baseUrl: 'http://hub.test', apiKey: 'test' }).post('/v2/market/quotes/mainland', {}), { ok: true });
+    assert.equal(calls, 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
 
 test('intervalChanges computes 5/10/20-day changes with window guard', () => {
   // 21 个交易日 100..120:5 日涨跌=(120-115)/115,20 日=(120-100)/100

@@ -79,77 +79,6 @@
       ]
     },
     {
-      "name": "@dsh-friends/document-tools",
-      "title": {
-        "zh": "Anydoc 文档转换",
-        "en": "Anydoc Document Converter"
-      },
-      "description": {
-        "zh": "Firecrawl @firecrawl/anydoc：Office、EPUB、CSV 等文档转 Markdown；PDF 请安装独立「PDF 阅读」。",
-        "en": "Convert Office, EPUB, CSV and other documents to Markdown with Firecrawl @firecrawl/anydoc. PDF is provided by the separate PDF Reader plugin."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/document-tools"
-      },
-      "metadata": {
-        "keywords": [
-          "anydoc",
-          "firecrawl",
-          "document",
-          "markdown"
-        ]
-      },
-      "versions": [
-        {
-          "version": "0.2.0",
-          "publishTimestamp": 1793408742,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "620bce3a5bf1384b4b3d386bf5d6d3a64c401c0e",
-            "path": "plugins/document-tools"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/dsh-keeper",
-      "title": {
-        "zh": "飞书消息守护",
-        "en": "Feishu Keeper"
-      },
-      "description": {
-        "zh": "容器重启或进程崩溃后自动拉起飞书消息通道，保持随时在线。",
-        "en": "Restart the Feishu channel automatically after crashes or container restarts."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/dsh-keeper"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.3.0",
-          "publishTimestamp": 1793356347,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
-            "path": "plugins/dsh-keeper"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
       "name": "@dsh-friends/dsh-memory",
       "title": {
         "zh": "用户级长期记忆",
@@ -183,37 +112,37 @@
       ]
     },
     {
-      "name": "@dsh-friends/execution-sandbox",
+      "name": "@dsh-friends/feishu-bitable-sync",
+      "title": {
+        "zh": "飞书多维表同步",
+        "en": "Feishu Bitable Sync"
+      },
+      "description": {
+        "zh": "从同花顺行情与数据中心批量同步标的跟踪、每日市场情绪和涨停明细到飞书多维表。",
+        "en": "Batch-sync tracked securities, daily market sentiment, and limit-up details from THS market data into Feishu Bitable."
+      },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
       "repository": {
         "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/execution-sandbox"
+        "directory": "plugins/feishu-bitable-sync"
       },
       "metadata": {
         "keywords": []
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793435065,
+          "version": "0.1.0",
+          "publishTimestamp": 1793720878,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9bed4221b44f63a8dd8d189d8fa011d253a013be",
-            "path": "plugins/execution-sandbox"
+            "commit": "ede82b828cf0afec12f2139dfa0df012c1e01727",
+            "path": "plugins/feishu-bitable-sync"
           },
           "engines": {}
         }
-      ],
-      "title": {
-        "zh": "安全执行沙箱",
-        "en": "Execution Sandbox"
-      },
-      "description": {
-        "zh": "在隔离的容器沙箱中运行用户命令与数据分析工具，限制网络和文件系统访问。",
-        "en": "Run user commands and data-analysis tools inside an isolated container with restricted network and filesystem access."
-      }
+      ]
     },
     {
       "name": "@dsh-friends/feishu-channel",
@@ -237,45 +166,12 @@
       "versions": [
         {
           "version": "0.6.5",
-          "publishTimestamp": 1793421543,
+          "publishTimestamp": 1793582297,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "b0c4dce05e59912582d1edf59ee8c2b2739fb631",
+            "commit": "7b0239c10ba446a6539742829075a578c95c3f1c",
             "path": "plugins/feishu-channel"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/feishu-messages",
-      "title": {
-        "zh": "飞书群消息",
-        "en": "Feishu Group Reader"
-      },
-      "description": {
-        "zh": "以用户身份读取飞书群聊消息（复用 openclaw-lark 官方 UAT 授权存储）。",
-        "en": "Read Feishu group chat messages with user identity (reuses the official openclaw-lark UAT store)."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/feishu-group-reader"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.2.3",
-          "publishTimestamp": 1793335242,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
-            "path": "plugins/feishu-group-reader"
           },
           "engines": {}
         }
@@ -289,7 +185,7 @@
       },
       "description": {
         "zh": "open_id→用户哈希、个人工作区路径、登录态、tools.extra 与业务权限的统一解析，装在飞书 profile，是渠道/用户记忆/自选同步的硬依赖；GUI 工作区树由「飞书应用工作区」呈现。",
-        "en": "Resolves open_id→user hash, personal workspace paths, login state, tools.extra and business permissions; install in the feishu profile. Hard dependency of the channel, per-user memory and favorites sync; the GUI tree is rendered by feishu-workspaces."
+        "en": "Resolves open_id→user hash, personal workspace paths, login state, tools.extra and business permissions; install in the feishu profile. Hard dependency of the channel, per-user memory and favorites sync; the GUI tree is rendered by ui-workspaces."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -303,123 +199,12 @@
       "versions": [
         {
           "version": "0.2.0",
-          "publishTimestamp": 1793356347,
+          "publishTimestamp": 1793707385,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
             "path": "plugins/feishu-principal"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/feishu-workspaces",
-      "title": {
-        "zh": "飞书应用工作区（GUI 展示层）",
-        "en": "Feishu App Workspaces (GUI view)"
-      },
-      "description": {
-        "zh": "把飞书 app×用户 工作区聚合成「飞书应用」树注册进 Web GUI，装在 web profile；身份与权限由「飞书用户基座」负责（装在飞书 profile），两者配套构成完整飞书栈。",
-        "en": "Aggregates Feishu app×user workspaces into the GUI workspace tree; install in the web profile. Identity and permissions live in feishu-principal (feishu profile) — the two pair up for the full Feishu stack."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/feishu-workspaces"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.2.3",
-          "publishTimestamp": 1793356347,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
-            "path": "plugins/feishu-workspaces"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/idle-compaction",
-      "title": {
-        "zh": "闲置会话自动压缩",
-        "en": "Idle Session Auto-Compaction"
-      },
-      "description": {
-        "zh": "闲置超阈值的会话后台自动 compaction，下一条消息直接以紧凑上下文开始；事件驱动判定，飞书 bot 与 Web 会话通用。",
-        "en": "Compacts idle sessions in the background so the next message starts from a small context; event-driven idle detection works for every session host in the profile."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/idle-compaction"
-      },
-      "metadata": {
-        "keywords": [
-          "dsh",
-          "cordis",
-          "compaction",
-          "context",
-          "feishu",
-          "session"
-        ]
-      },
-      "versions": [
-        {
-          "version": "1.0.1",
-          "publishTimestamp": 1793335242,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
-            "path": "plugins/idle-compaction"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/interrupted-turn-resumer",
-      "title": {
-        "zh": "中断任务续接",
-        "en": "Interrupted Turn Resumer"
-      },
-      "description": {
-        "zh": "系统重启后自动继续未完成的任务，无需重新催促。",
-        "en": "Automatically resume interrupted turns after restarts."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/interrupted-turn-resumer"
-      },
-      "metadata": {
-        "keywords": [
-          "dsh",
-          "session",
-          "resumer",
-          "reliability"
-        ]
-      },
-      "versions": [
-        {
-          "version": "0.3.0",
-          "publishTimestamp": 1793355557,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "85f7eb1c30292084c2ad9e3df64fc694d8043dcb",
-            "path": "plugins/interrupted-turn-resumer"
           },
           "engines": {}
         }
@@ -466,33 +251,33 @@
       ]
     },
     {
-      "name": "@dsh-friends/media-tools",
+      "name": "@dsh-friends/model-catalog",
       "title": {
-        "zh": "媒体工具",
-        "en": "Media Tools"
+        "zh": "模型目录",
+        "en": "Model Catalog"
       },
       "description": {
-        "zh": "腾讯混元文生图/图生图(经 CPA 网关)，支持多图输出与本地参考图。",
-        "en": "Tencent Hunyuan image generation/editing (via CPA gateway) and document-to-Markdown conversion."
+        "zh": "配置服务地址、API Key 和请求格式，自动同步模型并自定义名称、能力和排序。",
+        "en": "Discover and synchronize remote models with editable provider names and per-model overrides."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
       "repository": {
         "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/media-tools"
+        "directory": "plugins/model-catalog"
       },
       "metadata": {
         "keywords": []
       },
       "versions": [
         {
-          "version": "0.1.3",
-          "publishTimestamp": 1793459126,
+          "version": "0.1.0",
+          "publishTimestamp": 1793716377,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
-            "path": "plugins/media-tools"
+            "commit": "ede82b828cf0afec12f2139dfa0df012c1e01727",
+            "path": "plugins/model-catalog"
           },
           "engines": {}
         }
@@ -603,52 +388,14 @@
       ]
     },
     {
-      "name": "@dsh-friends/session-title-keeper",
-      "title": {
-        "zh": "会话标题",
-        "en": "Session Titles"
-      },
-      "description": {
-        "zh": "自动为对话起一个简短准确的名字，漏了的会定时补上。",
-        "en": "Name conversations automatically; missed ones are refreshed on a schedule."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/session-title-keeper"
-      },
-      "metadata": {
-        "keywords": [
-          "dsh",
-          "session",
-          "title",
-          "llm"
-        ]
-      },
-      "versions": [
-        {
-          "version": "0.1.2",
-          "publishTimestamp": 1793335242,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
-            "path": "plugins/session-title-keeper"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
       "name": "@dsh-friends/ths-favorites",
       "title": {
-        "zh": "同花顺自选(每用户)",
+        "zh": "同花顺个人自选股",
         "en": "THS Favorites (per-user)"
       },
       "description": {
-        "zh": "每人独立登录(扫码/Cookie/密码)管理自己的手机自选:分组增删查、股票增删排序、分享。按会话身份隔离,官方接口。",
-        "en": "Per-user THS favorites via official API: QR/cookie/password login, groups, stocks, sharing. Session-scoped."
+        "zh": "扫码登录并无损检查个人登录状态，管理手机自选股、分组、排序与分享；成员列表按用户隔离，名称与行情由公共行情接口补全。",
+        "en": "Personal watchlists with QR login and non-destructive login checks, groups, stocks, ordering and sharing. Membership is isolated by user identity; public quotes enrich names and prices."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -661,22 +408,12 @@
       },
       "versions": [
         {
-          "version": "0.1.6",
-          "publishTimestamp": 1793534593,
+          "version": "0.2.0",
+          "publishTimestamp": 1793627064,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "113abd1dabb64c904c3dd077756884aa39a18ae3",
-            "path": "plugins/ths-favorites"
-          }
-        },
-        {
-          "version": "0.1.5",
-          "publishTimestamp": 1793420654,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fb26e8cf5790114aa6f2b9ea3bba705e25069fab",
             "path": "plugins/ths-favorites"
           },
           "engines": {}
@@ -686,12 +423,12 @@
     {
       "name": "@dsh-friends/ths-market",
       "title": {
-        "zh": "同花顺行情+盯盘",
+        "zh": "同花顺行情与提醒",
         "en": "THS Market & Watch"
       },
       "description": {
-        "zh": "行情查询(报价/K线/搜索/问财/L2/大盘体检/异动/两融折算率)、美国财政部国债收益率曲线与条件盯盘:纯提醒,或同装 ths-trade 并配钥后支持自动执行。",
-        "en": "Read-only market data (quotes/klines/search/wencai/L2/pulse/moves/margin rates), official US Treasury yield curves, plus watch rules: reminder-only, or auto-exec when ths-trade is co-installed."
+        "zh": "行情快照、K线、证券搜索、Level-2、大盘统计、板块异动、两融折算率与美债收益率；盯盘仅提供条件提醒。问财筛选、账户交易和AI分时交易由各自独立插件提供。",
+        "en": "Market snapshots, historical bars, security search, Level-2, market breadth, sector moves, margin collateral rates and US Treasury yields. Watch rules send alerts only. Screening, account trading and AI signal execution use separate plugins."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -704,22 +441,12 @@
       },
       "versions": [
         {
-          "version": "0.3.3",
-          "publishTimestamp": 1793533355,
+          "version": "0.4.0",
+          "publishTimestamp": 1793686839,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "bb9b096aa8833901fae938b32b4719539ed1cefc",
-            "path": "plugins/ths-market"
-          }
-        },
-        {
-          "version": "0.3.2",
-          "publishTimestamp": 1793513880,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "4bcd0e7fbd391de70522f87ce178d811348d2452",
             "path": "plugins/ths-market"
           },
           "engines": {}
@@ -733,8 +460,8 @@
         "en": "THS Trading"
       },
       "description": {
-        "zh": "账户持仓、实盘下单撤单、AI 分时信号条件单与自选股管理。行情与盯盘已拆至 ths-market。",
-        "en": "Positions, live orders and cancellations, AI intraday signal condition orders, and favorites management. Market data and watch are provided by ths-market."
+        "zh": "账户与持仓查询、实盘下单及撤单。行情与盯盘、AI 分时交易、自选股分别由 ths-market、ths-signal、ths-favorites 提供。",
+        "en": "Account and position queries, live orders, and cancellations. Market data & watch, AI intraday trading, and favorites are provided by ths-market, ths-signal, and ths-favorites."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -747,51 +474,13 @@
       },
       "versions": [
         {
-          "version": "0.4.2",
-          "publishTimestamp": 1793334676,
+          "version": "0.6.0",
+          "publishTimestamp": 1793664392,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
             "path": "plugins/ths-trade"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/feishu-bitable-sync",
-      "title": {
-        "zh": "飞书多维表同步",
-        "en": "Feishu Bitable Sync"
-      },
-      "description": {
-        "zh": "从同花顺行情与数据中心批量同步标的跟踪、每日市场情绪和涨停明细到飞书多维表。",
-        "en": "Batch-sync tracked securities, daily market sentiment, and limit-up details from THS market data into Feishu Bitable."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/feishu-bitable-sync"
-      },
-      "metadata": {
-        "keywords": [
-          "dsh-plugin",
-          "feishu",
-          "bitable",
-          "market"
-        ]
-      },
-      "versions": [
-        {
-          "version": "0.1.0",
-          "publishTimestamp": 1793543042,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "3ba13cdfdacbd29c22a92f839290d4612c1baee7",
-            "path": "plugins/feishu-bitable-sync"
           },
           "engines": {}
         }
@@ -831,39 +520,6 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
             "path": "plugins/zread"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/model-catalog",
-      "title": {
-        "zh": "模型目录",
-        "en": "Model Catalog"
-      },
-      "description": {
-        "zh": "配置服务地址、API Key 和请求格式，自动同步模型并自定义名称、能力和排序。",
-        "en": "Discover and synchronize remote models with editable provider names and per-model overrides."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/model-catalog"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.1.0",
-          "publishTimestamp": 1793716377,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "ede82b828cf0afec12f2139dfa0df012c1e01727",
-            "path": "plugins/model-catalog"
           },
           "engines": {}
         }

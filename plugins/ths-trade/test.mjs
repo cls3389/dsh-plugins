@@ -1,3 +1,7 @@
+// ⚠️ 过时测试（2026-11-03 标注）：本文件期望 ths_quote 工具，但该工具已随
+// 行情职责拆到 @dsh-friends/ths-market（ths-trade 现在只有 ths_account /
+// ths_order_submit / ths_cancel_submit / ths_cancel_all）。保留仅作历史参考，
+// 请勿据此判断 ths-trade 功能正常性。行情测试见 dsh-plugins/plugins/ths-market/test-adapter.mjs。
 import assert from 'node:assert/strict';
 import { apply } from './index.js';
 

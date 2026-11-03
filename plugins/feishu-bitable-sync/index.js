@@ -58,7 +58,7 @@ export function apply(ctx, config) {
       appId: cfg.appId, appSecret: cfg.appSecret, appToken: cfg.appToken,
       logger, timeoutMs: cfg.requestTimeoutMs,
     }),
-    fqgate: new FqgateClient({ baseUrl: cfg.fqgateBaseUrl, logger, timeoutMs: cfg.requestTimeoutMs }),
+    fqgate: new FqgateClient({ baseUrl: cfg.fqgateBaseUrl, logger, timeoutMs: cfg.requestTimeoutMs, apiKey: cfg.fqgateApiKey ?? cfg.dataCenterApiKey }),
     dc: new DataCenterClient({ baseUrl: cfg.dataCenterBaseUrl, apiKey: cfg.dataCenterApiKey, logger }),
     logger,
   });

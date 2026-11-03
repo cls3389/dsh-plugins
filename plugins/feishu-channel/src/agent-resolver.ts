@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent, AgentSetup, AgentSetupCommit } from '@deepseek-ai/dsh-agent';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 import { userKey } from '@dsh-friends/feishu-principal';
-import type { Config } from './config.js';
+import { effectiveManifest, type Config } from './config.js';
 import type { ChatModelSelection, ModelSelectionRegistry } from './model-selection.js';
 
 /** Optional model-switching wiring passed by the plugin entry. */
@@ -20,6 +20,8 @@ export interface ResolveExtras {
         accountId?: string;
         appId?: string | undefined;
         agentId?: string | undefined;
+        /** 飞书 union_id：同一开发者旗下跨应用稳定的人标识。 */
+        unionId?: string | undefined;
       }
     | undefined;
 }
@@ -45,6 +47,8 @@ interface UserBoundAgent extends Agent {
     accountId?: string;
     appId?: string | undefined;
     agentId?: string | undefined;
+    /** 飞书 union_id：跨应用人标识，身份簇按它归并。 */
+    unionId?: string | undefined;
   };
   /** 基座化新载体:渠道唯一职责(消息→身份→绑定)的统一产物。 */
   identity?: AgentIdentity;
@@ -63,8 +67,9 @@ function bindUserIdentity(agent: Agent, extras: ResolveExtras): void {
     channel: 'feishu',
     ...(user.agentId !== undefined ? { agentId: user.agentId } : {}),
     ...(user.appId !== undefined ? { appId: user.appId } : {}),
+    ...(user.unionId !== undefined ? { unionId: user.unionId } : {}),
     subjectId: user.openId,
-    userId: userKey(user.openId, user.appId),
+    userId: userKey(user.openId, user.appId, user.unionId),
     context: {
       chatId: user.chatId,
       ...(user.accountId !== undefined ? { accountId: user.accountId } : {}),
@@ -82,7 +87,7 @@ async function syncWorkingDirectory(ctx: Context, agent: Agent, cwd: string): Pr
   if (service && service.get(agent.session) !== cwd) await service.set(agent, cwd);
 }
 
-function agentOptions(
+export function agentOptions(
   config: Config,
   ctx: Context,
 ): { provider?: string; model?: string; reasoningEffort?: string } | undefined {
@@ -91,8 +96,8 @@ function agentOptions(
       | { currentSelection(): { provider: string; model: string } }
       | undefined
   )?.currentSelection();
-  // 模型三层:显式 bot 字段 > 身份 manifest(agents/<agentId>/manifest.yml) > profile 默认。
-  const manifestModel = config.manifest?.model;
+  // 模型三层:显式 bot 字段 > 身份 manifest(agents/<agentId>/manifest.yml,每次挂载热读) > profile 默认。
+  const manifestModel = effectiveManifest(config)?.model;
   const provider = config.provider ?? manifestModel?.provider ?? selection?.provider;
   const model = config.model ?? manifestModel?.name ?? selection?.model;
   const effort = config.reasoningEffort ?? manifestModel?.reasoningEffort;
@@ -244,7 +249,7 @@ const AGENT_PROTO_ALLOW: Readonly<Record<string, readonly string[]>> = {
 /** Effective allowlist: explicit bot config wins; otherwise the identity manifest proto set; otherwise the patch baseline. */
 function effectiveAllowPatterns(config: Config): readonly string[] | undefined {
   if (config.agentToolAllow !== undefined) return config.agentToolAllow;
-  const proto = config.manifest?.proto;
+  const proto = effectiveManifest(config)?.proto;
   const protoSet = proto !== undefined ? AGENT_PROTO_ALLOW[proto] : undefined;
   return protoSet ?? config.agentToolAllow;
 }

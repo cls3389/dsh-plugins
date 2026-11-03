@@ -169,6 +169,11 @@ export interface FooterSessionMetrics {
 }
 
 export interface StreamingCardDeps {
+  notification?: {
+    uuid: string;
+    state?: { cardMessageId: string | null; cardKitCardId: string | null; cardKitSequence: number };
+    checkpoint(state: { cardMessageId: string | null; cardKitCardId: string | null; cardKitSequence: number }): void;
+  };
   cfg: ClawdbotConfig;
   agentId: string;
   sessionKey: string;

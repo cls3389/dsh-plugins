@@ -1,24 +1,10 @@
 {
   "name": "@dsh-friends/ths-trade",
-  "version": "0.4.2",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./index.js",
-    "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon/icon.svg"
-  },
-  "files": [
-    "index.js",
-    "signal-explain.js",
-    "cordis.patch.yml",
-    "locale/*.json",
-    "icon/icon.svg"
-  ],
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
-  },
-  "description": "同花顺交易:账户/下单/撤单+AI分时信号条件单+数据中心自选股(行情与盯盘已拆至 @dsh-friends/ths-market)"
+  "exports": { ".": "./index.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon/icon.svg" },
+  "files": ["index.js", "cordis.patch.yml", "locale/*.json", "icon/icon.svg"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "description": "同花顺交易：账户查询、真实下单与撤单（自选与智能交易均为独立插件）"
 }

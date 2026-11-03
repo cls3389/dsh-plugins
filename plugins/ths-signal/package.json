@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-friends/ths-signal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon/icon.svg"
+  },
+  "files": ["index.js", "signal-explain.js", "cordis.patch.yml", "locale/*.json", "icon/icon.svg"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "description": "AI 分时交易：信号状态、决策解释与信号投递（独立用户 aiSignal 连接）"
+}

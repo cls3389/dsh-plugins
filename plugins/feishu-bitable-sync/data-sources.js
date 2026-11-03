@@ -4,21 +4,30 @@
  */
 
 export class FqgateClient {
-  constructor({ baseUrl, timeoutMs = 20000, logger }) {
+  constructor({ baseUrl, timeoutMs = 20000, logger, apiKey = '' }) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.timeoutMs = timeoutMs;
     this.logger = logger ?? console;
+    this.apiKey = apiKey;
   }
 
   async post(path, body) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error(`FQGate 超时: ${path}`)), this.timeoutMs);
     try {
-      const resp = await fetch(`${this.baseUrl}${path}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body), signal: controller.signal,
-      });
-      const data = await resp.json().catch(() => ({}));
+      let resp;
+      let data;
+      // 报价请求全部只读且按证券幂等。hub 冷请求偶尔在上游等待超时，
+      // 限一次重试；业务 4xx/字段拒绝绝不重试。
+      for (let attempt = 0; attempt < 2; attempt++) {
+        resp = await fetch(`${this.baseUrl}${path}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}) },
+          body: JSON.stringify(body), signal: controller.signal,
+        });
+        data = await resp.json().catch(() => ({}));
+        if (resp.status !== 502 && resp.status !== 504) break;
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 300));
+      }
       if (!resp.ok || data.code !== 0) {
         throw new Error(`FQGate ${path}: ${data.message ?? `HTTP ${resp.status}`}`);
       }

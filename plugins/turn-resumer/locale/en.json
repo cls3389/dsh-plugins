@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Interrupted Turn Resumer",
+    "description": "Resume turns after restarts and retry upstream stream interruptions twice, 10 seconds apart."
+  }
+}

@@ -1,30 +1,23 @@
-# 完整插件配置：安装后按本机服务地址和盯盘策略修改；密钥只留空或在本机外层配置。
-# 自动执行有双门禁：同 profile 安装 ths-trade 且 xiadanApiKey 非空；否则仅提醒。
+# 完整插件配置：安装后按本机服务地址修改；密钥留空走 tokenFile 引用。
+# 2026-11-02 起本插件只是薄壳：行情/盯盘业务全部在 ths-data-hub(127.0.0.1:17896)。
+# 不再含 FQGate/THS 协议、本地盯盘引擎、xiadan 配置——那些只属于中心。
 - insert:
     - id: ths-market
       name: '@dsh-friends/ths-market'
       config:
-        fqgateBaseUrl: http://127.0.0.1:18000
-        # 只有一个数据连接时留空；多个连接填 GET /v2/source-instances 的 instanceId。
-        fqgateInstanceId: ''
-        dataCenterBaseUrl: http://127.0.0.1:17890
+        # 数据中心（行情工具唯一后端；多用户时按 usersFile 条目覆盖）
+        dataCenterBaseUrl: http://127.0.0.1:17896
         dataCenterApiKey: ''
-        marginCollateralBaseUrl: https://www.cnhbstock.com/tt/308
-        treasuryYieldBaseUrl: https://home.treasury.gov/resource-center/data-chart-center/interest-rates
-        requestTimeoutMs: 15000
-        # 盯盘引擎与规则持久化。
-        # 公共默认关闭；需要盯盘时在本机完整配置中启用，并指定唯一 master。
+        dataCenterApiKeyFile: ''
+        # 盯盘：同一中心进程，插件仅作 HTTP 客户端
         watchEnabled: false
-        watchIntervalMs: 30000
-        watchExclusiveMaster: any
-        watchRulesFile: /data/dsh/home/dsh-management/watch-rules.json
-        # 可选自动执行后端；未配置时自动降级为纯提醒。
-        xiadanBaseUrl: http://127.0.0.1:18710
-        xiadanApiKey: ''
-        autoTradeMaxOrderValue: 80000
-        autoTradeDailyMaxValue: 200000
-        autoTradeMaxDeviationPercent: 2
-        autoTradeHaltGuardPercent: 0.5
+        watchServiceBaseUrl: http://127.0.0.1:17896
+        watchServiceToken: ''
+        watchServiceTokenFile: ''
+        # 唤醒桥（仅承载飞书 agent registry 的身份开启；监听 loopback）
+        watchWakeBridgeEnabled: false
+        watchWakeBridgePort: 17921
+        requestTimeoutMs: 15000
         # 工具面过滤：deny 优先；allow 为空表示不过滤。
         toolDeny: []
         toolAllow: []

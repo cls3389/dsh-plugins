@@ -1,0 +1,35 @@
+{
+  "name": "@dsh-friends/turn-resumer",
+  "version": "0.4.1",
+  "type": "module",
+  "main": "./main.js",
+  "exports": {
+    ".": "./main.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "main.js",
+    "cordis.patch.yml",
+    "README.md",
+    "test-regressions.mjs",
+    "locale/*.json"
+  ],
+  "scripts": {
+    "test": "node --test test-regressions.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "DSH 进程中断后自动续接，并对 upstream stream interrupted 每隔10秒重试、最多2次",
+  "keywords": [
+    "dsh",
+    "session",
+    "resumer",
+    "reliability"
+  ],
+  "license": "MIT"
+}

@@ -186,6 +186,7 @@ export async function sendCardByCardId(params: {
   cfg: ClawdbotConfig;
   to: string;
   cardId: string;
+  uuid?: string;
   replyToMessageId?: string;
   replyInThread?: boolean;
   accountId?: string;
@@ -233,6 +234,7 @@ export async function sendCardByCardId(params: {
     params: { receive_id_type: receiveIdType as any },
     data: {
       receive_id: target,
+      ...(params.uuid ? { uuid: params.uuid } : {}),
       msg_type: 'interactive',
       content: contentPayload,
     },

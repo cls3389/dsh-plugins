@@ -1,40 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { entryRows, lexicalRequiredMatchCount, lexicalSearchTokens, scanSecrets } from '@jipika/dsh-memory';
-import { assertOpenId, identityOf, workspaceFor } from '../feishu-principal/index.js';
+import { identityOf, memoryForIdentity } from '../feishu-principal/index.js';
 
 export const name = 'dsh-memory';
 export const inject = ['tools'];
 const writeQueues = new Map();
 const output = { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
 
-function rootFor(config, openId, appId, agentId) {
-  assertOpenId(openId);
-  // 身份中心(2026-10-30):档案根 = agents/<agentId>/users/<userId>(appId 域仍用于身份簇解析)。
-  if (agentId) {
-    if (!config.agentsRoot && !config.workspaceRoot) throw new Error('用户记忆尚未配置身份根目录');
-    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(agentId)) throw new Error('无效身份目录名');
-    const agentRootPath = path.join(config.agentsRoot ?? config.workspaceRoot, agentId);
-    return path.join(workspaceFor(agentRootPath, openId, appId), '.dsh', 'memory');
+function rootFor(config, identity) {
+  // 用户中心唯一布局(2026-11-02 定稿): users/<userId>/<agentId>/memory。
+  // 记忆在 workspace 围栏外,bash/write 不能绕过 memory_write 审计钩子。
+  if (!identity?.agentId || !identity?.userId) {
+    throw new Error('当前执行上下文缺少身份簇 agentId/userId,无法定位用户记忆目录');
   }
-  if (!config.workspaceRoot) throw new Error('飞书用户记忆尚未配置 workspaceRoot');
-  if (appId && (!config.appsRoot || !/^cli_[a-z0-9]+$/i.test(appId))) throw new Error('飞书应用身份或记忆根目录无效');
-  const appRoot = appId ? path.join(config.appsRoot, appId) : config.workspaceRoot;
-  return path.join(workspaceFor(appRoot, openId, appId), '.dsh', 'memory');
+  return memoryForIdentity(identity);
 }
-// 身份读取双轨(基座化过渡期):优先宿主级 agent.identity,回退兼容 larkUser。
-// identityOf 已含 larkUser 合成分支,这里 larkUser 直读优先仅为避免合成时的
-// userKey 身份簇解析开销;两轨提取的 {openId, appId, agentId} 语义一致。
-function identityFields(agent) {
-  const larkUser = agent?.larkUser;
-  if (larkUser) return { openId: larkUser.openId, appId: larkUser.appId, agentId: larkUser.agentId };
-  const identity = identityOf(agent);
-  if (!identity) return {};
-  return { openId: identity.subjectId, appId: identity.appId, agentId: identity.agentId };
-}
+// 身份读取:统一走 identityOf(larkUser 合成分支在内),rootFor 按渠道分流。
 function agentRoot(config, exec) {
-  const { openId, appId, agentId } = identityFields(exec?.agent);
-  return rootFor(config, openId, appId, agentId);
+  const identity = identityOf(exec?.agent);
+  if (!identity) throw new Error('当前执行上下文缺少可信用户身份，已拒绝访问用户记忆');
+  return rootFor(config, identity);
 }
 function shards(root) {
   const directory = path.join(root, 'topics');
@@ -62,11 +48,18 @@ function memoryMap(root) {
   });
 }
 function prompt(config, context) {
-  const { openId, appId, agentId } = identityFields(context?.agent);
-  if (!openId) return '';
-  const root = rootFor(config, openId, appId, agentId);
+  const identity = identityOf(context?.agent);
+  if (!identity?.subjectId) return '';
+  // prompt 装载对身份不完整(缺簇 agentId/userId)的上下文降级为空,不抛错:
+  // 历史会话的 systemPrompt 渲染不能因收敛失败而崩,写入/检索工具仍 fail-closed。
+  let root;
+  try {
+    root = rootFor(config, identity);
+  } catch {
+    return '';
+  }
   const map = memoryMap(root);
-  return `<!-- 用户级长期记忆 · 仅当前可信 senderOpenId 对应工作区；不读取管理员或其他用户记忆 -->\n${map.length ? map.join('\n') : '当前用户尚无长期记忆。'}\n<!-- 非琐碎任务先用 memory_search 查相关事实，再用 memory_read 按行读取；只把可复用的偏好、结论、坑写入 memory_write，不记过程叙述或任何凭据。 -->`;
+  return `<!-- 用户级长期记忆 · 仅当前可信渠道身份对应工作区；不读取管理员或其他用户记忆 -->\n${map.length ? map.join('\n') : '当前用户尚无长期记忆。'}\n<!-- 非琐碎任务先用 memory_search 查相关事实，再用 memory_read 按行读取；只把可复用的偏好、结论、坑写入 memory_write，不记过程叙述或任何凭据。 -->`;
 }
 
 /** Same lexical relevance model as dsh-memory, restricted to one user's shards. */
@@ -172,7 +165,7 @@ export function apply(ctx, config) {
   else mountPrompt(ctx);
   ctx.tools.register({
     name: 'memory_search',
-    description: '检索当前飞书用户的长期记忆，返回相关度、主题与行号。只搜索本人用户工作区，不支持跨用户或管理员记忆。任务开工找线索先用它，再 memory_read 按行读取。',
+    description: '检索当前用户的长期记忆（飞书/微信等渠道身份各自独立档案），返回相关度、主题与行号。只搜索本人用户工作区，不支持跨用户或管理员记忆。任务开工找线索先用它，再 memory_read 按行读取。',
     parameters: { type: 'object', properties: { query: { type: 'string', description: '中文/英文检索词，越具体越好' }, limit: { type: 'integer', description: '最多 20 条，默认 8' } }, required: ['query'] }, output,
     execute: async (args, exec) => searchUserMemory(agentRoot(config, exec), args.query, args.limit),
   });
@@ -191,7 +184,7 @@ export function apply(ctx, config) {
   ctx.tools.register({
     name: 'memory_write',
     description: '写入当前用户自己的长期记忆。entry 格式 - [YYYY-MM-DD] 可复用事实；记偏好、结论和坑，不记过程叙述或凭据。默认 append 追加；mode=replace 带 memory_search 返回的 line 就地修正旧结论。只能修改本人主题分片。',
-    parameters: { type: 'object', properties: { topic: { type: 'string', description: '小写主题名，如 preferences/trading' }, keywords: { type: 'string', description: '单行主题关键词，供检索路由' }, entry: { type: 'string', description: '- [YYYY-MM-DD] 一条可复用事实' }, mode: { type: 'string', enum: ['append', 'replace'], description: '默认 append' }, line: { type: 'integer', description: 'replace 时指定旧条目行号' } }, required: ['topic', 'keywords', 'entry'] }, output,
+    parameters: { type: 'object', properties: { topic: { type: 'string', description: '小写主题名（仅小写字母/数字/连字符，不用斜杠），如 preferences、trading-log' }, keywords: { type: 'string', description: '单行主题关键词，供检索路由' }, entry: { type: 'string', description: '- [YYYY-MM-DD] 一条可复用事实' }, mode: { type: 'string', enum: ['append', 'replace'], description: '默认 append' }, line: { type: 'integer', description: 'replace 时指定旧条目行号' } }, required: ['topic', 'keywords', 'entry'] }, output,
     execute: async (args, exec) => writeMemory(agentRoot(config, exec), args),
   });
   console.log('[dsh-memory] active: per-user memory_search/memory_read/memory_write');

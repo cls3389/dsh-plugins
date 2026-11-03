@@ -32,6 +32,8 @@ export interface Config {
   readonly groupMentionMode?: 'always' | 'never' | 'ambient';
   readonly replyMode?: 'streaming';
   readonly tools?: { readonly deny?: string[] };
+  /** false disables all; 'messages' keeps only current-chat text/image messaging tools. */
+  readonly officialTools?: boolean | 'messages';
   /** Allowlist for the complete DSH tool catalog exposed through this channel. */
   readonly agentToolAllow?: string[];
   readonly mcpEndpoint?: string;
@@ -41,6 +43,8 @@ export interface Config {
   readonly agentId?: string;
   /** Resolved identity manifest (proto/model) loaded during resolveBots. */
   readonly manifest?: AgentManifest;
+  /** Resolved agents root attached by resolveBots so manifest edits hot-apply per agent mount. */
+  readonly agentsRoot?: string;
   /** Local secret-bearing JSON array used instead of embedding all bot credentials in YAML. */
   readonly botsFile?: string;
   /** Account used by this channel instance; the primary bot uses "default". */
@@ -72,6 +76,7 @@ export const Config: z<Config> = z.object({
     .required(false),
   replyMode: z.const('streaming').required(false),
   tools: z.object({ deny: z.array(z.string()).required(false) }).required(false),
+  officialTools: z.union([z.boolean(), z.const('messages')]).required(false),
   agentToolAllow: z.array(z.string()).required(false),
   mcpEndpoint: z.string().required(false),
   accountId: z.string().required(false),
@@ -126,6 +131,21 @@ export function readAgentManifest(agentsRoot: string, agentId: string): AgentMan
   return manifest.proto === undefined && manifest.model === undefined && manifest.displayName === undefined ? undefined : manifest;
 }
 
+/**
+ * 热读 manifest:每次 agent 挂载时重读 agents/<agentId>/manifest.yml(2026-11-04)。
+ * 背景:manifest 曾在 resolveBots(服务启动)时读一次,改模型必须重启整个身份服务;
+ * 且钉死的 provider 被删后启动期无校验,错误漏到第一条消息才炸给终端用户。
+ * 读失败(文件被删/语法坏)回退启动快照,不放大故障。
+ */
+export function effectiveManifest(
+  config: Pick<Config, 'agentId' | 'agentsRoot' | 'manifest'>,
+): AgentManifest | undefined {
+  if (config.agentId && config.agentsRoot) {
+    return readAgentManifest(config.agentsRoot, config.agentId) ?? config.manifest;
+  }
+  return config.manifest;
+}
+
 /** Resolve independent account/storage/workspace settings without sharing session registries. */
 export function resolveBots(config: Config): Config[] {
   const primary = resolveCredentials(config);
@@ -139,7 +159,7 @@ export function resolveBots(config: Config): Config[] {
     const manifest = agentId ? readAgentManifest(agentsRoot, agentId) : undefined;
     const dataDir = entry.dataDir ?? (primaryBot ? undefined : join(larkBotsRoot(), accountId));
     const workspaceRoot = agentId ? (entry.workspaceRoot ?? join(agentsRoot, agentId)) : entry.workspaceRoot;
-    return { ...base, ...entry, ...(manifest ? { manifest } : {}), ...(dataDir ? { dataDir } : {}), ...(workspaceRoot ? { workspaceRoot } : {}), accountId };
+    return { ...base, ...entry, ...(manifest ? { manifest } : {}), ...(dataDir ? { dataDir } : {}), ...(workspaceRoot ? { workspaceRoot } : {}), agentsRoot, accountId };
   };
   const bots: Config[] = primary ? [resolveOne({ ...base, ...primary }, 'default', true)] : [];
   const seen = new Set(bots.map((bot) => bot.accountId));
@@ -199,7 +219,7 @@ export function resolveCredentials(config: Config): Credentials | undefined {
 
 /**
  * appSecretEnv 解析:先环境变量,再 $DSH_HOME/.credentials.yaml 的 refs: 段直读
- * (feishu profile 下 credentials 服务未挂载;与 media-tools 同款兜底,只匹配 refs 段内缩进行)。
+ * (feishu profile 下 credentials 服务未挂载;与 image-tools 同款兜底,只匹配 refs 段内缩进行)。
  */
 function resolveSecretRef(ref: string): string | undefined {
   const fromEnv = process.env[ref];

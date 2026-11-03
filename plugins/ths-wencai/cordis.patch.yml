@@ -1,0 +1,11 @@
+# 问财(iwencai)独立域：查询 + 扫码登录，全部经 ths-data-hub。
+# 与行情、自选登录独立；本人登录准入，公共问题走共享答案缓存与账号池，个人问题隔离。
+- insert:
+    - id: ths-wencai
+      name: '@dsh-friends/ths-wencai'
+      config:
+        dataHubBaseUrl: http://127.0.0.1:17896
+        dataHubToken: ''
+        dataHubTokenFile: ''
+        dataHubTimeoutMs: 20000
+        defaultAppId: cli_replace_me

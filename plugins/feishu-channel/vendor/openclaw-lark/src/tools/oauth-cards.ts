@@ -103,6 +103,8 @@ export function buildAuthCard(params: {
   verificationUriComplete: string;
   expiresMin: number;
   scope?: string;
+  // DSH-PATCH(2026-11-03): 能力域中文名，让用户一眼看出这次授的是哪个能力
+  capabilityLabel?: string;
   isBatchAuth?: boolean;
   totalAppScopes?: number;
   alreadyGranted?: number;
@@ -116,6 +118,7 @@ export function buildAuthCard(params: {
     verificationUriComplete,
     expiresMin,
     scope,
+    capabilityLabel: capabilityLabelText,
     isBatchAuth,
     totalAppScopes,
     alreadyGranted,
@@ -133,7 +136,16 @@ export function buildAuthCard(params: {
     ios_url: inAppUrl,
   };
 
-  const scopeParams = { scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo, filteredScopes, appId };
+  const scopeParams = {
+    scope,
+    capabilityLabel: capabilityLabelText,
+    isBatchAuth,
+    totalAppScopes,
+    alreadyGranted,
+    batchInfo,
+    filteredScopes,
+    appId,
+  };
   const scopeDescZh = formatScopeDescription('zh_cn', scopeParams);
   const scopeDescEn = formatScopeDescription('en_us', scopeParams);
 
@@ -225,6 +237,7 @@ export function formatScopeDescription(
   locale: Locale,
   params: {
     scope?: string;
+    capabilityLabel?: string;
     isBatchAuth?: boolean;
     totalAppScopes?: number;
     alreadyGranted?: number;
@@ -233,7 +246,7 @@ export function formatScopeDescription(
     appId?: string;
   },
 ): string {
-  const { scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo } = params;
+  const { scope, capabilityLabel, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo } = params;
   const t = CARD_TEXTS[locale];
   const scopes = scope?.split(/\s+/).filter(Boolean);
 
@@ -257,7 +270,13 @@ export function formatScopeDescription(
 
   if (!scopes?.length) return t.scopeDesc;
 
-  return t.scopeDesc + '\n\n' + t.requiredScopes + '\n' + scopes.map((s) => `- ${s}`).join('\n');
+  const capPrefix = capabilityLabel
+    ? locale === 'zh_cn'
+      ? `**本次授权能力域：${capabilityLabel}**（共 ${scopes.length} 项权限，一次补齐）\n\n`
+      : `**Capability being granted: ${capabilityLabel}** (${scopes.length} scopes in one go)\n\n`
+    : '';
+
+  return capPrefix + t.scopeDesc + '\n\n' + t.requiredScopes + '\n' + scopes.map((s) => `- ${s}`).join('\n');
 }
 
 export function toInAppWebUrl(targetUrl: string, brand?: LarkBrand): string {

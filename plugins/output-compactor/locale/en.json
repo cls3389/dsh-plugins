@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Command Output Compactor",
+    "description": "Provides bash_compact to reduce verbose command output with tokenjuice while preserving error context and lowering token usage."
+  }
+}

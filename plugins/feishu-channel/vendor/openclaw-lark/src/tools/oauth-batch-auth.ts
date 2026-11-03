@@ -11,6 +11,7 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { Type } from '@sinclair/typebox';
 import { getAppGrantedScopes } from '../core/app-scope-checker';
+import { appPermissionAuthUrl } from '../core/app-auth-url';
 import { AppScopeCheckFailedError } from '../core/tool-client';
 import { getStoredToken } from '../core/token-store';
 import { getLarkAccount } from '../core/accounts';
@@ -18,7 +19,6 @@ import { getTicket } from '../core/lark-ticket';
 import { LarkClient } from '../core/lark-client';
 import { formatLarkError } from '../core/api-error';
 import { filterSensitiveScopes } from '../core/tool-scopes';
-import { openPlatformDomain } from '../core/domains';
 import { larkLogger } from '../core/lark-logger';
 import { json, registerTool } from './oapi/helpers';
 import { executeAuthorize } from './oauth';
@@ -28,10 +28,14 @@ const log = larkLogger('tools/oauth-batch-auth');
 const FeishuOAuthBatchAuthSchema = Type.Object(
   {},
   {
+    // DSH-PATCH(2026-11-03): 原描述写"禁止主动推荐此工具，仅在用户明确要求时使用"，
+    // 导致模型只在用户喊"授权所有权限"时才走批量入口，其余场景一律退回
+    // feishu_oauth(action=authorize) 的固定 4 个 im scope → 表现为"每次只开一个权限、
+    // 反复弹卡片"，体验极差。改为：缺权限时首选本工具，一次补全所有缺失 scope。
     description:
       '飞书批量授权工具。一次性授权应用已开通的所有用户权限（User Access Token scope）。' +
-      "【使用场景】用户明确要求'授权所有权限'、'一次性授权完成'时使用。" +
-      '【重要】禁止主动推荐此工具，仅在用户明确要求时使用。',
+      '【首选场景】任何工具提示缺少用户权限/未授权时，优先用本工具一次性补全，' +
+      "不要用 feishu_oauth 一个个补。用户说'授权所有权限'、'一次性授权完成'时也用它。",
   },
 );
 
@@ -47,7 +51,8 @@ export function registerFeishuOAuthBatchAuthTool(api: OpenClawPluginApi): void {
       label: 'Feishu: OAuth Batch Authorization',
       description:
         '飞书批量授权工具，一次性授权应用已开通的所有用户权限。' +
-        "仅在用户明确要求'授权所有权限'、'一次性授权'时使用。",
+        '缺少用户权限时的首选入口：一次补全全部缺失 scope，避免反复弹卡片逐个授权。' +
+        "用户说'授权所有权限'、'一次性授权'时也用它。",
       parameters: FeishuOAuthBatchAuthSchema,
 
       async execute(_toolCallId: string, _params: unknown) {
@@ -81,7 +86,7 @@ export function registerFeishuOAuthBatchAuthTool(api: OpenClawPluginApi): void {
                 message:
                   `应用缺少核心权限 application:application:self_manage，无法查询可授权 scope 列表。\n\n` +
                   `请管理员在飞书开放平台开通此权限后重试。`,
-                permission_link: `${openPlatformDomain(account.brand)}/app/${appId}/auth?q=application:application:self_manage`,
+                permission_link: appPermissionAuthUrl(appId, ['application:application:self_manage'], account.brand),
                 app_id: appId,
               });
             }
@@ -146,6 +151,9 @@ export function registerFeishuOAuthBatchAuthTool(api: OpenClawPluginApi): void {
             account,
             senderOpenId,
             scope,
+            // DSH-PATCH(2026-11-03): 批量入口语义就是"全部能力"，
+            // 传给 executeAuthorize 让授权卡片与返回结果也按能力说明。
+            capability: 'all',
             isBatchAuth: true,
             totalAppScopes: appScopes.length,
             alreadyGranted: alreadyGrantedScopes.length,

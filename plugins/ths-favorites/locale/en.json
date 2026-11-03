@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "THS Favorites (per-user)",
-    "description": "Per-user THS favorites via official API: QR/cookie/password login, groups, stocks, sharing. Session-scoped."
+    "description": "Personal watchlists with QR login and non-destructive login checks, groups, stocks, ordering and sharing. Membership is isolated by user identity; public quotes enrich names and prices."
   }
 }

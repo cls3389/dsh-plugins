@@ -1,9 +1,9 @@
 {
   "name": "@dsh-friends/ths-market",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "test": "node --test test-security.mjs test-fqgate-v2.mjs test-data-center-klines.mjs test-market-output.mjs test-yield-curve.mjs test-user-isolation.mjs test-watch-master.mjs"
+    "test": "node --test test-adapter.mjs test-watch-service-client.mjs test-watch-wake.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -12,17 +12,10 @@
   },
   "files": [
     "index.js",
-    "yield-curve.js",
-    "market-output.js",
-    "fqgate-v2.js",
-    "data-center-klines.js",
-    "test-data-center-klines.mjs",
-    "test-fqgate-v2.mjs",
-    "test-security.mjs",
-    "test-market-output.mjs",
-    "test-yield-curve.mjs",
-    "test-user-isolation.mjs",
-    "test-watch-master.mjs",
+    "watch-wake.js",
+    "test-adapter.mjs",
+    "test-watch-service-client.mjs",
+    "test-watch-wake.mjs",
     "cordis.patch.yml",
     "locale/*.json"
   ],
@@ -31,6 +24,6 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "同花顺行情+盯盘(纯提醒或双门禁自动执行):行情9工具+美国财政部收益率曲线+盯盘引擎,自动执行须同装 ths-trade",
+  "description": "同花顺行情与提醒：9个行情/数据查询工具及4个提醒管理工具（增查改删），业务统一由 ths-data-hub 提供",
   "license": "MIT"
 }

@@ -1,0 +1,21 @@
+{
+  "name": "@dsh-friends/output-compactor",
+  "version": "0.1.1",
+  "type": "module",
+  "private": true,
+  "description": "Compress bash tool output with tokenjuice to reduce token usage",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "cordis.patch.yml", "locale/*.json"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "tokenjuice": "*"
+  }
+}

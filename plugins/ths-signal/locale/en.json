@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "THS AI Intraday Trading",
+    "description": "Inspect AI intraday trading engine status and decisions, and submit top/bottom signals for scoring, condition orders, and configured execution. Accounts and regular orders belong to ths-trade."
+  }
+}

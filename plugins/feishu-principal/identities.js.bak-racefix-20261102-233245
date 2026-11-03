@@ -1,0 +1,208 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
+/**
+ * 渠道身份 → userId 解析(identity cluster)。
+ * userId 不是先验自然人,而是身份簇的稳定引用:
+ *  - 首个 (channel, appId, openId) 首次出现自动建 userId 并登记;
+ *  - 同一人更多渠道身份通过显式 bind 并入(管理员 CLI 或用户自证,起步仅 CLI);
+ *  - 簇之间默认互不相认,系统不做任何猜测。
+ * 文件 $DSH_HOME/identities.json(0600):
+ *   { users: { u_x: { displayName, identities: [{channel, appId, openId, boundAt}] } } }
+ */
+
+const cache = new WeakMap();
+
+/** 用户档案根(与 index.js 的 USER_ROOT 同源)：用于合并簇时判断哪边有真实数据。 */
+function userRootPath() {
+  const dshHome = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh');
+  return path.join(dshHome, 'home', 'users');
+}
+
+function hasUserData(userId) {
+  try {
+    return fs.existsSync(path.join(userRootPath(), userId));
+  } catch {
+    return false;
+  }
+}
+
+function identitiesPath() {
+  const dshHome = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh');
+  return path.join(dshHome, 'identities.json');
+}
+
+function load(state) {
+  if (state.data) return state.data;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(state.path, 'utf8'));
+    state.data = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : { users: {} };
+  } catch (error) {
+    if (error?.code === 'ENOENT') state.data = { users: {} };
+    else throw new Error(`identities.json 读取失败: ${error.message}`);
+  }
+  if (!state.data.users || typeof state.data.users !== 'object') state.data.users = {};
+  if (state.index === undefined) buildIndex(state);
+  return state.data;
+}
+
+function buildIndex(state) {
+  state.index = new Map();
+  state.unionIndex = new Map();
+  for (const [userId, user] of Object.entries(state.data.users)) {
+    for (const identity of user.identities ?? []) {
+      state.index.set(indexKey(identity), userId);
+      // union_id 是飞书「同一开发者旗下跨应用」的稳定人标识:
+      // 同一个人在不同 bot(不同 appId)下 open_id 不同,但 union_id 相同,
+      // 用它归并才能做到「一个飞书账号=一个身份」,不必多处登录。
+      if (identity.unionId) state.unionIndex.set(identity.unionId, userId);
+    }
+  }
+}
+
+function indexKey({ channel, appId, openId }) {
+  return crypto.createHash('sha256').update(`${channel}:${appId}:${openId}`).digest('hex').slice(0, 40);
+}
+
+function save(state) {
+  fs.mkdirSync(path.dirname(state.path), { recursive: true });
+  const tmp = `${state.path}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(state.data, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, state.path);
+}
+
+function stateFor_(config) {
+  const pathValue = config?.identitiesFile ?? identitiesPath();
+  let state = cache.get(config ?? {});
+  if (!state || state.path !== pathValue) {
+    state = { path: pathValue, data: undefined, index: undefined };
+    cache.set(config ?? {}, state);
+  }
+  return state;
+}
+
+function newUserId(state) {
+  const ts = Date.now().toString(36);
+  const rand = crypto.randomBytes(4).toString('hex');
+  let candidate = `u_${ts}${rand}`;
+  while (state.data.users[candidate]) candidate = `u_${ts}${crypto.randomBytes(4).toString('hex')}`;
+  return candidate;
+}
+
+/**
+ * 解析渠道身份为 userId;未登记时自动建档登记。
+ *
+ * 归并优先级(实现「一个飞书账号=一个身份」):
+ *  1. 精确 (channel, appId, openId) 已登记 → 直接命中;
+ *  2. 否则看 union_id:同一开发者旗下跨应用的人标识。命中则把当前身份
+ *     登记进那个已有簇,后续从任何 bot 来都归同一 userId;
+ *  3. 都没有 → 新建簇。
+ * @returns {{ userId: string, created: boolean, merged?: boolean, displayName?: string }}
+ */
+export function resolveIdentity(identity, options = {}) {
+  if (!identity?.channel || !identity?.appId || !identity?.openId) {
+    throw new Error('身份三元组不完整:需要 channel/appId/openId');
+  }
+  const state = stateFor_(options);
+  load(state);
+  const key = indexKey(identity);
+  const existing = state.index.get(key);
+  if (existing) {
+    if (identity.unionId) {
+      const owner = state.unionIndex?.get(identity.unionId);
+      // 该身份自己是否还缺 union_id：缺就补录。这一支必须独立于 owner 是否存在，
+      // 否则「簇里另一个身份已有 union、本身份还没写」时永远补不上。
+      const entry = (state.data.users[existing]?.identities ?? []).find((it) => indexKey(it) === key);
+      if (entry && !entry.unionId) {
+        entry.unionId = identity.unionId;
+        state.unionIndex?.set(identity.unionId, existing);
+        if (options.readonly !== true) save(state);
+      }
+      if (owner && owner !== existing) {
+        // 同一个 union 已经归到另一个簇（通常因为旧簇先去见过别的 bot 而新生成了簇）。
+        // 合并两簇，保留有真实档案目录的一边，避免搬数据。
+        const keep = hasUserData(existing) && !hasUserData(owner) ? existing : owner;
+        const drop = keep === existing ? owner : existing;
+        const kept = state.data.users[keep];
+        const dropped = state.data.users[drop];
+        const moved = dropped?.identities ?? [];
+        kept.identities = [...(kept.identities ?? []), ...moved];
+        for (const it of moved) {
+          state.index.set(indexKey(it), keep);
+          if (it.unionId) state.unionIndex.set(it.unionId, keep);
+        }
+        delete state.data.users[drop];
+        state.index.set(key, keep);
+        if (options.readonly !== true) save(state);
+        return { userId: keep, created: false, merged: true };
+      }
+    }
+    return { userId: existing, created: false };
+  }
+  // 同一自然人从另一个 bot 首次出现:union_id 命中已有簇 → 并入,不另起身份。
+  if (identity.unionId) {
+    const mergedId = state.unionIndex?.get(identity.unionId);
+    if (mergedId && state.data.users[mergedId]) {
+      state.data.users[mergedId].identities = [
+        ...(state.data.users[mergedId].identities ?? []),
+        { ...identity, boundAt: new Date().toISOString() },
+      ];
+      state.index.set(key, mergedId);
+      state.unionIndex.set(identity.unionId, mergedId);
+      if (options.readonly !== true) save(state);
+      return { userId: mergedId, created: false, merged: true };
+    }
+  }
+  const userId = newUserId(state);
+  state.data.users[userId] = {
+    displayName: identity.displayName,
+    identities: [{ ...identity, boundAt: new Date().toISOString() }],
+  };
+  state.index.set(key, userId);
+  if (identity.unionId) state.unionIndex.set(identity.unionId, userId);
+  if (options.readonly !== true) save(state);
+  return { userId, created: true };
+}
+
+/**
+ * 把一个渠道身份显式并入目标 userId(管理员绑定)。
+ * 身份若已属于其他 userId,先解绑再并入;返回被并入前的旧 userId(供调用方迁移档案)。
+ */
+export function bindIdentity(userId, identity, options = {}) {
+  const state = stateFor_(options);
+  load(state);
+  const target = state.data.users[userId];
+  if (!target) throw new Error(`目标 userId 不存在: ${userId}`);
+  const key = indexKey(identity);
+  const previousUserId = state.index.get(key);
+  if (previousUserId === userId) return { previousUserId: undefined };
+  if (previousUserId) {
+    const previous = state.data.users[previousUserId];
+    previous.identities = (previous.identities ?? []).filter((entry) => indexKey(entry) !== key);
+    // 旧簇被腾空则删除，并清掉其 unionIndex 指向，避免归并到不存在的簇。
+    if ((previous.identities ?? []).length === 0) {
+      delete state.data.users[previousUserId];
+      for (const [union, owner] of state.unionIndex ?? []) {
+        if (owner === previousUserId) state.unionIndex.delete(union);
+      }
+    }
+  }
+  target.identities = [...(target.identities ?? []), { ...identity, boundAt: new Date().toISOString() }];
+  state.index.set(key, userId);
+  if (identity.unionId) state.unionIndex.set(identity.unionId, userId);
+  if (options.readonly !== true) save(state);
+  // 合并后消费方缓存必须失效(principal 的 userKeyCache 按约定回调清理)。
+  if (typeof options.onBound === 'function') options.onBound({ userId, previousUserId });
+  return { previousUserId };
+}
+
+/** 列出全部身份簇(审计/CLI 展示)。 */
+export function listIdentities(options = {}) {
+  const state = stateFor_(options);
+  load(state);
+  return state.data.users;
+}

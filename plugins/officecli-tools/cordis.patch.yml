@@ -1,0 +1,19 @@
+# OfficeCLI 是自包含二进制，不依赖 Microsoft Office。
+- insert:
+    - id: officecli-tools
+      name: '@dsh-friends/officecli-tools'
+      config:
+        binary: /data/dsh/home/.local/bin/officecli
+        allowedPathPrefixes:
+          - /tmp/
+          - /data/dsh/
+          - /home/
+        maxOutputChars: 500000
+        requestTimeoutMs: 180000
+        # screenshot 模式走共享浏览器网关:officecli 渲染 HTML → POST /screenshot-html → PNG。
+        # 零本机浏览器依赖、零网络拓扑依赖(HTML 在请求体里)。
+        gateway:
+          enabled: true
+          baseUrl: http://127.0.0.1:18090
+          apiTokenRef: BROWSER_GATEWAY_TOKEN
+          requestTimeoutMs: 90000

@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/ths-favorites",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -17,10 +17,10 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "dependencies": {
-    "iconv-lite": "^0.6.3"
+  "scripts": {
+    "test": "node --test test-adapter.mjs"
   },
-  "description": "同花顺自选股(每用户独立登录态):扫码/Cookie/密码登录,分组与股票增删排序分享,直连官方接口",
+  "description": "同花顺自选股薄壳:登录/分组/增删排序分享全部经 ths-data-hub,按用户身份隔离,JS 零协议零状态",
   "license": "MIT",
   "peerDependencies": {
     "@dsh-friends/feishu-principal": "*"

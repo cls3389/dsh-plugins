@@ -41,7 +41,7 @@ async function readEndpoints(config, ctx) {
   const resolveKey = async (ref) => {
     if (!ref) return '';
     // credentials 服务未挂载的 profile(如 feishu)直读 $DSH_HOME/.credentials.yaml
-    // 的 refs 段(与 media-tools 同款兜底),再退环境变量。
+    // 的 refs 段(与 image-tools 同款兜底),再退环境变量。
     const credentials = ctx.get('credentials');
     if (credentials?.resolve) {
       try {

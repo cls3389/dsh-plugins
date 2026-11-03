@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-friends/officecli-tools",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "OfficeCLI 文档创建、读取、编辑、渲染和校验工具",
+  "keywords": ["officecli", "docx", "xlsx", "pptx", "document", "office"],
+  "license": "Apache-2.0"
+}

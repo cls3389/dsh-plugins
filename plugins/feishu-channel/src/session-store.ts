@@ -1,16 +1,20 @@
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { readUsers, userKey, workspaceFor } from '@dsh-friends/feishu-principal';
+import { listIdentities, readUsers, userKey, workspaceForIdentity } from '@dsh-friends/feishu-principal';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ChatModelSelection } from './model-selection.js';
 
-interface SessionBinding {
+export interface SessionBinding {
   readonly sessionId: string;
+  readonly previousSessionIds?: readonly string[];
+  readonly chatType?: 'p2p' | 'group';
   readonly cwd: string;
   /** Chat-pinned model override; absent means follow sticky/default routing. */
   readonly model?: ChatModelSelection;
   readonly openId?: string;
+  /** 飞书 union_id：跨应用人标识，用于身份簇归并（同一人换 bot 不换身份）。 */
+  readonly unionId?: string;
   readonly displayName?: string | undefined;
 }
 
@@ -38,6 +42,8 @@ export class SessionStore {
   private readonly agentsRoot: string;
   private cwd: string;
   private readonly userNames = new Map<string, string>();
+  /** openId → union_id：注册表/恢复会话时按人（而非按应用）解析身份簇。 */
+  private readonly userUnionIds = new Map<string, string>();
   private readonly recoveredUsers = new Map<string, string>();
   private identity?: { readonly agentId?: string | undefined; readonly appId?: string | undefined; readonly appName?: string | undefined; readonly botName?: string | undefined; readonly path: string } | undefined;
   private loaded = false;
@@ -71,24 +77,27 @@ export class SessionStore {
     if (!this.identity) return;
     for (const [chatId, binding] of this.bindings) {
       if (!binding.openId) continue;
-      const cwd = this.cwdFor(binding.openId);
+      const cwd = this.cwdFor(binding.openId, binding.unionId);
       if (cwd !== binding.cwd) this.bindings.set(chatId, { ...binding, cwd });
     }
   }
 
   async load(): Promise<void> {
+    if (this.loaded) return;
     try {
       const data = JSON.parse(await readFile(this.path, 'utf8')) as Record<string, SessionBinding & { openId?: string; displayName?: string }>;
       for (const [chatId, binding] of Object.entries(data)) {
         if (typeof binding.sessionId === 'string' && typeof binding.cwd === 'string') {
           const openId = binding.openId;
           if (openId) {
+            if (binding.unionId) this.userUnionIds.set(openId, binding.unionId);
             const configured = this.configuredDisplayName(openId);
-            this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${userKey(openId, this.identity?.appId).slice(0, 12)}`);
+            // Loading history is read-only even before application identity initialization.
+            this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${(this.existingUserId(openId) ?? openId).slice(0, 12)}`);
           }
           else {
-            // 兼容两代目录名:旧 openId-hash(24 hex)与身份簇 userId(u_xxx)。
-            const match = /\/users\/((?:[a-f0-9]{24})|(?:u_[a-z0-9_-]{1,63}))$/.exec(binding.cwd);
+            // 用户中心布局: users/<u_xxx>/<agentId>/workspace(取 userId 段)。
+            const match = /\/users\/(u_[a-z0-9_-]{1,63})\/[a-z0-9][a-z0-9-]{0,63}\/workspace$/.exec(binding.cwd);
             if (match) this.recoveredUsers.set(match[1]!, binding.cwd);
           }
           this.bindings.set(chatId, {
@@ -96,6 +105,9 @@ export class SessionStore {
             cwd: binding.cwd,
             ...(validModel(binding.model) ? { model: binding.model } : {}),
             ...(binding.openId ? { openId: binding.openId } : {}),
+            ...(binding.unionId ? { unionId: binding.unionId } : {}),
+            ...(binding.chatType ? { chatType: binding.chatType } : {}),
+            ...(Array.isArray(binding.previousSessionIds) ? { previousSessionIds: binding.previousSessionIds.filter((id): id is string => typeof id === 'string') } : {}),
             ...(binding.displayName ? { displayName: binding.displayName } : {}),
           });
         }
@@ -106,55 +118,105 @@ export class SessionStore {
     this.loaded = true;
   }
 
-  /** Admin-configured display name: top-level domain, or the applications.<appId> tier. */
+  /** Existing scoped identity lookup; display-name reads must never enroll a user. */
+  private existingUserId(openId: string): string | undefined {
+    const appId = this.identity?.appId;
+    if (!appId) return undefined;
+    const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+    return Object.entries(listIdentities({ identitiesFile: join(dshHome, 'identities.json') }))
+      .find(([, user]) => user.identities.some((identity) => identity.channel === 'feishu' && identity.appId === appId && identity.openId === openId))?.[0];
+  }
+
+  /** Admin-configured name: current users.<userId>, with legacy app/openId fallbacks. */
   private configuredDisplayName(openId?: string): string | undefined {
     if (!openId) return undefined;
     const appId = this.identity?.appId;
     type UserEntry = { displayName?: string };
-    type UsersFile = Record<string, UserEntry> & { applications?: Record<string, Record<string, UserEntry>> };
+    type UsersFile = Record<string, UserEntry> & { users?: Record<string, UserEntry>; applications?: Record<string, Record<string, UserEntry>> };
     // usersFile 标准位置=$DSH_HOME/lark/user-connections.json(与 principal 一致;dataDir 下无此文件)。
     const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
     const users = readUsers(join(dshHome, 'lark', 'user-connections.json')) as UsersFile;
     const appIdUsers = appId ? users.applications?.[appId] : undefined;
-    return appIdUsers?.[openId]?.displayName?.trim() || users[openId]?.displayName?.trim();
+    const userId = this.existingUserId(openId);
+    return (userId ? users.users?.[userId]?.displayName?.trim() || users[userId]?.displayName?.trim() : undefined)
+      || appIdUsers?.[openId]?.displayName?.trim() || users[openId]?.displayName?.trim();
   }
 
-  private cwdFor(openId?: string): string {
+  private cwdFor(openId?: string, unionId?: string): string {
     if (!openId || !this.identity) return this.cwd;
-    // 身份带 app 域:userId 解析按 (feishu, appId, openId) 查身份簇,bind 合并后档案跟随簇。
-    return workspaceFor(this.identity.path, openId, this.identity.appId);
+    // 身份簇以 union_id 归并：同一个人在不同 bot(不同 appId)下 open_id 不同，
+    // 但 union_id 相同 → 解析到同一个 userId，档案与登录态跟随这个人而不是某个应用。
+    // 用户中心布局(2026-11-02):身份簇 userId + agentId → users/<userId>/<agentId>/workspace;
+    // 旧布局 agents/<agentId>/users/<userId> 由 workspaceForIdentity 兜底兼容(存在才回退)。
+    const userId = userKey(openId, this.identity.appId, unionId);
+    return workspaceForIdentity(this.identity.path, { userId, agentId: this.identity.agentId, appId: this.identity.appId });
   }
 
-  get(chatId: string, openId?: string, displayName?: string): SessionBinding {
+  get(chatId: string, openId?: string, displayName?: string, unionId?: string): SessionBinding {
     // 显示名优先级:管理员配置(usersFile) > 渠道实时名(如飞书昵称) > 历史记录 > hash 兜底。
-    const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? '') || (openId ? `用户 ${userKey(openId).slice(0, 8)}` : undefined);
+    // 兜底名必须带 appId:缺省会以 appId='unscoped' 在 identities.json 里建出孤儿身份簇。
+    const resolvedName = this.configuredDisplayName(openId)?.trim() || displayName?.trim() || this.userNames.get(openId ?? '') || (openId ? `用户 ${userKey(openId, this.identity?.appId, unionId).slice(0, 8)}` : undefined);
     if (openId) this.userNames.set(openId, resolvedName!);
-    const cwd = this.cwdFor(openId);
+    if (openId && unionId) this.userUnionIds.set(openId, unionId);
+    const cwd = this.cwdFor(openId, unionId);
     const existing = this.bindings.get(chatId);
     if (existing) {
-      if (openId && existing.cwd !== cwd) {
-        const moved = { ...existing, cwd, ...(openId ? { openId, displayName: resolvedName } : {}) };
+      if (openId && (existing.cwd !== cwd || existing.openId !== openId)) {
+        const { unionId: _union, previousSessionIds: _aliases, ...sameChat } = existing;
+        const base = existing.openId === openId ? existing : sameChat;
+        const moved = { ...base, cwd, openId, ...(unionId ? { unionId } : {}), displayName: resolvedName };
         this.bindings.set(chatId, moved);
         return moved;
       }
-      if (openId && !existing.openId) this.bindings.set(chatId, { ...existing, openId, displayName: resolvedName });
+      if (openId && (!existing.openId || (unionId && !existing.unionId))) {
+        this.bindings.set(chatId, { ...existing, ...(openId ? { openId, displayName: resolvedName } : {}), ...(unionId ? { unionId } : {}) });
+      }
       return this.bindings.get(chatId)!;
     }
-    const created = { sessionId: this.freshId(), cwd, ...(openId ? { openId, displayName: resolvedName } : {}) };
+    const created = { sessionId: this.freshId(), cwd, ...(openId ? { openId, ...(unionId ? { unionId } : {}), displayName: resolvedName } : {}) };
     this.bindings.set(chatId, created);
     return created;
   }
 
   reset(chatId: string, openId?: string): SessionBinding {
     const previous = this.bindings.get(chatId);
+    const owner = openId ?? previous?.openId;
+    const sameOwner = !openId || openId === previous?.openId;
+    const { unionId: _union, previousSessionIds: _aliases, ...preserved } = previous ?? {};
     const created = {
+      ...preserved,
+      ...(sameOwner && previous?.unionId ? { unionId: previous.unionId } : {}),
       sessionId: this.freshId(),
-      cwd: this.cwdFor(openId),
-      ...(previous?.model ? { model: previous.model } : {}),
-      ...(openId ? { openId, displayName: this.userNames.get(openId) } : {}),
+      cwd: sameOwner && previous ? previous.cwd : this.cwdFor(owner),
+      ...(sameOwner && previous ? { previousSessionIds: [...(previous.previousSessionIds ?? []), previous.sessionId] } : {}),
+      ...(owner ? { openId: owner, displayName: this.userNames.get(owner) } : {}),
+
     };
     this.bindings.set(chatId, created);
     return created;
+  }
+
+  /** Read-only lookup: never creates a binding or resolves a new identity. */
+  notificationTarget(sessionId: string): { chatId: string; binding: SessionBinding } | undefined {
+    const matches = [...this.bindings].filter(([, binding]) => binding.sessionId === sessionId || binding.previousSessionIds?.includes(sessionId));
+    if (matches.length !== 1) return undefined;
+    return { chatId: matches[0]![0], binding: { ...matches[0]![1] } };
+  }
+
+  setChatType(chatId: string, chatType: 'p2p' | 'group'): void {
+    const binding = this.bindings.get(chatId);
+    if (binding) this.bindings.set(chatId, { ...binding, chatType });
+  }
+
+  addPreviousSession(sessionId: string, previousSessionId: string, openId: string): void {
+    if (!/^lark-[a-zA-Z0-9-]{1,160}$/.test(previousSessionId)) throw new Error('Invalid previous session id');
+    const target = this.notificationTarget(sessionId);
+    if (!target || target.binding.sessionId !== sessionId || target.binding.openId !== openId) throw new Error('Session owner mismatch');
+    for (const [chatId, binding] of this.bindings) {
+      if (chatId !== target.chatId && (binding.sessionId === previousSessionId || binding.previousSessionIds?.includes(previousSessionId))) throw new Error('Previous session belongs to another chat');
+    }
+    if (previousSessionId === sessionId) throw new Error('Previous session must differ');
+    this.bindings.set(target.chatId, { ...target.binding, previousSessionIds: [...new Set([...(target.binding.previousSessionIds ?? []), previousSessionId])] });
   }
 
   /** Chat-pinned override for one DSH session, when stored. */
@@ -173,7 +235,8 @@ export class SessionStore {
   clearModel(chatId: string): void {
     const existing = this.bindings.get(chatId);
     if (!existing?.model) return;
-    this.bindings.set(chatId, { sessionId: existing.sessionId, cwd: existing.cwd });
+    const { model: _model, ...binding } = existing;
+    this.bindings.set(chatId, binding);
   }
 
   async save(): Promise<void> {
@@ -197,16 +260,18 @@ export class SessionStore {
           .map((binding) => binding.sessionId),
         users: Object.fromEntries([
           ...[...this.userNames].map(([openId, displayName]) => {
-            const path = workspaceFor(this.identity!.path, openId, this.identity!.appId);
-            // 管理员配置名在 save 时兜底校正(load 先于 setAppIdentity,applications 域当时不可见)。
+            // 用户中心布局:注册表展示路径与实际 cwd 同源(workspaceForIdentity 新锚点)。
+            const path = workspaceForIdentity(this.identity!.path, { userId: userKey(openId, this.identity!.appId, this.userUnionIds.get(openId)), agentId: this.identity!.agentId, appId: this.identity!.appId });
+            // 保存注册表时重新读取管理员配置名，覆盖历史昵称并跟随配置更新。
             const effective = this.configuredDisplayName(openId) || displayName;
             // 聚合身份(user 条目名不带 bot 语境)时补 bot 后缀,GUI 树可辨「哪个 cli 在服务」。
             const suffix = this.identity!.botName && !effective?.includes(this.identity!.botName) ? ` · ${this.identity!.botName}` : '';
-            return [userKey(openId, this.identity!.appId), { displayName: `${effective}${suffix}`, path, sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId) }];
+            return [userKey(openId, this.identity!.appId, this.userUnionIds.get(openId)), { displayName: `${effective}${suffix}`, path, sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId) }];
           }),
           ...[...this.recoveredUsers].map(([hash, path]) => {
-            const configuredName = Object.entries(readUsers(join(dirname(this.path), 'user-connections.json'))).find(([openId]) => userKey(openId).startsWith(hash))?.[1]?.displayName;
-            return [hash, { displayName: configuredName || `用户 ${hash.slice(0, 8)}`, path, sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId) }];
+            // 注意:这里不能调 userKey(openId) —— 缺 appId 会在 identities.json 里建出 appId='unscoped' 的孤儿簇。
+            // 旧 hash 目录属于历史残留(2026-10-30 全量核查:agents/ 下已无 24hex 目录),只做通用兜底名。
+            return [hash, { displayName: `用户 ${hash.slice(0, 8)}`, path, sessionIds: [...this.bindings.values()].filter((binding) => binding.cwd === path).map((binding) => binding.sessionId) }];
           }),
         ]),
         updatedAt: new Date().toISOString(),

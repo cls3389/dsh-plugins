@@ -1,0 +1,3 @@
+#!/bin/sh
+# Host-maintained read-only program mounted into the offline user sandbox.
+exec python3 /opt/dsh-tools/market_analysis.py "$@"
