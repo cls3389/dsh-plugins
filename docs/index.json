@@ -72,11 +72,11 @@
       "versions": [
         {
           "version": "0.2.2",
-          "publishTimestamp": 1793335242,
+          "publishTimestamp": 1793743921,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "87455908bc7ad71e2be108277890434dc200f8e1",
             "path": "plugins/asr-tools"
           },
           "engines": {}
@@ -138,11 +138,11 @@
       "versions": [
         {
           "version": "0.1.1",
-          "publishTimestamp": 1793725115,
+          "publishTimestamp": 1793743921,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "87455908bc7ad71e2be108277890434dc200f8e1",
             "path": "plugins/claw-sandbox"
           },
           "engines": {}
@@ -153,11 +153,11 @@
       "name": "@dsh-friends/dsh-memory",
       "title": {
         "zh": "用户级长期记忆",
-        "en": "Feishu Per-User Memory"
+        "en": "Per-User Memory"
       },
       "description": {
-        "zh": "每个可信用户独立的长期记忆：主题地图、中英混合检索、行号读取、私有写入与审计，按 senderOpenId 隔离。",
-        "en": "Long-term memory isolated per trusted Feishu senderOpenId: topic shards, bilingual lexical search, line-numbered reads, private writes and audit."
+        "zh": "每个可信用户独立的长期记忆：主题地图、中英混合检索、行号读取、私有写入与审计；按身份簇 users/<userId>/<agentId> 隔离，渠道无关。",
+        "en": "Long-term memory isolated per trusted user identity (users/<userId>/<agentId>, channel-neutral): topic shards, bilingual lexical search, line-numbered reads, private writes and audit."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -175,7 +175,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "87455908bc7ad71e2be108277890434dc200f8e1",
             "path": "plugins/dsh-memory"
           },
           "engines": {}
@@ -204,11 +204,11 @@
       "versions": [
         {
           "version": "0.1.0",
-          "publishTimestamp": 1793720878,
+          "publishTimestamp": 1793743921,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "87455908bc7ad71e2be108277890434dc200f8e1",
             "path": "plugins/feishu-bitable-sync"
           },
           "engines": {}
@@ -251,12 +251,12 @@
     {
       "name": "@dsh-friends/feishu-messages",
       "title": {
-        "zh": "飞书群消息",
-        "en": "Feishu Group Reader"
+        "zh": "飞书消息读取",
+        "en": "Feishu Messages"
       },
       "description": {
-        "zh": "以用户身份读取飞书群聊消息（复用 openclaw-lark 官方 UAT 授权存储）。",
-        "en": "Read Feishu group chat messages with user identity (reuses the official openclaw-lark UAT store)."
+        "zh": "以用户身份按时间批量读取飞书群聊与单聊消息、下载消息图片（复用 openclaw-lark 官方 UAT 授权存储）。",
+        "en": "Read Feishu group and direct chat messages in time-ranged batches with user identity, and download message images (reuses the official openclaw-lark UAT store)."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -270,11 +270,11 @@
       "versions": [
         {
           "version": "0.2.3",
-          "publishTimestamp": 1793725086,
+          "publishTimestamp": 1793743921,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "87455908bc7ad71e2be108277890434dc200f8e1",
             "path": "plugins/feishu-messages"
           },
           "engines": {}
