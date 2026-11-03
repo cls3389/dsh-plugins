@@ -1,0 +1,7 @@
+- insert:
+    - id: model-catalog
+      name: '@dsh-friends/model-catalog'
+      config:
+        # Empty uses $DSH_HOME/model-catalog/catalog.json; credentials use DSH's secret store.
+        stateFile: ''
+        pollIntervalMs: 5000

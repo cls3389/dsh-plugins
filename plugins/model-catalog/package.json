@@ -1,0 +1,24 @@
+{
+  "name": "@dsh-friends/model-catalog",
+  "version": "0.1.0",
+  "description": "模型目录：自动发现同步 Codex/OpenAI 模型，配置端点、显示名称和逐模型覆盖",
+  "type": "module",
+  "license": "MIT",
+  "exports": {".": "./index.js", "./client": "./client.js", "./package.json": "./package.json", "./locale/*.json": "./locale/*.json"},
+  "files": ["index.js", "adapter.js", "catalog.js", "store.js", "client.js", "cordis.patch.yml", "locale", "README.md"],
+  "scripts": {"test": "node --test *.test.mjs"},
+  "dsh": {
+    "bundle": {"patch": "./cordis.patch.yml"},
+    "client": {"platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-api-remotes"]}
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/schemastery": "~3.18.5",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-atomic-write": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
+    "@earendil-works/pi-ai": "^1.1.0"
+  }
+}
