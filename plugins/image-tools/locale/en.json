@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Media Tools",
-    "description": "Tencent Hunyuan image generation/editing (via CPA gateway) and document-to-Markdown conversion."
+    "title": "Image Tools",
+    "description": "Tencent Hunyuan text-to-image and image editing (image_generate / image_edit via the CPA gateway): edits accept 1-3 local reference images, up to 4 outputs with previews. Document conversion moved to Anydoc."
   }
 }

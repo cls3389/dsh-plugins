@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Feishu Keeper",
-    "description": "Restart the Feishu channel automatically after crashes or container restarts."
+    "title": "Ops Guard (process keeper)",
+    "description": "Keepalive for DSH identity services: relaunch missing processes, restart crashes with backoff (10s to 5 min); yields to systemd or externally managed instances as a second-line rescue only."
   }
 }

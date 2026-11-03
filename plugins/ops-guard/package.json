@@ -18,6 +18,6 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "dsh profile 进程保活:容器重启/进程崩溃后自动拉起 dsh --profile <p>(支持多 profile)",
+  "description": "DSH 身份服务进程保活:缺失拉起、崩溃 backoff 重启,对外部实例让位(二线救援)",
   "license": "MIT"
 }
