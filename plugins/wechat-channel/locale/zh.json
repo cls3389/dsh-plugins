@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "微信渠道（iLink）",
+    "description": "腾讯 iLink 微信消息通道：私聊文本与轻量 Markdown 收发、扫码登录与凭证原子持久化、消息去重与每会话串行队列；身份走渠道中立三元组，复用 feishu-principal 身份簇，渠道只搬运消息不承载用户数据。"
+  }
+}

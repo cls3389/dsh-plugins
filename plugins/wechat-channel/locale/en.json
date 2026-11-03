@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WeChat Channel (iLink)",
+    "description": "Tencent iLink Weixin message channel: private-chat text and lightweight Markdown, QR login with atomic credential persistence, message dedup and per-session serial queues. Identity uses a channel-neutral triple reusing the feishu-principal cluster; the channel only carries messages."
+  }
+}

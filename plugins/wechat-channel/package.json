@@ -12,6 +12,7 @@
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
     "./protocol": {
       "types": "./lib/protocol.d.ts",
       "default": "./lib/protocol.js"
@@ -22,6 +23,7 @@
     "scripts/",
     "cordis.patch.yml",
     "README.md",
+    "locale/*.json",
     "vendor/openclaw-weixin/LICENSE",
     "vendor/openclaw-weixin/UPSTREAM_COMMIT"
   ],
