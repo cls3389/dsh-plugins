@@ -205,7 +205,15 @@
           },
           "engines": {}
         }
-      ]
+      ],
+      "title": {
+        "zh": "安全执行沙箱",
+        "en": "Execution Sandbox"
+      },
+      "description": {
+        "zh": "在隔离的容器沙箱中运行用户命令与数据分析工具，限制网络和文件系统访问。",
+        "en": "Run user commands and data-analysis tools inside an isolated container with restricted network and filesystem access."
+      }
     },
     {
       "name": "@dsh-friends/feishu-channel",
@@ -754,12 +762,12 @@
     {
       "name": "@dsh-friends/feishu-bitable-sync",
       "title": {
-        "zh": "行情同步飞书多维表",
-        "en": "Feishu Bitable Market Sync"
+        "zh": "飞书多维表同步",
+        "en": "Feishu Bitable Sync"
       },
       "description": {
-        "zh": "FQGate V2 与同花顺数据中心驱动，定时或手动同步标的跟踪、每日情绪与涨停明细。",
-        "en": "Scheduled or manual sync of holdings, market sentiment and limit-up details using FQGate V2 and THS Data Center."
+        "zh": "从同花顺行情与数据中心批量同步标的跟踪、每日市场情绪和涨停明细到飞书多维表。",
+        "en": "Batch-sync tracked securities, daily market sentiment, and limit-up details from THS market data into Feishu Bitable."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -768,7 +776,12 @@
         "directory": "plugins/feishu-bitable-sync"
       },
       "metadata": {
-        "keywords": ["dsh-plugin", "feishu", "bitable", "market"]
+        "keywords": [
+          "dsh-plugin",
+          "feishu",
+          "bitable",
+          "market"
+        ]
       },
       "versions": [
         {
@@ -818,6 +831,39 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
             "path": "plugins/zread"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/model-catalog",
+      "title": {
+        "zh": "模型目录",
+        "en": "Model Catalog"
+      },
+      "description": {
+        "zh": "配置服务地址、API Key 和请求格式，自动同步模型并自定义名称、能力和排序。",
+        "en": "Discover and synchronize remote models with editable provider names and per-model overrides."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/model-catalog"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793716377,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "ede82b828cf0afec12f2139dfa0df012c1e01727",
+            "path": "plugins/model-catalog"
           },
           "engines": {}
         }
