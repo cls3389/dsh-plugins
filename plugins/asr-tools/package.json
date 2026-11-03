@@ -21,5 +21,6 @@
   "keywords": [
     "dsh-plugin"
   ],
+  "description": "音视频转写(asr-mcp):抖音分享文案/音视频 URL/本地文件转文字,本地 SenseVoice 引擎,缓存命中秒回",
   "license": "MIT"
 }

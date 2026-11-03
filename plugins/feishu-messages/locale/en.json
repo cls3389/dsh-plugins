@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Feishu Group Reader",
-    "description": "Read Feishu group chat messages with user identity (reuses the official openclaw-lark UAT store)."
+    "title": "Feishu Messages",
+    "description": "Read Feishu group and direct chat messages in time-ranged batches with user identity, and download message images (reuses the official openclaw-lark UAT store)."
   }
 }

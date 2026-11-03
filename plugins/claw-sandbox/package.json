@@ -6,10 +6,12 @@
   "exports": {
     ".": "./index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
-  "files": ["index.js", "cordis.patch.yml", "Dockerfile", "tools/", "build.sh", "rebuild-workspace-sandbox.sh", "README.md", "test.mjs"],
+  "files": ["index.js", "cordis.patch.yml", "Dockerfile", "tools/", "build.sh", "rebuild-workspace-sandbox.sh", "README.md", "test.mjs", "locale/*.json"],
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "description": "安全执行沙箱:隔离容器中运行用户命令与数据分析工具,限制网络与文件系统访问",
   "dependencies": {
     "@deepseek-ai/dsh-sandbox": "0.2.1-rc.2"
   },

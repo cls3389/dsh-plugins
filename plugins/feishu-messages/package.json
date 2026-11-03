@@ -18,7 +18,7 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "飞书批量消息读取优化:群聊与私聊按时间批量拉取、裁剪并复用官方 UAT 授权",
+  "description": "飞书批量消息读取:群聊与单聊按时间批量拉取、消息图片下载、输出裁剪,复用官方 UAT 授权",
   "license": "MIT",
   "peerDependencies": {
     "@dsh-friends/feishu-channel": "*"
