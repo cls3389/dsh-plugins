@@ -176,6 +176,16 @@
 - 重启只动受影响身份服务，禁动 dsh-web（除非本批目标就是 web）。
 - 官方件（`@deepseek-ai/*`、`dsh-relay`）一律不在整理范围。
 
+## 七、显示名（locale）规范（2026-11-04 补，源自 ths-wencai/wechat-channel 裸包名事故）
+
+GUI 插件列表与市场索引的标题/描述都来自 `locale/zh.json` + `locale/en.json` 的 `meta.title` / `meta.description`（en 必填，是 `readPluginMeta` 的解析入口；顶层写 `name` 无效）。缺 locale 时 GUI 与商店一起回退生硬的原始包名。三件套缺一不可：
+
+1. `locale/zh.json`、`locale/en.json`：`{"meta":{"title":"…","description":"…"}}`，描述顺带写清与相邻插件的域边界；
+2. `package.json` `exports` 必须暴露 `"./locale/*.json": "./locale/*.json"`——exports 封闭会把这个子路径解析挡成 `ERR_PACKAGE_PATH_NOT_EXPORTED`，被 `optionalResourcePath` 静默吞掉、直接回退包名（本次事故根因，locale 文件齐了也白搭）；
+3. `package.json` `files` 加 `"locale/*.json"`，保证 npm 打包分发不丢。
+
+`listBundles` 每次调用实时重读 locale，改完刷新页面即生效，无需重启任何服务；市场侧要重跑 `scripts/gen-index.mjs` 才进 `docs/index.json`。
+
 ## 附录 · 挂载矩阵（2026-11-04 改名落地后快照；以 `--dump-config` 实测，patch+plugin-manager 双来源）
 
 | 挂载模式 | 插件（新名） | 说明 |
