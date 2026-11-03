@@ -11,6 +11,44 @@
   "metadata": {},
   "plugins": [
     {
+      "name": "@dsh-friends/anydoc",
+      "title": {
+        "zh": "Anydoc 文档转换",
+        "en": "Anydoc Document Converter"
+      },
+      "description": {
+        "zh": "Firecrawl @firecrawl/anydoc：Office、EPUB、CSV 等文档转 Markdown；PDF 请安装独立「PDF 阅读」。",
+        "en": "Convert Office, EPUB, CSV and other documents to Markdown with Firecrawl @firecrawl/anydoc. PDF is provided by the separate PDF Reader plugin."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/anydoc"
+      },
+      "metadata": {
+        "keywords": [
+          "anydoc",
+          "firecrawl",
+          "document",
+          "markdown"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/anydoc"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/asr-tools",
       "title": {
         "zh": "音视频转写 (asr-mcp)",
@@ -79,6 +117,39 @@
       ]
     },
     {
+      "name": "@dsh-friends/claw-sandbox",
+      "title": {
+        "zh": "安全执行沙箱",
+        "en": "Execution Sandbox"
+      },
+      "description": {
+        "zh": "在隔离的容器沙箱中运行用户命令与数据分析工具，限制网络和文件系统访问。",
+        "en": "Run user commands and data-analysis tools inside an isolated container with restricted network and filesystem access."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/claw-sandbox"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.1",
+          "publishTimestamp": 1793725115,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/claw-sandbox"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/dsh-memory",
       "title": {
         "zh": "用户级长期记忆",
@@ -104,7 +175,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/dsh-memory"
           },
           "engines": {}
@@ -137,7 +208,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "ede82b828cf0afec12f2139dfa0df012c1e01727",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/feishu-bitable-sync"
           },
           "engines": {}
@@ -170,8 +241,41 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "7b0239c10ba446a6539742829075a578c95c3f1c",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/feishu-channel"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/feishu-messages",
+      "title": {
+        "zh": "飞书群消息",
+        "en": "Feishu Group Reader"
+      },
+      "description": {
+        "zh": "以用户身份读取飞书群聊消息（复用 openclaw-lark 官方 UAT 授权存储）。",
+        "en": "Read Feishu group chat messages with user identity (reuses the official openclaw-lark UAT store)."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/feishu-messages"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.3",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/feishu-messages"
           },
           "engines": {}
         }
@@ -203,8 +307,81 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/feishu-principal"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/idle-compactor",
+      "title": {
+        "zh": "闲置会话自动压缩",
+        "en": "Idle Session Auto-Compaction"
+      },
+      "description": {
+        "zh": "闲置超阈值的会话后台自动 compaction，下一条消息直接以紧凑上下文开始；事件驱动判定，飞书 bot 与 Web 会话通用。",
+        "en": "Compacts idle sessions in the background so the next message starts from a small context; event-driven idle detection works for every session host in the profile."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/idle-compactor"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "cordis",
+          "compaction",
+          "context",
+          "feishu",
+          "session"
+        ]
+      },
+      "versions": [
+        {
+          "version": "1.0.1",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/idle-compactor"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/image-tools",
+      "title": {
+        "zh": "媒体工具",
+        "en": "Media Tools"
+      },
+      "description": {
+        "zh": "腾讯混元文生图/图生图(经 CPA 网关)，支持多图输出与本地参考图。",
+        "en": "Tencent Hunyuan image generation/editing (via CPA gateway) and document-to-Markdown conversion."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/image-tools"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.3",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/image-tools"
           },
           "engines": {}
         }
@@ -243,7 +420,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/kimi-datasource"
           },
           "engines": {}
@@ -309,8 +486,48 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "e851688ea1ffe3c4c2b8441773b6bb4f3339f6e0",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/model-config"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/officecli-tools",
+      "title": {
+        "zh": "OfficeCLI 文档工具",
+        "en": "OfficeCLI Document Tools"
+      },
+      "description": {
+        "zh": "无需安装 Microsoft Office，创建、读取、编辑、渲染和校验 DOCX、XLSX、PPTX 文件。",
+        "en": "Create, read, edit, render, and validate DOCX, XLSX, and PPTX files without Microsoft Office."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/officecli-tools"
+      },
+      "metadata": {
+        "keywords": [
+          "officecli",
+          "docx",
+          "xlsx",
+          "pptx",
+          "document",
+          "office"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793465255,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/officecli-tools"
           },
           "engines": {}
         }
@@ -350,6 +567,72 @@
       ]
     },
     {
+      "name": "@dsh-friends/ops-guard",
+      "title": {
+        "zh": "飞书消息守护",
+        "en": "Feishu Keeper"
+      },
+      "description": {
+        "zh": "容器重启或进程崩溃后自动拉起飞书消息通道，保持随时在线。",
+        "en": "Restart the Feishu channel automatically after crashes or container restarts."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ops-guard"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.3.0",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/ops-guard"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/output-compactor",
+      "title": {
+        "zh": "命令输出压缩",
+        "en": "Command Output Compactor"
+      },
+      "description": {
+        "zh": "提供 bash_compact 工具，用 tokenjuice 压缩冗长的命令输出，保留错误上下文并减少上下文占用。",
+        "en": "Provides bash_compact to reduce verbose command output with tokenjuice while preserving error context and lowering token usage."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/output-compactor"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.1",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/output-compactor"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/pdf-tools",
       "title": {
         "zh": "PDF 阅读",
@@ -380,7 +663,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fb26e8cf5790114aa6f2b9ea3bba705e25069fab",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/pdf-tools"
           },
           "engines": {}
@@ -413,7 +696,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "113abd1dabb64c904c3dd077756884aa39a18ae3",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/ths-favorites"
           },
           "engines": {}
@@ -446,8 +729,41 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "bb9b096aa8833901fae938b32b4719539ed1cefc",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/ths-market"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/ths-signal",
+      "title": {
+        "zh": "同花顺 AI 分时交易",
+        "en": "THS AI Intraday Trading"
+      },
+      "description": {
+        "zh": "查看 AI 分时交易引擎状态与决策解释，投递顶底信号；由独立引擎评分、创建条件单并按用户配置执行。账户与普通委托由 ths-trade 提供。",
+        "en": "Inspect AI intraday trading engine status and decisions, and submit top/bottom signals for scoring, condition orders, and configured execution. Accounts and regular orders belong to ths-trade."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ths-signal"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793663673,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/ths-signal"
           },
           "engines": {}
         }
@@ -479,8 +795,167 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "67fedde478f069a7d18939887f4335b73a269ef1",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/ths-trade"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/ths-wencai",
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ths-wencai"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793685094,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/ths-wencai"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/title-keeper",
+      "title": {
+        "zh": "会话标题",
+        "en": "Session Titles"
+      },
+      "description": {
+        "zh": "自动为对话起一个简短准确的名字，漏了的会定时补上。",
+        "en": "Name conversations automatically; missed ones are refreshed on a schedule."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/title-keeper"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "session",
+          "title",
+          "llm"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.2",
+          "publishTimestamp": 1793725085,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/title-keeper"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/turn-resumer",
+      "title": {
+        "zh": "中断任务续接",
+        "en": "Interrupted Turn Resumer"
+      },
+      "description": {
+        "zh": "系统重启后自动续接任务；大模型上游流中断时每隔10秒自动重试，最多2次。",
+        "en": "Resume turns after restarts and retry upstream stream interruptions twice, 10 seconds apart."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/turn-resumer"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "session",
+          "resumer",
+          "reliability"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.4.1",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/turn-resumer"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/ui-workspaces",
+      "title": {
+        "zh": "飞书应用工作区（GUI 展示层）",
+        "en": "Feishu App Workspaces (GUI view)"
+      },
+      "description": {
+        "zh": "把飞书 app×用户 工作区聚合成「飞书应用」树注册进 Web GUI，装在 web profile；身份与权限由「飞书用户基座」负责（装在飞书 profile），两者配套构成完整飞书栈。",
+        "en": "Aggregates Feishu app×user workspaces into the GUI workspace tree; install in the web profile. Identity and permissions live in feishu-principal (feishu profile) — the two pair up for the full Feishu stack."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/ui-workspaces"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.2.3",
+          "publishTimestamp": 1793725086,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/ui-workspaces"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/wechat-channel",
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/wechat-channel"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793468939,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "path": "plugins/wechat-channel"
           },
           "engines": {}
         }
