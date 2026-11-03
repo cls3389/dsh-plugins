@@ -21,7 +21,7 @@
 | 目录 | 包名 | 挂载 id | 角色 | 问题 |
 |---|---|---|---|---|
 | model-catalog | @dsh-friends/model-catalog | model-catalog | 模型目录+自动发现 | — |
-| model-config | @dsh-friends/model-config | （未挂载，skill 驱动） | 模型路由审计与提案引擎（只读、提案经用户确认后落盘；由 skill dsh-openrouter-model-config 调用）；model-catalog 接管路由后已边缘化 | — |
+| model-config | @dsh-friends/model-config | （未挂载，库+CLI 休眠） | 模型路由审计与提案引擎（cli.mjs：audit/propose/discover/policy 直驱；配套 skill dsh-openrouter-model-config 已于 2026-11-04 删除）；model-catalog 接管路由后已边缘化 | — |
 | dsh-memory | @dsh-friends/dsh-memory | dsh-memory | 长期记忆 | ⚠️ dsh- 前缀撞官方 |
 | execution-sandbox | @dsh-friends/execution-sandbox | guests（ctx.sandbox provider） | Docker ctx.sandbox provider（OpenClaw 模式：持久会话容器 + docker exec，官方 bash-sandbox 之外的执行底座） | → claw-sandbox（claw- 产品域前缀） |
 
