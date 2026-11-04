@@ -109,4 +109,53 @@ const check = (name, cond) => {
 	check('case4 -1 禁用', r.pruned === 0);
 }
 
+// ── checkpoint 滚动压缩(2026-11-05): 马拉松会话止血 ──
+const CK = (seq, text, turn = null) => ({ seq, type: 'user/message', data: { turn, content: [{ type: 'text', text }], source: { kind: 'compact-checkpoint' } } });
+const ckBody = (n, size) => `<checkpoint>\n[历史对话精编：仅保留用户与助手正文，工具调用参数、工具输出与思考过程已裁剪。]\n\n第${n}轮结论：${'详'.repeat(size)}。完。\n</checkpoint>`;
+
+// ── 用例5: 6 条 checkpoint, keep=2 → 前 4 条就地压缩, 后 2 条原样 ──
+{
+	const events = [U(1, 'user', 'q', null)];
+	for (let i = 0; i < 6; i += 1) {
+		events.push(CK(2 + i, ckBody(i + 1, 800)));
+		events.push(U(8 + i, 'user', `q${i}`, null));
+	}
+	const session = mkSession(events);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 2 });
+	pruner.compressStaleCheckpoints(session, 9);
+	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
+	check('case5 压缩了 4 条(6-2)', replaces.length === 4);
+	const texts = replaces.map((x) => x.data?.content?.[0]?.text || '');
+	check('case5 压缩文本带归档标记+计量', texts.every((t) => t.includes('[归档|原') && t.includes('第') && t.includes('完。')));
+	check('case5 压缩含头尾采样', texts.every((t) => t.includes('[归档尾]')));
+	check('case5 单条 span 替换(startSeq===endSeq)', replaces.every((x) => x.opts.surfaceOp.startSeq === x.opts.surfaceOp.endSeq));
+	check('case5 压缩收益显著', replaces.every((x) => {
+		const kept = (x.data?.content?.[0]?.text || '').length;
+		return kept < 500; // 原 ~850+
+	}));
+}
+
+// ── 用例6: 已归档的幂等跳过 + 无收益的短正文不动 ──
+{
+	const session = mkSession([
+		U(1, 'user', 'q', null),
+		CK(2, `<checkpoint>\n[归档|原42字符] 短正文已归档\n</checkpoint>`),
+		U(3, 'user', 'q', null),
+		CK(4, `<checkpoint>\n[历史对话精编：裁剪。]\n\n短\n</checkpoint>`),
+		U(5, 'user', 'q', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 0 });
+	pruner.compressStaleCheckpoints(session, 9);
+	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
+	check('case6 已归档跳过+无收益不动 → 0 次替换', replaces.length === 0);
+}
+
+// ── 用例7: checkpointKeep=-1 禁用压缩 ──
+{
+	const session = mkSession([U(1, 'user', 'q', null), CK(2, ckBody(1, 800)), U(3, 'user', 'q', null)]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: -1 });
+	pruner.compressStaleCheckpoints(session, 9);
+	check('case7 -1 禁用', session.appended.length === 0);
+}
+
 process.exit(failed ? 1 : 0);

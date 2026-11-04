@@ -52,13 +52,18 @@ export const name = 'stale-process-pruner';
 export const inject = ['sessions', 'tokenMeter', 'agents'];
 
 const DEFAULT_STALE_TURNS = 1;
+const DEFAULT_CHECKPOINT_KEEP = 5;
+const ARCHIVE_MARK = '[归档';
+const ARCHIVE_HEAD_CHARS = 240;
+const ARCHIVE_TAIL_CHARS = 120;
 
 export class StaleProcessPruner extends ToolResultPruner {
 	constructor(ctx, config = {}) {
-		// 父类拿 thresholdChars/headChars/tailChars; 多余键 staleTurns 自己取。
-		const { staleTurns, ...parent } = config;
+		// 父类拿 thresholdChars/headChars/tailChars; 多余键 staleTurns/checkpointKeep 自己取。
+		const { staleTurns, checkpointKeep = DEFAULT_CHECKPOINT_KEEP, ...parent } = config;
 		super(ctx, parent);
 		this.staleTurns = Number.isInteger(staleTurns) ? staleTurns : DEFAULT_STALE_TURNS; // 0/-1 是合法显式值,校验在 pruneStaleProcess
+		this.checkpointKeep = Number.isInteger(checkpointKeep) ? checkpointKeep : DEFAULT_CHECKPOINT_KEEP; // -1 禁用压缩
 		// 用引擎 checkpoint 协议替换整段历史，避免 assistant tool-call/result 失配，
 		// 也不触发 session/event 的同步观察者看到半提交状态。
 		ctx.on?.('agent/pre-step', async ({ agent, step, turn, signal }, next) => {
@@ -156,7 +161,77 @@ export class StaleProcessPruner extends ToolResultPruner {
 				gapStart = -1;
 			}
 		}
-		return { pruned, charsRemoved };
+		const archived = this.compressStaleCheckpoints(session, openTurn);
+		return { pruned, charsRemoved: charsRemoved + archived.charsRemoved };
+	}
+
+	/**
+	 * checkpoint 滚动压缩(2026-11-05, 马拉松会话止血): staleTurns 折叠每轮产一条 checkpoint,
+	 * 各自落在独立冻结段(foldGap 对纯 checkpoint 段 hasRawStale=false 跳过), 170+ 轮的会话
+	 * 累积 170+ 条全量正文, 单请求仍 200k token。对策: 只保留最近 checkpointKeep 条 checkpoint
+	 * 原文, 更早的**就地一次性压缩**(头部+尾部采样+字符计量, CPA context-fold digest 同款思路)。
+	 * 压缩后字节永久冻结(以 [归档 开头识别, 幂等跳过) → 不产生稳态缓存接缝, 每条只付一次改写成本。
+	 * 位置窗口而非轮龄: session.append 不给 checkpoint 盖 turn 章, 按消息数计窗(staleTurns=0 时≈轮数)。
+	 */
+	compressStaleCheckpoints(session, openTurn) {
+		if (!Number.isInteger(this.checkpointKeep) || this.checkpointKeep < 0) {
+			if (this.checkpointKeep !== -1) {
+				this.ctx?.logger?.warn?.(`stale-process-pruner: 非法 checkpointKeep=${this.checkpointKeep}, checkpoint 压缩禁用`);
+			}
+			return { charsRemoved: 0 };
+		}
+		const checkpoints = [];
+		// 折叠刚产生的新 checkpoint 已进 surface(replace 提交即生效), 此处重读而非复用快照。
+		for (const seq of session.surface.nodes) {
+			const event = session.eventAt(seq);
+			if (this.isCheckpoint(event)) checkpoints.push({ seq, event });
+		}
+		const compressible = checkpoints.slice(0, Math.max(0, checkpoints.length - this.checkpointKeep));
+		let charsRemoved = 0;
+		for (const { seq, event } of compressible) {
+			const message = session.deriveEventMessage(event);
+			const full = (message?.content || []).map((part) => part?.text || '').join('\n').trim();
+			if (full.startsWith(ARCHIVE_MARK)) continue; // 已压缩: 冻结态, 幂等
+			const body = full
+				.replace(/^<checkpoint>\n?/, '')
+				.replace(/\n?<\/checkpoint>$/, '')
+				.replace(/^\[历史对话精编[^\n]*\]\n?/, '')
+				.trim();
+			if (!body) continue;
+			const head = body.slice(0, ARCHIVE_HEAD_CHARS);
+			const tail = body.length > ARCHIVE_HEAD_CHARS + ARCHIVE_TAIL_CHARS ? body.slice(-ARCHIVE_TAIL_CHARS) : '';
+			const metrics = `原${body.length}字符`;
+			const kept = tail
+				? `[归档|${metrics}] ${head}\n…\n[归档尾] ${tail}`
+				: `[归档|${metrics}] ${head}`;
+			if (kept.length >= body.length) continue; // 无收益不折(幂等且防抖动)
+			const archiveId = `stale-archive-${session.id}-${session.seq}-${seq}`;
+			const startEvent = session.append('compaction/start', { compactionId: archiveId, turn: openTurn });
+			const summaryEvent = session.append('compaction/summary', {
+				compactionId: archiveId,
+				summary: [{ type: 'text', text: kept }],
+				shadowedRange: { start: seq, end: seq },
+				shadowedSeqs: [seq],
+				shadowedTokenCount: this.ctx.tokenMeter.estimateMessage(message),
+				provider: 'local',
+				model: 'deterministic-stale-process-pruner',
+				deterministic: true,
+			});
+			const archiveMessage = createUserMessage({
+				content: [{ type: 'text', text: `<checkpoint>\n${kept}\n</checkpoint>` }],
+				source: compactCheckpointSource(archiveId),
+			});
+			session.append('user/message', archiveMessage, {
+				surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq },
+				sourceEventSeqs: [startEvent.seq, summaryEvent.seq, seq],
+			});
+			session.append('compaction/end', { compactionId: archiveId, turn: openTurn });
+			charsRemoved += body.length - kept.length;
+		}
+		if (charsRemoved > 0) {
+			this.ctx?.logger?.info?.(`[stale-process-pruner] checkpoint 归档: ${charsRemoved} 字符 (${session.id})`);
+		}
+		return { charsRemoved };
 	}
 
 	/** 折叠一个过程段; 段内必须全部过期且含未折叠的原始内容, 否则跳过。 */
@@ -185,9 +260,9 @@ export class StaleProcessPruner extends ToolResultPruner {
 			const original = session.deriveEventMessage(event);
 			if (!original) continue;
 			if (this.isCheckpoint(event)) {
-				// 旧checkpoint并入新段: 去掉首行标记, 正文延续, 防嵌套增长。
+				// 旧checkpoint并入新段: 去掉首行标记与包装, 正文延续, 防嵌套增长(归档行[归档|..]原样并入)。
 				const text = (original.content || []).map((part) => part?.text || '').join('\n');
-				const body = text.replace(/^\[历史对话精编[^\n]*\]\n?/, '').trim();
+				const body = text.replace(/^<checkpoint>\n?/, '').replace(/^\[历史对话精编[^\n]*\]\n?/, '').trim();
 				if (body) retained.push(body);
 				continue;
 			}
