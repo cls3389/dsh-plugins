@@ -12,9 +12,37 @@
 // 保留: assistant 正文(text 段)、user 消息、最近 N 轮内的一切。
 // 触发: 仅 agent/pre-step(step=1)，同轮工具调用过程完整；step>1 不裁。
 
-import { ToolResultPruner } from '/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-compaction-tool-result-pruner/lib/index.js';
-import { createUserMessage } from '/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js';
-import { compactCheckpointSource, toolPairingBalancedBefore } from '/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-compaction/lib/index.js';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// 可移植导入(2026-11-04 v1.1.2): dsh 内部件优先走裸说明符(dsh-app-boot 的插件解析器支持),
+// 兜底按已知安装根逐一尝试 — 修掉硬编码 /usr/lib 路径(Windows 上曾解析成 C:\usr\lib 导致启动失败)。
+async function importDshInternal(sub) {
+	const spec = `@deepseek-ai/${sub}`;
+	try { return await import(spec); } catch { /* fall through */ }
+	const roots = [
+		'/usr/lib/node_modules/@deepseek-ai/dsh/node_modules', // baiying(Linux 全局安装)
+		`${process.env.APPDATA ?? ''}\\npm\\node_modules\\@deepseek-ai\\dsh\\node_modules`, // Windows npm 全局
+		'/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules', // macOS/Linux 常规全局
+	];
+	for (const root of roots) {
+		if (!root) continue;
+		try {
+			return await import(pathToFileURL(join(root, '@deepseek-ai', sub, 'lib', 'index.js')).href);
+		} catch { /* try next */ }
+	}
+	throw new Error(`stale-process-pruner: cannot import ${spec} (bare specifier and all fallback roots failed)`);
+}
+
+const [
+	{ ToolResultPruner },
+	{ createUserMessage },
+	{ compactCheckpointSource, toolPairingBalancedBefore },
+] = await Promise.all([
+	importDshInternal('dsh-compaction-tool-result-pruner'),
+	importDshInternal('dsh-llm'),
+	importDshInternal('dsh-compaction'),
+]);
 
 export const name = 'stale-process-pruner';
 
