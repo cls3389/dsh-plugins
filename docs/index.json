@@ -671,6 +671,49 @@
       ]
     },
     {
+      "name": "@dsh-friends/stale-process-pruner",
+      "title": {
+        "zh": "轮龄过程裁剪",
+        "en": "Stale Process Pruner"
+      },
+      "description": {
+        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint：staleTurns 0=上一轮即折、1=保留上一轮、-1=禁用；正文与用户消息永久钉住。",
+        "en": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one turn, -1=disable; assistant bodies and user messages stay pinned."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/stale-process-pruner"
+      },
+      "metadata": {
+        "keywords": [
+          "deepseek-harness",
+          "dsh",
+          "context-pruning",
+          "prompt-cache",
+          "stale",
+          "pruner",
+          "context",
+          "compaction",
+          "checkpoint"
+        ]
+      },
+      "versions": [
+        {
+          "version": "1.1.0",
+          "publishTimestamp": 1793801819,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "d1e76044a6c99c70a840d223dddee61fae446f27",
+            "path": "plugins/stale-process-pruner"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
       "name": "@dsh-friends/ths-favorites",
       "title": {
         "zh": "同花顺个人自选股",
