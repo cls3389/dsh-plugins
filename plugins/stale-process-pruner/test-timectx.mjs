@@ -147,4 +147,28 @@ const ckBodyLike = (n) => `<checkpoint>\n[历史对话精编：第${n}轮]\n\n�
 	check('proc8 正文仍保留', ck.includes('1512.3'));
 	check('proc8 头部标记兼容旧剥离正则', /^\[历史对话精编[^\n]*\]/.test(ck.replace(/^<checkpoint>\n?/, '')));
 }
+// ── 用例9(v1.4.1 修复 P1): 无 turn 注入是段边界, 不再阻断整段折叠 ──
+// 复现自本会话 T4→T5 漏裁: model-selection 注入(seq710)让 30+ 事件原样滞留。
+{
+	const session = mkSession([
+		U(1, 'user', 'q1', null),
+		{ seq: 2, type: 'user/message', data: { turn: null, content: [{ type: 'text', text: '[model changed: kimi]' }], source: { kind: 'model-selection' } } },
+		A(3, 5, '正文A', true),
+		{ seq: 4, type: 'tool/result', data: { turn: 5, content: [{ type: 'text', text: 'r'.repeat(200) }] } },
+		{ seq: 5, type: 'user/message', data: { turn: null, content: [{ type: 'text', text: 'Agent x sent: ...' }], source: { kind: 'agent-message' } } },
+		A(6, 5, '正文B', true),
+		{ seq: 7, type: 'tool/result', data: { turn: 5, content: [{ type: 'text', text: 's'.repeat(200) }] } },
+		U(8, 'user', 'q2', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 6);
+	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace').map((x) => x.opts.surfaceOp);
+	check('case9 注入不阻断折叠(pruned>0)', r.pruned > 0);
+	check('case9 注入两侧各折一次(replace=2)', replaces.length === 2);
+	check('case9 第一段折叠范围=3-4', replaces.some((x) => x.startSeq === 3 && x.endSeq === 4));
+	check('case9 第二段折叠范围=6-7', replaces.some((x) => x.startSeq === 6 && x.endSeq === 7));
+	check('case9 model-selection(seq2)未被 shadow', replaces.every((x) => x.startSeq > 2));
+	check('case9 agent-message(seq5)未被 shadow', replaces.every((x) => !(x.startSeq <= 5 && x.endSeq >= 5)));
+}
+
 process.exit(failed ? 1 : 0);

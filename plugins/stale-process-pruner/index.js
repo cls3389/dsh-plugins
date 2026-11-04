@@ -91,16 +91,27 @@ export class StaleProcessPruner extends ToolResultPruner {
 	}
 
 	/**
-	 * 钉住节点(pinned): 真实用户消息 / AGENTS 指令注入(基线+更新) / 运行时快照 / 系统消息。
+	 * 钉住节点(pinned): 真实用户消息 / 一切承载信息的 user/message 注入 / 系统消息。
 	 * 这些节点字节永远稳定: 用户消息承载对话记忆; 指令注入一旦被 shadow,
 	 * agent-instructions 会因可见摘要丢失而整份重发(实测 9k token/轮的缓存惩罚)。
 	 * 裁剪只发生在两个钉住节点之间的纯过程段(assistant/tool/旧checkpoint)。
+	 *
+	 * v1.4.1 修复(P1, 2026-11-05 线上实证): 旧白名单只认 user/agent-instructions/
+	 * runtime-context, 其余注入(agent-message/subagent-settled/skill-catalog/
+	 * skill-invocation/model-selection/dsh-memory/goal/schedule 等)无 turn 且非
+	 * pinned, 落入过程段后 foldGap 在「无整数 turn」处整段放弃 —— 实测本会话
+	 * T4→T5 因一条 model-selection 注入漏裁 30+ 事件; T1 的 8 条 agent-message
+	 * 让 300 事件从 T2 起永久滞留。现改为: user/message 默认钉住, 仅显式
+	 * ephemeral(time-context) 与本插件 checkpoint(过程段一员) 除外。
+	 * 钉住 = 段边界: 注入原文永留 surface, 其两侧过程段各自独立折叠。
 	 */
 	isPinned(event) {
 		if (event?.type === 'system/message') return true;
 		if (event?.type !== 'user/message') return false;
 		const kind = event.data?.source?.kind;
-		return kind === 'user' || kind === 'agent-instructions' || kind === 'runtime-context';
+		if (kind === 'time-context') return false; // ephemeral: 采样快照随段折叠
+		if (kind === 'compact-checkpoint') return false; // 本插件产物: 过程段一员(透明/并入)
+		return true;
 	}
 
 	/** checkpoint 消息(本插件产物): 折叠态, 作为过程段一员, 再次折叠时文本去头防嵌套。 */

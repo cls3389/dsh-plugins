@@ -4,6 +4,10 @@ DSH（DeepSeek Harness）轮龄裁剪插件：**每一轮开始时，把上一�
 
 正文与用户消息永久钉住——跨轮要引用的关键信息必须写进回复正文（正文即长期记忆），工具输出原文需要时可读会话原始日志（replay-safe 不丢数据）。
 
+## v1.4.1（2026-11-05）：修复无 turn 注入阻断整段折叠（P1）
+
+线上实证：T4→T5 因一条 `model-selection` 注入（无 `turn`、旧白名单不认）让 `foldGap` 整段放弃，30+ 工具事件漏裁；T1 的 8 条 `agent-message` 更令 300 事件从 T2 起永久滞留。修法：`isPinned` 从白名单改为**默认钉住一切 `user/message`**（仅 `time-context` 与 checkpoint 除外）——所有承载信息的注入（`agent-message`/`subagent-settled`/`skill-catalog`/`skill-invocation`/`model-selection`/`dsh-memory`/`goal`/`schedule` 等）成为段边界，原文永留 surface，两侧过程段各自独立折叠。新增回归用例 case9。
+
 ## v1.3.1（2026-11-05）：checkpoint 携带机械过程记录
 
 折叠时把该段的工具调用与输出头**机械摘录**进 checkpoint（`▸ 名称 参数≤80字`、`↳ 输出头≤160字`，上限 40 行），并附提示词锚（“以下调用均真实执行过……勿重述为未执行”）。与 CPA 侧 context-fold 的 digest 标记同构——执行史记忆不再依赖模型自觉写正文，证据直接在上下文（CPA 实测可防模型把已折叠的执行史重写为“未执行”）。v1.4.0 起 checkpoint **一经产生永不改写**（drop/archive/digest 出窗改写机器已整体移除，无模式无开关），与 CPA digest 标记同生命周期。
