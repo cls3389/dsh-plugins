@@ -448,12 +448,12 @@
       },
       "versions": [
         {
-          "version": "0.2.1",
-          "publishTimestamp": 1793811132,
+          "version": "0.2.2",
+          "publishTimestamp": 1793825138,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "77f9cd2a383087869b663e3928331d54ee810840",
+            "commit": "1046b7c0f31a6fe865a8fea11a86dce3d6f23ae4",
             "path": "plugins/model-catalog"
           },
           "engines": {}
@@ -677,8 +677,8 @@
         "en": "Stale Process Pruner"
       },
       "description": {
-        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint（正文+机械过程记录▸/↳，永久保留不改写，CPA context-fold 同构）；staleTurns 0=上一轮即折、-1=禁用。",
-        "en": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one, -1=disable; checkpoints default to a drop rolling slot (placeholder [已并档] once out of window, O(K) constant), checkpointMode: drop|archive(-1 disables)."
+        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint：staleTurns 0=上一轮即折、1=保留上一轮、-1=禁用；正文与用户消息永久钉住。",
+        "en": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one turn, -1=disable; assistant bodies and user messages stay pinned."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -702,47 +702,11 @@
       "versions": [
         {
           "version": "1.4.0",
-          "publishTimestamp": 1793817015,
+          "publishTimestamp": 1793816962,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9cf1cd6"
-          }
-        },
-        {
-          "version": "1.3.1",
-          "publishTimestamp": 1793816434,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9cf1cd6"
-          }
-        },
-        {
-          "version": "1.3.0",
-          "publishTimestamp": 1793815293,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9cf1cd6"
-          }
-        },
-        {
-          "version": "1.2.1",
-          "publishTimestamp": 1793815800,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9cf1cd6"
-          }
-        },
-        {
-          "version": "1.2.0",
-          "publishTimestamp": 1793813140,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "9f1b1c60a300fe704b89fc89cf2431a10716969b",
+            "commit": "0017016dcef32aade0b9e92a6882b2e1e61351a6",
             "path": "plugins/stale-process-pruner"
           },
           "engines": {}
