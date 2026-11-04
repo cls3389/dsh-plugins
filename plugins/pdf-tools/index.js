@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { DEFAULT_MAX_PAGES, DEFAULT_MAX_TEXT_CHARS, readPdf } from './reader.js';
 
 const name = 'pdf-tools';
 const inject = ['tools'];
 const dshHome = process.env.DSH_HOME ?? path.join(homedir(), '.dsh');
-const DEFAULT_PREFIXES = ['/tmp/', `${dshHome}/`, '/home/'];
+// 2026-11-05 跨平台: 加 os 派生前缀(tmpdir/homedir)，Windows 用户路径不再被拒
+const DEFAULT_PREFIXES = [`${tmpdir()}/`, '/tmp/', `${dshHome}/`, '/home/', `${homedir()}/`];
 
 /** Public pdf_read tool: independent from anydoc/doc_to_markdown. */
 export function apply(ctx, config) {

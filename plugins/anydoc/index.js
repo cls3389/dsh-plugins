@@ -1,12 +1,13 @@
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 
 const name = 'anydoc';
 const inject = ['tools'];
 const dshHome = process.env.DSH_HOME ?? path.join(homedir(), '.dsh');
-const DEFAULT_PREFIXES = ['/tmp/', `${dshHome}/`, '/home/'];
+// 2026-11-05 跨平台: 加 os 派生前缀(tmpdir/homedir)，Windows 用户路径不再被拒
+const DEFAULT_PREFIXES = [`${tmpdir()}/`, '/tmp/', `${dshHome}/`, '/home/', `${homedir()}/`];
 const MAX_OUTPUT_CHARS = 500_000;
 const ERRORS = {
   unsupported: '不支持的文件格式。PDF 请使用 pdf-tools 的 pdf_read。',

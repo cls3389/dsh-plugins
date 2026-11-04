@@ -12,7 +12,7 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 
 const name = 'image-tools';
@@ -24,7 +24,7 @@ const CONFIG_DEFAULTS = {
 	apiKeyRef: 'CPA_API_KEY',
 	apiKeyEnv: 'CPA_API_KEY',
 	imageDir: '/data/dsh/tmp/media-images',
-	allowedPathPrefixes: ['/tmp/', '/data/dsh/', '/home/'],
+	allowedPathPrefixes: [`${tmpdir()}/`, '/tmp/', '/data/dsh/', '/home/', `${homedir()}/`], // 2026-11-05 跨平台: os 派生前缀
 	requestTimeoutMs: 180_000,
 };
 

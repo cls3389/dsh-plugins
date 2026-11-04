@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -10,7 +10,7 @@ const inject = ['tools'];
 const dshHome = process.env.DSH_HOME ?? path.join(homedir(), '.dsh');
 const DEFAULT_CONFIG = {
   binary: path.join(homedir(), '.local', 'bin', 'officecli'),
-  allowedPathPrefixes: ['/tmp/', `${dshHome}/`, '/home/'],
+  allowedPathPrefixes: [`${tmpdir()}/`, '/tmp/', `${dshHome}/`, '/home/', `${homedir()}/`], // 2026-11-05 跨平台: os 派生前缀
   maxOutputChars: 500_000,
   requestTimeoutMs: 180_000,
   gateway: {
