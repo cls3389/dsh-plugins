@@ -109,133 +109,23 @@ const check = (name, cond) => {
 	check('case4 -1 禁用', r.pruned === 0);
 }
 
-// ── checkpoint 滚动压缩(2026-11-05): 马拉松会话止血 ──
 const CK = (seq, text, turn = null) => ({ seq, type: 'user/message', data: { turn, content: [{ type: 'text', text }], source: { kind: 'compact-checkpoint' } } });
-const ckBody = (n, size) => `<checkpoint>\n[历史对话精编：仅保留用户与助手正文，工具调用参数、工具输出与思考过程已裁剪。]\n\n第${n}轮结论：${'详'.repeat(size)}。完。\n</checkpoint>`;
+const ckBodyLike = (n) => `<checkpoint>\n[历史对话精编：第${n}轮]\n\n第${n}轮结论：${'详'.repeat(400)}。\n</checkpoint>`;
 
-// ── 用例5: 默认 drop 模式 — 6 条 checkpoint, keep=2 → 前 4 条占位化, 后 2 条原样 ──
-{
-	const events = [U(1, 'user', 'q', null)];
-	for (let i = 0; i < 6; i += 1) {
-		events.push(CK(2 + i, ckBody(i + 1, 800)));
-		events.push(U(8 + i, 'user', `q${i}`, null));
-	}
-	const session = mkSession(events);
-	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 2 });
-	pruner.compressStaleCheckpoints(session, 9);
-	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
-	check('case5 drop 占位化 4 条(6-2)', replaces.length === 4);
-	const texts = replaces.map((x) => x.data?.content?.[0]?.text || '');
-	check('case5 占位=DROP_MARK 包 checkpoint 壳', texts.every((t) => t === `<checkpoint>\n[已并档]\n</checkpoint>`));
-	check('case5 单条 span 替换(startSeq===endSeq)', replaces.every((x) => x.opts.surfaceOp.startSeq === x.opts.surfaceOp.endSeq));
-}
-
-// ── 用例5b: 显式 archive 模式保留采样残影 ──
-{
-	const events = [U(1, 'user', 'q', null)];
-	for (let i = 0; i < 6; i += 1) {
-		events.push(CK(2 + i, ckBody(i + 1, 800)));
-		events.push(U(8 + i, 'user', `q${i}`, null));
-	}
-	const session = mkSession(events);
-	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 2, checkpointMode: 'archive' });
-	pruner.compressStaleCheckpoints(session, 9);
-	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
-	check('case5b archive 压缩 4 条', replaces.length === 4);
-	const texts = replaces.map((x) => x.data?.content?.[0]?.text || '');
-	check('case5b 带归档标记+头尾采样', texts.every((t) => t.includes('[归档|原') && t.includes('[归档尾]')));
-}
-
-// ── 用例6: drop 幂等(占位冻结) + 无收益短正文不动 + 旧 archive 残影迁移为占位 ──
+// ── 用例7(v1.4.0 定版): checkpoint 永久保留 — 多条旧 checkpoint 在后续折叠/新轮到来时零改写 ──
 {
 	const session = mkSession([
 		U(1, 'user', 'q', null),
-		CK(2, `<checkpoint>\n[已并档]\n</checkpoint>`),
-		U(3, 'user', 'q', null),
-		CK(4, `<checkpoint>\n[历史对话精编：裁剪。]\n\n短\n</checkpoint>`),
-		U(5, 'user', 'q', null),
-		CK(6, `<checkpoint>\n[归档|原42字符] 旧模式残影\n</checkpoint>`),
-		U(7, 'user', 'q', null),
+		CK(2, ckBodyLike(1)),
+		CK(3, ckBodyLike(2)),
+		CK(4, ckBodyLike(3)),
+		U(5, 'user', 'new turn', null),
 	]);
-	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 0 });
-	pruner.compressStaleCheckpoints(session, 9);
-	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
-	check('case6 占位冻结+短正文不动, 仅旧残影迁移 → 1 次替换', replaces.length === 1);
-	check('case6 迁移产物=占位', (replaces[0]?.data?.content?.[0]?.text || '').includes('[已并档]'));
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 5);
+	const replaces = session.appended.filter((a) => a.op === 'replace');
+	check('case7 无任何 checkpoint 改写(永不改写)', replaces.length === 0 && r.pruned === 0);
 }
-
-// ── 用例7: checkpointKeep=-1 禁用压缩 ──
-{
-	const session = mkSession([U(1, 'user', 'q', null), CK(2, ckBody(1, 800)), U(3, 'user', 'q', null)]);
-	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: -1 });
-	pruner.compressStaleCheckpoints(session, 9);
-	check('case7 -1 禁用', session.appended.length === 0);
-}
-
-// ── digest 模式(v1.3.0): 滚动摘要 ──
-// 事件形态: 出窗 checkpoint(keep 窗口外) + keep 窗口内 checkpoint
-const CKPT = (seq, turn, text) => ({ seq, type: 'user/message', data: { turn: null, content: [{ type: 'text', text: `<checkpoint>\n${text}\n</checkpoint>` }], source: { kind: 'compact-checkpoint' } } });
-const digestScenario = (extra = []) => [
-	U(1, 'user', '问题A', null),
-	...extra,
-	CKPT(90, 8, '第8轮记录: 用户要求X, 已完成, 关键文件 /tmp/a.py'),
-	CKPT(91, 9, '第9轮记录: 修复了Y错误, 参数 k=3'),
-	U(92, 'user', '最新问题', null),
-];
-async function digestTests() {
-	// T1: 无旧摘要, 1候选 → 新摘要落候选位
-	{
-		const session = mkSession(digestScenario());
-		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
-		let seen = null;
-		pruner.mergeDigestText = async (_s, prev, inc) => { seen = { prev, inc }; return '合并后的摘要内容'; };
-		pruner.compressStaleCheckpoints(session, 10);
-		await pruner.digestInflight.get(session.id);
-		const replaced = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
-		const newText = replaced.map((a) => a.data?.content?.[0]?.text || '').join('|');
-		check('digest T1 候选被替换为滚动摘要', replaced.length === 1 && newText.includes('[会话滚动摘要') && newText.includes('合并后的摘要内容'));
-		check('digest T1 合并输入含候选原文', seen?.inc?.includes('第8轮记录'));
-	}
-	// T2: 有旧摘要 → 旧摘要转占位, 新候选转摘要
-	{
-		const session = mkSession(digestScenario([CKPT(89, 7, '[会话滚动摘要|更新于turn 7]旧摘要: 此前做了W')]));
-		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
-		let prevSeen = null;
-		pruner.mergeDigestText = async (_s, prev, inc) => { prevSeen = prev; return '新摘要v2'; };
-		pruner.compressStaleCheckpoints(session, 10);
-		await pruner.digestInflight.get(session.id);
-		const replaces = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
-		const texts = replaces.map((a) => (a.data?.content?.[0]?.text || '').replace(/<[^>]+>/g, '').trim());
-		check('digest T2 旧摘要正文进入合并且头部标记被剥离', prevSeen?.includes('此前做了W') && !prevSeen?.includes('更新于turn 7'));
-		check('digest T2 恰好两次替换(新摘要+旧占位)', replaces.length === 2);
-		check('digest T2 含新摘要与占位', texts.some((t) => t.includes('新摘要v2')) && texts.some((t) => t.includes(DROP_MARK_S)));
-	}
-	// T3: LLM 失败 → 候选原文保留, 零替换
-	{
-		const session = mkSession(digestScenario());
-		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
-		pruner.mergeDigestText = async () => null;
-		pruner.compressStaleCheckpoints(session, 10);
-		await pruner.digestInflight.get(session.id);
-		const replaced = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
-		check('digest T3 失败不动(零替换)', replaced.length === 0);
-		check('digest T3 锁已释放可重试', !pruner.digestInflight.has(session.id));
-	}
-	// T4: 多候选一批 → 首个转摘要, 其余转占位
-	{
-		const session = mkSession(digestScenario([CKPT(88, 6, '第6轮记录: 早期工作Z')]));
-		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
-		pruner.mergeDigestText = async () => '批次摘要';
-		pruner.compressStaleCheckpoints(session, 10);
-		await pruner.digestInflight.get(session.id);
-		const replaces = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
-		const texts = replaces.map((a) => (a.data?.content?.[0]?.text || '').replace(/<[^>]+>/g, '').trim());
-		check('digest T4 两次替换(摘要+一占位,keep=1 留 91)', replaces.length === 2);
-		check('digest T4 恰一份摘要其余占位', texts.filter((t) => t.includes('批次摘要')).length === 1 && texts.filter((t) => t.includes(DROP_MARK_S)).length === 1);
-	}
-}
-const DROP_MARK_S = '[已并档]';
-await digestTests();
 
 // ── 用例8(2026-11-05 定版): checkpoint 携带机械过程记录(▸调用/↳输出头/提示词锚) ──
 {
