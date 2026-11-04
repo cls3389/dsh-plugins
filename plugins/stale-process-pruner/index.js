@@ -56,14 +56,19 @@ const DEFAULT_CHECKPOINT_KEEP = 5;
 const ARCHIVE_MARK = '[归档';
 const ARCHIVE_HEAD_CHARS = 240;
 const ARCHIVE_TAIL_CHARS = 120;
+// v1.2.1 单槽滚动(drop 模式): 出窗 checkpoint 直接替换为极短占位, 正文 O(keep) 恒定;
+// 原文永远留在事件日志(zstdcat 回读, replay-safe)。占位沿用 checkpoint source, 后续段重折可吸收自清洁。
+const DROP_MARK = '[已并档]';
 
 export class StaleProcessPruner extends ToolResultPruner {
 	constructor(ctx, config = {}) {
-		// 父类拿 thresholdChars/headChars/tailChars; 多余键 staleTurns/checkpointKeep 自己取。
-		const { staleTurns, checkpointKeep = DEFAULT_CHECKPOINT_KEEP, ...parent } = config;
+		// 父类拿 thresholdChars/headChars/tailChars; 多余键自己取。
+		const { staleTurns, checkpointKeep = DEFAULT_CHECKPOINT_KEEP, checkpointMode = 'drop', ...parent } = config;
 		super(ctx, parent);
 		this.staleTurns = Number.isInteger(staleTurns) ? staleTurns : DEFAULT_STALE_TURNS; // 0/-1 是合法显式值,校验在 pruneStaleProcess
 		this.checkpointKeep = Number.isInteger(checkpointKeep) ? checkpointKeep : DEFAULT_CHECKPOINT_KEEP; // -1 禁用压缩
+		// v1.2.1: drop=出窗 checkpoint 替换为 [已并档] 占位(单槽滚动,正文 O(keep)); archive=v1.2.0 头尾采样归档。
+		this.checkpointMode = checkpointMode === 'archive' ? 'archive' : 'drop';
 		// 用引擎 checkpoint 协议替换整段历史，避免 assistant tool-call/result 失配，
 		// 也不触发 session/event 的同步观察者看到半提交状态。
 		ctx.on?.('agent/pre-step', async ({ agent, step, turn, signal }, next) => {
@@ -191,19 +196,25 @@ export class StaleProcessPruner extends ToolResultPruner {
 		for (const { seq, event } of compressible) {
 			const message = session.deriveEventMessage(event);
 			const full = (message?.content || []).map((part) => part?.text || '').join('\n').trim();
-			if (full.startsWith(ARCHIVE_MARK)) continue; // 已压缩: 冻结态, 幂等
 			const body = full
 				.replace(/^<checkpoint>\n?/, '')
 				.replace(/\n?<\/checkpoint>$/, '')
 				.replace(/^\[历史对话精编[^\n]*\]\n?/, '')
 				.trim();
 			if (!body) continue;
-			const head = body.slice(0, ARCHIVE_HEAD_CHARS);
-			const tail = body.length > ARCHIVE_HEAD_CHARS + ARCHIVE_TAIL_CHARS ? body.slice(-ARCHIVE_TAIL_CHARS) : '';
-			const metrics = `原${body.length}字符`;
-			const kept = tail
-				? `[归档|${metrics}] ${head}\n…\n[归档尾] ${tail}`
-				: `[归档|${metrics}] ${head}`;
+			let kept;
+			if (this.checkpointMode === 'drop') {
+				if (body === DROP_MARK) continue; // 已是占位: 冻结态, 幂等
+				kept = DROP_MARK;
+			} else {
+				if (full.startsWith(ARCHIVE_MARK)) continue; // 已压缩: 冻结态, 幂等
+				const head = body.slice(0, ARCHIVE_HEAD_CHARS);
+				const tail = body.length > ARCHIVE_HEAD_CHARS + ARCHIVE_TAIL_CHARS ? body.slice(-ARCHIVE_TAIL_CHARS) : '';
+				const metrics = `原${body.length}字符`;
+				kept = tail
+					? `[归档|${metrics}] ${head}\n…\n[归档尾] ${tail}`
+					: `[归档|${metrics}] ${head}`;
+			}
 			if (kept.length >= body.length) continue; // 无收益不折(幂等且防抖动)
 			const archiveId = `stale-archive-${session.id}-${session.seq}-${seq}`;
 			const startEvent = session.append('compaction/start', { compactionId: archiveId, turn: openTurn });

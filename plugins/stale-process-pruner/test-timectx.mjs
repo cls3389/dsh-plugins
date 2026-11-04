@@ -113,7 +113,7 @@ const check = (name, cond) => {
 const CK = (seq, text, turn = null) => ({ seq, type: 'user/message', data: { turn, content: [{ type: 'text', text }], source: { kind: 'compact-checkpoint' } } });
 const ckBody = (n, size) => `<checkpoint>\n[历史对话精编：仅保留用户与助手正文，工具调用参数、工具输出与思考过程已裁剪。]\n\n第${n}轮结论：${'详'.repeat(size)}。完。\n</checkpoint>`;
 
-// ── 用例5: 6 条 checkpoint, keep=2 → 前 4 条就地压缩, 后 2 条原样 ──
+// ── 用例5: 默认 drop 模式 — 6 条 checkpoint, keep=2 → 前 4 条占位化, 后 2 条原样 ──
 {
 	const events = [U(1, 'user', 'q', null)];
 	for (let i = 0; i < 6; i += 1) {
@@ -124,30 +124,44 @@ const ckBody = (n, size) => `<checkpoint>\n[历史对话精编：仅保留用户
 	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 2 });
 	pruner.compressStaleCheckpoints(session, 9);
 	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
-	check('case5 压缩了 4 条(6-2)', replaces.length === 4);
+	check('case5 drop 占位化 4 条(6-2)', replaces.length === 4);
 	const texts = replaces.map((x) => x.data?.content?.[0]?.text || '');
-	check('case5 压缩文本带归档标记+计量', texts.every((t) => t.includes('[归档|原') && t.includes('第') && t.includes('完。')));
-	check('case5 压缩含头尾采样', texts.every((t) => t.includes('[归档尾]')));
+	check('case5 占位=DROP_MARK 包 checkpoint 壳', texts.every((t) => t === `<checkpoint>\n[已并档]\n</checkpoint>`));
 	check('case5 单条 span 替换(startSeq===endSeq)', replaces.every((x) => x.opts.surfaceOp.startSeq === x.opts.surfaceOp.endSeq));
-	check('case5 压缩收益显著', replaces.every((x) => {
-		const kept = (x.data?.content?.[0]?.text || '').length;
-		return kept < 500; // 原 ~850+
-	}));
 }
 
-// ── 用例6: 已归档的幂等跳过 + 无收益的短正文不动 ──
+// ── 用例5b: 显式 archive 模式保留采样残影 ──
+{
+	const events = [U(1, 'user', 'q', null)];
+	for (let i = 0; i < 6; i += 1) {
+		events.push(CK(2 + i, ckBody(i + 1, 800)));
+		events.push(U(8 + i, 'user', `q${i}`, null));
+	}
+	const session = mkSession(events);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 2, checkpointMode: 'archive' });
+	pruner.compressStaleCheckpoints(session, 9);
+	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
+	check('case5b archive 压缩 4 条', replaces.length === 4);
+	const texts = replaces.map((x) => x.data?.content?.[0]?.text || '');
+	check('case5b 带归档标记+头尾采样', texts.every((t) => t.includes('[归档|原') && t.includes('[归档尾]')));
+}
+
+// ── 用例6: drop 幂等(占位冻结) + 无收益短正文不动 + 旧 archive 残影迁移为占位 ──
 {
 	const session = mkSession([
 		U(1, 'user', 'q', null),
-		CK(2, `<checkpoint>\n[归档|原42字符] 短正文已归档\n</checkpoint>`),
+		CK(2, `<checkpoint>\n[已并档]\n</checkpoint>`),
 		U(3, 'user', 'q', null),
 		CK(4, `<checkpoint>\n[历史对话精编：裁剪。]\n\n短\n</checkpoint>`),
 		U(5, 'user', 'q', null),
+		CK(6, `<checkpoint>\n[归档|原42字符] 旧模式残影\n</checkpoint>`),
+		U(7, 'user', 'q', null),
 	]);
 	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0, checkpointKeep: 0 });
 	pruner.compressStaleCheckpoints(session, 9);
 	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace');
-	check('case6 已归档跳过+无收益不动 → 0 次替换', replaces.length === 0);
+	check('case6 占位冻结+短正文不动, 仅旧残影迁移 → 1 次替换', replaces.length === 1);
+	check('case6 迁移产物=占位', (replaces[0]?.data?.content?.[0]?.text || '').includes('[已并档]'));
 }
 
 // ── 用例7: checkpointKeep=-1 禁用压缩 ──
