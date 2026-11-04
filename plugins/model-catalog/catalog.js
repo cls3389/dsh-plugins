@@ -8,6 +8,20 @@ const BLOCKED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 20_000;
 
+// developer 角色是 OpenAI o 系列引入的 system 替代品，只对 OpenAI 自家端点有意义；
+// 非 OpenAI 的 OpenAI 兼容层要么静默映射回 system，要么直接拒收（GLM 1214
+// 「角色信息不正确」、自建网关 422 unknown variant developer）。本插件面向聚合
+// 网关，默认对所有模型关闭 developer 角色；确需开启的模型用 override 显式声明
+// supportsDeveloperRole: true 覆盖。
+const DEFAULT_COMPAT = { supportsDeveloperRole: false };
+
+function applyDefaultCompat(entry) {
+	if (entry.compat?.supportsDeveloperRole === undefined) {
+		entry.compat = { ...DEFAULT_COMPAT, ...(entry.compat ?? {}) };
+	}
+	return entry;
+}
+
 function plainObject(value, label) {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
 	const proto = Object.getPrototypeOf(value);
@@ -145,7 +159,7 @@ export function mergeModels(remote, overrides = {}) {
 			}
 			if (override.compat !== undefined) merged.compat = { ...(raw.compat ?? {}), ...copyPlain(override.compat, 'compat override') };
 		}
-		return [merged];
+		return [applyDefaultCompat(merged)];
 	});
 }
 

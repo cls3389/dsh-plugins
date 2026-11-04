@@ -37,8 +37,21 @@ test('merges model overrides by ID, deep-merges compat and does not advertise ab
 		missing: { enabled: true, name: 'Not advertised' },
 		b: { enabled: false },
 	});
-	assert.deepEqual(result, [{ id: 'a', name: 'Override A', enabled: true, reasoningEfforts: ['medium'], compat: { stream: true, nested: { local: true } }, priority: 9 }]);
+	assert.deepEqual(result, [{ id: 'a', name: 'Override A', enabled: true, reasoningEfforts: ['medium'], compat: { stream: true, nested: { local: true }, supportsDeveloperRole: false }, priority: 9 }]);
 	assert.throws(() => mergeModels(remote, JSON.parse('{"__proto__":{"enabled":true}}')), /unsafe/);
+});
+
+test('disables developer role by default for every model; explicit declarations win', () => {
+	const merged = mergeModels([
+		{ id: 'glm-5.3', name: 'GLM 5.3' },
+		{ id: 'kimi-k3', name: 'kimi' },
+		{ id: 'gpt-6-sol', name: 'GPT 6 Sol', compat: { supportsDeveloperRole: true } },
+	], {});
+	assert.deepEqual(merged[0].compat, { supportsDeveloperRole: false });
+	assert.deepEqual(merged[1].compat, { supportsDeveloperRole: false });
+	assert.equal(merged[2].compat.supportsDeveloperRole, true);
+	const withOverride = mergeModels([{ id: 'glm-5.3', name: 'GLM 5.3' }], { 'glm-5.3': { compat: { thinkingFormat: 'zai' } } });
+	assert.deepEqual(withOverride[0].compat, { thinkingFormat: 'zai', supportsDeveloperRole: false });
 });
 
 test('fetches Codex catalog at default path, passing auth and returning normalized entries', async () => {
