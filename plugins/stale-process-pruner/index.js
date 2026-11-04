@@ -430,6 +430,7 @@ export class StaleProcessPruner extends ToolResultPruner {
 		if (end < start) return { pruned: 0, charsRemoved: 0 };
 		const shadowedSeqs = nodes.slice(start, end + 1);
 		const retained = [];
+		const digestLines = [];
 		let charsRemoved = 0;
 		for (const seq of shadowedSeqs) {
 			const event = session.eventAt(seq);
@@ -442,6 +443,38 @@ export class StaleProcessPruner extends ToolResultPruner {
 				if (body) retained.push(body);
 				continue;
 			}
+			// 过程记录 digest(2026-11-05 用户定调, 与 CPA context-fold 同构): 工具调用与输出头
+			// 机械摘录进 checkpoint —— 执行史记忆不依赖 AGENTS 正文纪律, 证据直接在上下文(CPA 实测防叙事重写)。
+			if (event.type === 'assistant/message') {
+				for (const part of original.content || []) {
+					if ((part?.type === 'tool_use' || part?.type === 'tool-call') && (part.name || part.id)) {
+						const args = JSON.stringify(part.input ?? part.arguments ?? {}).slice(0, 80);
+						digestLines.push(`▸ ${part.name || 'call'} ${args}`);
+					}
+				}
+				for (const call of original.tool_calls || []) {
+					const fn = call?.function || {};
+					if (fn.name) digestLines.push(`▸ ${fn.name} ${String(fn.arguments ?? '').slice(0, 80)}`);
+				}
+			} else if (event.type === 'tool/call') {
+				const name = event.data?.name || original?.name || 'call';
+				const argsText = (original.content || []).map((part) => (typeof part === 'string' ? part : part?.text) || '').join(' ').trim();
+				digestLines.push(`▸ ${name} ${argsText.slice(0, 80)}`);
+			} else if (event.type === 'tool/result') {
+				const raw = typeof original.content === 'string'
+					? original.content
+					: (original.content || []).map((part) => {
+						if (typeof part === 'string') return part;
+						if (part?.type === 'text') return part.text || '';
+						if (part?.type === 'tool_result') {
+							return typeof part.content === 'string' ? part.content
+								: (part.content || []).map((c) => c?.text || '').join(' ');
+						}
+						return '';
+					}).join('\n');
+				const head = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+				if (head) digestLines.push(`↳ ${head}`);
+			}
 			const texts = event.type === 'assistant/message'
 				? (original.content || []).filter((part) => part?.type === 'text' && part.text?.trim()).map((part) => part.text)
 				: [];
@@ -453,7 +486,15 @@ export class StaleProcessPruner extends ToolResultPruner {
 			return sum + (message ? this.ctx.tokenMeter.estimateMessage(message) : 0);
 		}, 0);
 		const text = retained.filter((part) => part.trim()).join('\n\n');
-		const summary = [{ type: 'text', text: `[历史对话精编：仅保留用户与助手正文，工具调用参数、工具输出与思考过程已裁剪。]\n\n${text || '（此前只有工具调用过程，无正文。）'}` }];
+		// digest 块(▸=调用, ↳=输出头, 上限40行) + 提示词锚(防执行史重写)。
+		let digestBlock = '';
+		if (digestLines.length > 0) {
+			const shown = digestLines.slice(0, 40);
+			const overflow = digestLines.length - shown.length;
+			digestBlock = `[过程记录：以下工具调用均真实执行过；关键结论已在下方正文引用，勿重述为未执行；完整原文在会话日志。]\n${shown.join('\n')}${overflow > 0 ? `\n…另 ${overflow} 项已省` : ''}\n\n`;
+		}
+		const fallback = text || (digestBlock ? '' : '（此前只有工具调用过程，无正文。）');
+		const summary = [{ type: 'text', text: `[历史对话精编：正文全保留；工具过程折叠为机械过程记录（▸调用/↳输出头）。]\n\n${digestBlock}${fallback}` }];
 		const checkpointId = `stale-${session.id}-${session.seq}-${shadowedSeqs[0]}`;
 		const startEvent = session.append('compaction/start', { compactionId: checkpointId, turn: openTurn });
 		const summaryEvent = session.append('compaction/summary', {

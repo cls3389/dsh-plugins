@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/stale-process-pruner",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Turn-age pruner for DeepSeek Harness: folds previous turns' tool output/thinking into compact checkpoints at each turn start (staleTurns 0=keep none / 1=keep previous / -1=disable). Keeps prompt prefix cache-friendly; user messages, assistant body text and instruction injections stay pinned.",
   "type": "module",
   "main": "index.js",

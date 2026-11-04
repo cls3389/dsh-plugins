@@ -236,4 +236,25 @@ async function digestTests() {
 }
 const DROP_MARK_S = '[已并档]';
 await digestTests();
+
+// ── 用例8(2026-11-05 定版): checkpoint 携带机械过程记录(▸调用/↳输出头/提示词锚) ──
+{
+	const session = mkSession([
+		U(1, 'user', '查一下 600519 现价', null),
+		A(2, 1, '600519 现价 1512.3 元。', true), // assistant 正文 + tool-call 块
+		{ seq: 3, type: 'tool/call', data: { turn: 1, name: 'ths_quote', content: [{ type: 'text', text: '{"code":"600519"}' }] } },
+		{ seq: 4, type: 'tool/result', data: { turn: 1, content: [{ type: 'text', text: 'price=1512.30 ' + 'x'.repeat(100) }] } },
+		U(5, 'user', '好，再看 000001', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 5);
+	const ck = session.appended.filter((a) => a.type === 'user/message')
+		.map((a) => (a.data?.content?.[0]?.text) || '').find((t) => t.startsWith('<checkpoint>')) || '';
+	check('proc8 折叠发生', r.pruned > 0);
+	check('proc8 含调用行(▸ ths_quote)', ck.includes('▸ ths_quote'));
+	check('proc8 含输出头(↳ price=1512.30)', ck.includes('↳ price=1512.30'));
+	check('proc8 含提示词锚(勿重述为未执行)', ck.includes('勿重述为未执行'));
+	check('proc8 正文仍保留', ck.includes('1512.3'));
+	check('proc8 头部标记兼容旧剥离正则', /^\[历史对话精编[^\n]*\]/.test(ck.replace(/^<checkpoint>\n?/, '')));
+}
 process.exit(failed ? 1 : 0);
