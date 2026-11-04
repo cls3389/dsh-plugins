@@ -7,7 +7,13 @@
  */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { identityOf, principalKey } from '../feishu-principal/index.js';
+
+// QR 目录跨平台契约(2026-11-05): POSIX 保持 /tmp/openclaw-ths-qr —— feishu_send_image 的
+// isQr 规则 hard-match 这个前缀(baiying 扫码链路依赖)；win32 无 feishu-channel，走 os.tmpdir()。
+const QR_DIR = process.platform === 'win32' ? join(tmpdir(), 'openclaw-ths-qr') : '/tmp/openclaw-ths-qr';
 
 const name = 'ths-wencai';
 const inject = ['tools'];
@@ -41,15 +47,15 @@ function resolveUserId(exec, cfg) {
 	return principalKey(openId, appId, cfg.defaultAppId || appId);
 }
 
-/** 问财登录二维码路径必须命中 feishu_send_image 的 isQr 规则。 */
+/** 问财登录二维码路径必须命中 feishu_send_image 的 isQr 规则（POSIX 契约路径，见 QR_DIR 注释）。 */
 function qrImagePath() {
 	const hex = crypto.randomBytes(8).toString('hex');
-	return `/tmp/openclaw-ths-qr/qr-${hex}.png`;
+	return `${QR_DIR}/qr-${hex}.png`;
 }
 
 async function saveQrImage(buffer) {
 	const path = qrImagePath();
-	await fs.promises.mkdir('/tmp/openclaw-ths-qr', { recursive: true, mode: 0o700 });
+	await fs.promises.mkdir(QR_DIR, { recursive: true, mode: 0o700 });
 	await fs.promises.writeFile(path, buffer, { mode: 0o600 });
 	return path;
 }

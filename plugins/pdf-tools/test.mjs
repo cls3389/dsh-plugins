@@ -20,14 +20,16 @@ try {
     } };
   }
   const docs = registry();
-  applyDocument(docs.ctx);
+  // 2026-11-05: 显式白名单，测试不再隐式依赖 DSH_HOME 环境变量（未设时附件路径会被前缀拒绝，
+  // 返回 {error} 无 code 字段，断言形状随环境漂移——曾致套件在干净 shell 下必挂）。
+  applyDocument(docs.ctx, { allowedPathPrefixes: ['/tmp/', '/data/dsh/'] });
   const converted = await docs.tools.get('doc_to_markdown').execute({ file_path: csv });
   assert.equal(converted.status, 'ok');
   assert.match(converted.markdown, /PDF split/);
   assert.equal((await docs.tools.get('doc_to_markdown').execute({ file_path: '/data/dsh/attachments/v1/files/90/905d69d9a006e6d839488680e0787671a3da3fc34ca6dbfc94b0c3fd5730d578/20261018格兰周策略：坚守底线.pdf' })).code, 'unsupported');
 
   const pdf = registry();
-  applyPdf(pdf.ctx);
+  applyPdf(pdf.ctx, { allowedPathPrefixes: ['/tmp/', '/data/dsh/'] });
   const result = await pdf.tools.get('pdf_read').execute({
     file_path: '/data/dsh/attachments/v1/files/90/905d69d9a006e6d839488680e0787671a3da3fc34ca6dbfc94b0c3fd5730d578/20261018格兰周策略：坚守底线.pdf',
   });
