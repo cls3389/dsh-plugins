@@ -137,12 +137,12 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793743921,
+          "version": "0.1.2",
+          "publishTimestamp": 1793811132,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "87455908bc7ad71e2be108277890434dc200f8e1",
+            "commit": "77f9cd2a383087869b663e3928331d54ee810840",
             "path": "plugins/claw-sandbox"
           },
           "engines": {}
@@ -236,12 +236,12 @@
       },
       "versions": [
         {
-          "version": "0.6.5",
-          "publishTimestamp": 1793582297,
+          "version": "0.6.6",
+          "publishTimestamp": 1793811132,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "77f9cd2a383087869b663e3928331d54ee810840",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -448,12 +448,12 @@
       },
       "versions": [
         {
-          "version": "0.2.0",
-          "publishTimestamp": 1793807481,
+          "version": "0.2.1",
+          "publishTimestamp": 1793811132,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "da45990424f8305a08d02bbcca73f3d570c7ba99",
+            "commit": "77f9cd2a383087869b663e3928331d54ee810840",
             "path": "plugins/model-catalog"
           },
           "engines": {}
@@ -1008,12 +1008,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793743384,
+          "version": "0.1.1",
+          "publishTimestamp": 1793811132,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "80cfea368e5f58c36283703c29cc76eccb1beee7",
+            "commit": "77f9cd2a383087869b663e3928331d54ee810840",
             "path": "plugins/wechat-channel"
           },
           "engines": {}
