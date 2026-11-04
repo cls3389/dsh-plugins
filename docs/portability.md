@@ -58,6 +58,10 @@ Linux symlink / Windows junction / hoisted 实拷，解析行为不同。别假�
 
 profile 层覆盖插件 config 是**整体替换**：覆盖任何一个字段都要把全部必填字段抄全（session-title 的 timeoutMs、web-providers 的全部 16 个键都是这么踩的）。覆盖前先 dump 或读自带 cordis.patch.yml 拿全量。
 
+## 7. 路径白名单要平台派生（2026-11-05 全仓扫出）
+
+`allowedPathPrefixes: ['/tmp/', ..., '/home/']` 这类写死 POSIX 前缀的文件访问白名单，在 Windows 上会拒掉一切用户路径（C:\Users\... 不匹配任何前缀）——pdf-tools / anydoc / image-tools / officecli-tools 四件同病（f3b008c 已修）。正解：白名单加入 `tmpdir()` / `homedir()` 派生项，匹配器侧做斜杠归一（image-tools 的 `replace(/\\/g,'/')` 双侧归一是范本）。正面教材：@jipika/dsh-memory 的 shell 选择（`process.platform === 'win32'` → `%ComSpec%`，POSIX 才 zsh→$SHELL→/bin/sh 链）。
+
 ## 检查单（新插件上架前过一遍）
 
 - [ ] index.js 零绝对路径 import（grep `^import .* from '/`）
