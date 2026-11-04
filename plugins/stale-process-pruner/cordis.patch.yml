@@ -1,0 +1,10 @@
+# Bundled mount declaration: full visible config (整对象替换,覆盖任一键须写全)
+- insert:
+    - id: stale-pruner
+      name: '@dsh-friends/stale-process-pruner'
+      config:
+        # 0=不保留既往轮(上一轮下一轮即折) 1=保留上一轮 -1=禁用轮龄裁剪
+        staleTurns: 0
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024

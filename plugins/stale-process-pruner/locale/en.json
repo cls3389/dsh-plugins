@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Stale Process Pruner",
+    "description": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one turn, -1=disable; assistant bodies and user messages stay pinned."
+  }
+}
