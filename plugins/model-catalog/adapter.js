@@ -16,7 +16,12 @@ export function materialize(state) {
   for (const provider of state.providers) {
     if (!provider.enabled) continue;
     const remote = state.catalogs[provider.id]?.models ?? [];
-    const effective = mergeModels(remote, provider.overrides).sort((a,b) => (a.priority ?? 1000) - (b.priority ?? 1000));
+    // 排序基准:显式 override.priority 优先(用户拖拽),否则跟随上游数组顺序;
+    // 上游 priority 数值不参与排序,数组换序即可经同步传播。
+    const effective = mergeModels(remote, provider.overrides)
+      .map((entry, position) => ({ entry, position }))
+      .sort((a, b) => ((a.entry.priority ?? a.position) - (b.entry.priority ?? b.position)))
+      .map((x) => x.entry);
     const models = effective.map(entry => {
       const contextWindow = entry.contextWindow ?? 262144;
       const maxTokens = entry.maxTokens ?? Math.min(32768, contextWindow);

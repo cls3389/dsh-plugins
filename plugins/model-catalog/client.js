@@ -146,9 +146,18 @@ window.__ModuleLoader__.load({
 				const rawModels = snapshot.catalogs?.[provider.id]?.models || [];
 				const effective = snapshot.effective?.[provider.id] || [];
 				const overrides = provider.overrides || {};
-				const ids = new Set([...rawModels.map((m) => m.id), ...effective.map((m) => m.id), ...Object.keys(overrides)]);
+				// 模型行完全跟随上游目录：override-only 条目不显示（上游没有了就是无效的；disabled 模型仍经 raw 行展示）
+				// 排序基准与服务端一致：override.priority 优先，否则 effective/raw 数组位置（跟随上游同步换序）。
+				const rawPos = new Map(rawModels.map((m, i) => [m.id, i]));
+				const effPos = new Map(effective.map((m, i) => [m.id, i]));
+				const orderKey = (row) => {
+					if (Number.isFinite(row.override.priority)) return row.override.priority;
+					const pos = effPos.has(row.id) ? effPos.get(row.id) : rawPos.get(row.id);
+					return Number.isFinite(pos) ? pos : 1000;
+				};
+				const ids = new Set([...rawModels.map((m) => m.id), ...effective.map((m) => m.id)]);
 				return [...ids].map((id) => ({ id, raw: rawModels.find((m) => m.id === id) || {}, effective: effective.find((m) => m.id === id) || {}, override: overrides[id] || {} }))
-					.sort((a, b) => (Number(a.override.priority ?? a.effective.priority ?? a.raw.priority ?? 0) - Number(b.override.priority ?? b.effective.priority ?? b.raw.priority ?? 0)) || a.id.localeCompare(b.id));
+					.sort((a, b) => (orderKey(a) - orderKey(b)) || a.id.localeCompare(b.id));
 			};
 			const discardDraft = (key) => setDrafts((old) => { const next = { ...old }; delete next[key]; return next; });
 			const changeModel = (provider, row, field, value) => {
@@ -161,10 +170,13 @@ window.__ModuleLoader__.load({
 			};
 			const persistOrder = async (provider, orderedRows) => {
 				const overrides = { ...(provider.overrides || {}) };
+				const rawOrder = new Map((snapshot.catalogs?.[provider.id]?.models || []).map((m, i) => [m.id, i]));
 				orderedRows.forEach((row, index) => {
 					const current = { ...(overrides[row.id] || {}) };
-					const rawPriority = Number(row.raw.priority ?? 0);
-					if (rawPriority === index) delete current.priority; else current.priority = index;
+					// 与上游数组下标(0-based)对齐:行保持上游原位时不写 priority,让顺序跟随上游同步;
+					// 不在上游的行(已下线残留)没有原位,显式写位置。
+					const rawIndex = rawOrder.get(row.id);
+					if (rawIndex === index) delete current.priority; else current.priority = index;
 					if (Object.keys(current).length) overrides[row.id] = current; else delete overrides[row.id];
 				});
 				const result = await post({ op: 'save', revision: snapshot.revision, provider: { ...provider, overrides } }, '模型顺序已保存。');

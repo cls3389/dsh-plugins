@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/model-catalog",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "模型目录：自动发现同步 Codex/OpenAI 模型，配置端点、显示名称和逐模型覆盖",
   "type": "module",
   "license": "MIT",

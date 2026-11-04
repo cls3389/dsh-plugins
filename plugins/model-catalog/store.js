@@ -83,7 +83,14 @@ export class CatalogStore {
   async publicState() {
     const state=await this.read();
     const providers=await Promise.all(state.providers.map(async p=>({...p,hasApiKey:Boolean((await this.credentials.describe(credentialRef(keyRef(p.id,p.credentialId)))).configured)})));
-    const effective=Object.fromEntries(state.providers.map(p=>[p.id,mergeModels(state.catalogs[p.id]?.models??[],p.overrides).sort((a,b)=>(a.priority??1000)-(b.priority??1000))]));
+    // 排序基准与 materialize 一致:override.priority 优先,否则跟随上游数组顺序。
+    const effective=Object.fromEntries(state.providers.map(p=>{
+      const merged=mergeModels(state.catalogs[p.id]?.models??[],p.overrides);
+      const ordered=merged.map((entry,position)=>({entry,position}))
+        .sort((a,b)=>((a.entry.priority??a.position)-(b.entry.priority??b.position)))
+        .map((x)=>x.entry);
+      return [p.id,ordered];
+    }));
     return {revision:state.revision,providers,catalogs:state.catalogs,effective};
   }
 }
