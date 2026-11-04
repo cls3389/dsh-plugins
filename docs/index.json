@@ -701,6 +701,15 @@
       },
       "versions": [
         {
+          "version": "1.3.1",
+          "publishTimestamp": 1793816434,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "9cf1cd6"
+          }
+        },
+        {
           "version": "1.3.0",
           "publishTimestamp": 1793815293,
           "source": {
