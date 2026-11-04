@@ -677,8 +677,8 @@
         "en": "Stale Process Pruner"
       },
       "description": {
-        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint：staleTurns 0=上一轮即折、1=保留上一轮、-1=禁用；正文与用户消息永久钉住。",
-        "en": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one turn, -1=disable; assistant bodies and user messages stay pinned."
+        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint：staleTurns 0=上一轮即折、1=保留上一轮、-1=禁用；checkpoint 默认 drop 滚动槽(出窗即占位[已并档]，正文 O(K) 恒定)，checkpointMode: drop|archive(-1 禁用)。",
+        "en": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one, -1=disable; checkpoints default to a drop rolling slot (placeholder [已并档] once out of window, O(K) constant), checkpointMode: drop|archive(-1 disables)."
       },
       "author": "dsh-friends",
       "homepage": "https://github.com/cls3389/dsh-plugins#readme",
@@ -700,6 +700,15 @@
         ]
       },
       "versions": [
+        {
+          "version": "1.2.1",
+          "publishTimestamp": 1793815800,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "9cf1cd6"
+          }
+        },
         {
           "version": "1.2.0",
           "publishTimestamp": 1793813140,
