@@ -448,12 +448,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793716377,
+          "version": "0.2.0",
+          "publishTimestamp": 1793807481,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "ede82b828cf0afec12f2139dfa0df012c1e01727",
+            "commit": "da45990424f8305a08d02bbcca73f3d570c7ba99",
             "path": "plugins/model-catalog"
           },
           "engines": {}
