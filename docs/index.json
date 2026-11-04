@@ -41,7 +41,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "f3b008c260b1a5f3834cc02c73902e3a1b88d65d",
             "path": "plugins/anydoc"
           },
           "engines": {}
@@ -380,7 +380,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "bb25a03f7aea2b9d9906b77f8bcf98d380d53e9a",
+            "commit": "f3b008c260b1a5f3834cc02c73902e3a1b88d65d",
             "path": "plugins/image-tools"
           },
           "engines": {}
@@ -526,7 +526,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "f3b008c260b1a5f3834cc02c73902e3a1b88d65d",
             "path": "plugins/officecli-tools"
           },
           "engines": {}
@@ -663,7 +663,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
+            "commit": "f3b008c260b1a5f3834cc02c73902e3a1b88d65d",
             "path": "plugins/pdf-tools"
           },
           "engines": {}
