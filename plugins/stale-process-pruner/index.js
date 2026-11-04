@@ -39,7 +39,7 @@ async function importDshInternal(sub) {
 const [
 	{ ToolResultPruner },
 	{ createUserMessage },
-	{ compactCheckpointSource, toolPairingBalancedBefore },
+	{ compactCheckpointSource, toolPairingBalancedBefore, toolPairingBalancedAfter },
 ] = await Promise.all([
 	importDshInternal('dsh-compaction-tool-result-pruner'),
 	importDshInternal('dsh-llm'),
@@ -157,7 +157,9 @@ export class StaleProcessPruner extends ToolResultPruner {
 		let gapStart = -1;
 		for (let index = 0; index <= nodes.length; index += 1) {
 			const event = index < nodes.length ? session.eventAt(nodes[index]) : undefined;
-			if (index < nodes.length && !this.isPinned(event)) {
+			// checkpoint 是软边界(v1.4.2): 永不 shadow/并入, 原位冻结保留——
+			// 这是 v1.4.0「checkpoint 永不改写」承诺的真正实现。
+			if (index < nodes.length && !this.isPinned(event) && !this.isCheckpoint(event)) {
 				if (gapStart === -1) gapStart = index;
 				continue;
 			}
@@ -172,23 +174,27 @@ export class StaleProcessPruner extends ToolResultPruner {
 		return { pruned, charsRemoved };
 	}
 
-	/** 折叠一个过程段; 段内必须全部过期且含未折叠的原始内容, 否则跳过。 */
+	/** 折叠一个过程段(段内只含 assistant/tool/ephemeral, 无 checkpoint——checkpoint 在段扫描层已是软边界)。 */
 	foldGap(session, nodes, from, to, cutoff, openTurn) {
 		let hasRawStale = false;
 		for (let index = from; index <= to; index += 1) {
 			const event = session.eventAt(nodes[index]);
-			if (this.isCheckpoint(event)) continue; // 折叠态透明: 不算新内容也不阻碍
 			if (this.isEphemeral(event)) continue; // time-context 采样: 无轮号但必然过期, 随段折叠
 			const turn = event?.data?.turn;
 			if (!Number.isInteger(turn) || turn > cutoff) return { pruned: 0, charsRemoved: 0 };
 			if (event?.type === 'assistant/message' || event?.type === 'tool/result') hasRawStale = true;
 		}
-		if (!hasRawStale) return { pruned: 0, charsRemoved: 0 }; // 纯旧checkpoint段: 已冻结, 不再重折
-		// 边界工具配对: 段首前移/段尾回缩到 balanced 切口(钉住节点旁通常天然平衡)。
+		if (!hasRawStale) return { pruned: 0, charsRemoved: 0 }; // 无可折叠原始内容
+		// 边界工具配对: 段首前移/段尾回缩到 balanced 切口。
+		// v1.4.2 修 P2 尾切口 off-by-one: 段尾统一用官方 toolPairingBalancedAfter(nodes[end])
+		// (检查 end 之后的切口; end<to 时与旧式 balancedBefore(nodes[end+1]) 等价, end===to
+		// 即 surface 末端时旧代码错误退回 before(last), 把已平衡的 tool/result 尾对漏裁——
+		// 实测前轮以结果收尾+新消息尚在 claimed 中时 pruned=0)。与 compaction-basic
+		// validateSurfaceRegion 的末端校验同款语义。
 		let start = from;
 		while (start <= to && !toolPairingBalancedBefore(session, nodes[start])) start += 1;
 		let end = to;
-		while (end >= start && !toolPairingBalancedBefore(session, nodes[end + 1] ?? nodes[end])) end -= 1;
+		while (end >= start && !toolPairingBalancedAfter(session, nodes[end])) end -= 1;
 		if (end < start) return { pruned: 0, charsRemoved: 0 };
 		const shadowedSeqs = nodes.slice(start, end + 1);
 		const retained = [];
@@ -198,13 +204,8 @@ export class StaleProcessPruner extends ToolResultPruner {
 			const event = session.eventAt(seq);
 			const original = session.deriveEventMessage(event);
 			if (!original) continue;
-			if (this.isCheckpoint(event)) {
-				// 旧checkpoint并入新段: 去掉首行标记与包装, 正文延续, 防嵌套增长。
-				const text = (original.content || []).map((part) => part?.text || '').join('\n');
-				const body = text.replace(/^<checkpoint>\n?/, '').replace(/^\[历史对话精编[^\n]*\]\n?/, '').trim();
-				if (body) retained.push(body);
-				continue;
-			}
+			// v1.4.2: 旧 checkpoint 并入分支已删——checkpoint 是段扫描层软边界,
+			// 永不进入 shadowedSeqs, 从根上消灭重折与 </checkpoint> 残留。
 			// 过程记录 digest(2026-11-05 用户定调, 与 CPA context-fold 同构): 工具调用与输出头
 			// 机械摘录进 checkpoint —— 执行史记忆不依赖 AGENTS 正文纪律, 证据直接在上下文(CPA 实测防叙事重写)。
 			if (event.type === 'assistant/message') {

@@ -171,4 +171,43 @@ const ckBodyLike = (n) => `<checkpoint>\n[历史对话精编：第${n}轮]\n\n�
 	check('case9 agent-message(seq5)未被 shadow', replaces.every((x) => !(x.startSeq <= 5 && x.endSeq >= 5)));
 }
 
+// ── 用例10(v1.4.2 修 P2b): checkpoint 永不改写——混合段中 checkpoint 是软边界,
+//    保留原位, 只有相邻 raw 段被折叠(复现链: T2 折出 ckpt+raw第二对, T3 曾重折 ckpt) ──
+{
+	const session = mkSession([
+		U(1, 'user', 'q1', null),
+		CK(2, ckBodyLike(1)), // 旧 checkpoint, 与下列 raw 同段(历史遗留形态)
+		A(3, 5, '新正文', true),
+		{ seq: 4, type: 'tool/result', data: { turn: 5, content: [{ type: 'text', text: 'x'.repeat(300) }] } },
+		U(5, 'user', 'q2', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 6);
+	const replaces = session.appended.filter((x) => x.opts?.surfaceOp?.op === 'replace').map((x) => x.opts.surfaceOp);
+	check('case10 只折 raw 段(单条 replace)', replaces.length === 1);
+	check('case10 replace 范围=3-4(不含 checkpoint seq2)', replaces[0]?.startSeq === 3 && replaces[0]?.endSeq === 4);
+	check('case10 checkpoint 未被 shadow(永不改写)', r.pruned === 2);
+	// 新 checkpoint 文本不得混入旧 checkpoint 内容(无并入 → 无 </checkpoint> 残留)
+	const ck = session.appended.filter((a) => a.type === 'user/message')
+		.map((a) => (a.data?.content?.[0]?.text) || '').find((t) => t.startsWith('<checkpoint>')) || '';
+	check('case10 新 checkpoint 无闭标签残留', (ck.match(/<\/checkpoint>/g) || []).length === 1);
+	check('case10 新 checkpoint 未并入旧正文', !ck.includes('第1轮结论'));
+}
+
+// ── 用例11(v1.4.2 修 P2a): 段尾 off-by-one——gap 以 tool/result 收尾(surface 末端,
+//    新消息尚在 claimed 中未 append)照常折叠 ──
+{
+	const session = mkSession([
+		U(1, 'user', 'q1', null),
+		A(2, 5, '过程正文', true),
+		{ seq: 3, type: 'tool/result', data: { turn: 5, content: [{ type: 'text', text: 'y'.repeat(300) }] } },
+		// surface 到此为止; 模拟 pre-step 时旧轮尾对完整但其后无节点
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 6);
+	check('case11 段尾 tool/result 尾对照常折叠', r.pruned >= 2);
+	const replace = session.appended.find((x) => x.opts?.surfaceOp?.op === 'replace');
+	check('case11 replace 覆盖到段尾(seq3)', replace?.opts?.surfaceOp?.endSeq === 3);
+}
+
 process.exit(failed ? 1 : 0);

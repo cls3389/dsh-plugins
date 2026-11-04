@@ -4,6 +4,12 @@ DSH（DeepSeek Harness）轮龄裁剪插件：**每一轮开始时，把上一�
 
 正文与用户消息永久钉住——跨轮要引用的关键信息必须写进回复正文（正文即长期记忆），工具输出原文需要时可读会话原始日志（replay-safe 不丢数据）。
 
+## v1.4.2（2026-11-05）：checkpoint 永不改写真正落地 + 段尾切口 off-by-one（P2）
+
+- **P2b**：checkpoint 从"段内透明节点"升格为**软边界**——段扫描时遇 checkpoint 即收尾折叠，它永不被 shadow/并入；旧的去头并入正则（`</checkpoint>` 残留根源）整体删除。v1.4.0 承诺的"永不改写"此前在混合段（checkpoint+raw 同 gap）中会被重折打破（实证：T2 折出 ckpt+raw 第二对 → T3 重折出 1 开标签 2 闭标签）。
+- **P2a**：段尾平衡检查统一改用官方 `toolPairingBalancedAfter(nodes[end])`（与 compaction-basic `validateSurfaceRegion` 同款）。旧代码在 gap 无后继节点时错误退回 `before(last)`，把已平衡的 tool/result 尾对漏裁（前轮以结果收尾+新消息尚在 claimed 中时实测 `pruned=0`）。
+- 新增 case10（混合段 checkpoint 零改写、无闭标签残留）、case11（段尾尾对折叠）。
+
 ## v1.4.1（2026-11-05）：修复无 turn 注入阻断整段折叠（P1）
 
 线上实证：T4→T5 因一条 `model-selection` 注入（无 `turn`、旧白名单不认）让 `foldGap` 整段放弃，30+ 工具事件漏裁；T1 的 8 条 `agent-message` 更令 300 事件从 T2 起永久滞留。修法：`isPinned` 从白名单改为**默认钉住一切 `user/message`**（仅 `time-context` 与 checkpoint 除外）——所有承载信息的注入（`agent-message`/`subagent-settled`/`skill-catalog`/`skill-invocation`/`model-selection`/`dsh-memory`/`goal`/`schedule` 等）成为段边界，原文永留 surface，两侧过程段各自独立折叠。新增回归用例 case9。
