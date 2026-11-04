@@ -1,6 +1,6 @@
 // 回归测试: time-context 采样消息不再卡死轮龄折叠 (2026-11-04)
 // 场景复现自 personal-investment lark-1793789451570-ea64208c T5→T6 边界。
-import { StaleProcessPruner } from '/home/lin/workspace/market-tools/stale-process-pruner/index.js';
+import { StaleProcessPruner } from './index.js';
 
 function mkSession(events) {
 	// events: [{seq,type,kind,turn,content}]
