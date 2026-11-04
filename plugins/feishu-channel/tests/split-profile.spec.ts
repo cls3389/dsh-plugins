@@ -14,7 +14,7 @@ describe('profile split shards', () => {
   it('guests shard resolves all investment-assistant bots', () => {
     process.env.DSH_HOME = '/data/dsh';
     try {
-      const bots = resolveBots({ workspaceRoot: '/data/dsh/home/agents', botsFile: '/data/dsh/lark/bots-guests.json' } as never);
+      const bots = resolveBots({ workspaceRoot: '/data/dsh/home/agents', botsFile: '/data/dsh/lark/bots-investment-assistant.json' } as never);
       const file = bots.filter((b) => b.accountId !== 'default');
       expect(file).toHaveLength(13);
       expect(new Set(file.map((b) => b.agentId))).toEqual(new Set(['investment-assistant']));

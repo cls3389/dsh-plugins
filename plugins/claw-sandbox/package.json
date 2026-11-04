@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/claw-sandbox",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,12 +9,31 @@
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
-  "files": ["index.js", "cordis.patch.yml", "Dockerfile", "tools/", "build.sh", "rebuild-workspace-sandbox.sh", "README.md", "test.mjs", "locale/*.json"],
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "Dockerfile",
+    "tools/",
+    "build.sh",
+    "rebuild-workspace-sandbox.sh",
+    "README.md",
+    "test.mjs",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "description": "安全执行沙箱:隔离容器中运行用户命令与数据分析工具,限制网络与文件系统访问",
   "dependencies": {
-    "@deepseek-ai/dsh-sandbox": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-sandbox": ">=0.2.1-rc.2 <0.3.0"
   },
-  "scripts": { "test": "node test.mjs && docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,size=64m,mode=1777 -v \"$PWD/tools:/opt/dsh-tools:ro\" -v \"$PWD/tools:/test:ro\" -w /test dsh-user-sandbox:bookworm python3 test_market_analysis.py" },
-  "devDependencies": { "@deepseek-ai/cordis": "^4.0.5", "@deepseek-ai/dsh-subprocess-local": "0.2.1-rc.2" }
+  "scripts": {
+    "test": "node test.mjs && docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,size=64m,mode=1777 -v \"$PWD/tools:/opt/dsh-tools:ro\" -v \"$PWD/tools:/test:ro\" -w /test dsh-user-sandbox:bookworm python3 test_market_analysis.py"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-subprocess-local": ">=0.2.1-rc.2 <0.3.0"
+  }
 }

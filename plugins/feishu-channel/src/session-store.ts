@@ -96,8 +96,11 @@ export class SessionStore {
             this.userNames.set(openId, configured || binding.displayName?.trim() || `用户 ${(this.existingUserId(openId) ?? openId).slice(0, 12)}`);
           }
           else {
-            // 用户中心布局: users/<u_xxx>/<agentId>/workspace(取 userId 段)。
-            const match = /\/users\/(u_[a-z0-9_-]{1,63})\/[a-z0-9][a-z0-9-]{0,63}\/workspace$/.exec(binding.cwd);
+            // 身份中心布局(2026-11-04): agents/<agentId>/users/<u_xxx>/workspace(取 userId 段);
+            // 兼容旧用户中心布局 users/<u_xxx>/<agentId>/workspace。
+            const identityLayout = /\/agents\/[a-z0-9][a-z0-9-]{0,63}\/users\/(u_[a-z0-9_-]{1,63})\/workspace$/.exec(binding.cwd);
+            const userCenterLayout = /\/users\/(u_[a-z0-9_-]{1,63})\/[a-z0-9][a-z0-9-]{0,63}\/workspace$/.exec(binding.cwd);
+            const match = identityLayout ?? userCenterLayout;
             if (match) this.recoveredUsers.set(match[1]!, binding.cwd);
           }
           this.bindings.set(chatId, {

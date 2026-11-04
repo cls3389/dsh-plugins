@@ -62,9 +62,22 @@ profile 层覆盖插件 config 是**整体替换**：覆盖任何一个字段都
 
 `allowedPathPrefixes: ['/tmp/', ..., '/home/']` 这类写死 POSIX 前缀的文件访问白名单，在 Windows 上会拒掉一切用户路径（C:\Users\... 不匹配任何前缀）——pdf-tools / anydoc / image-tools / officecli-tools 四件同病（f3b008c 已修）。正解：白名单加入 `tmpdir()` / `homedir()` 派生项，匹配器侧做斜杠归一（image-tools 的 `replace(/\\/g,'/')` 双侧归一是范本）。正面教材：@jipika/dsh-memory 的 shell 选择（`process.platform === 'win32'` → `%ComSpec%`，POSIX 才 zsh→$SHELL→/bin/sh 链）。
 
+## 8. peerDependencies 不要精确锁 dsh 内部件
+
+版本闸门（app-boot `evaluatePluginCompatibility`）对 `@deepseek-ai/dsh`/`dsh-*` 的 peer 用 **semver satisfies 求值**（prerelease 参与范围）；精确锁 `"0.2.1-rc.2"` 会在宿主升级到任何 rc.3+ 时拒装插件（桌面实测：npm latest rc.5 vs 锁 rc.2，被迫降级宿主）。正解：
+
+```json
+"peerDependencies": { "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0" }
+```
+
+- 下界=开发测试所用版本，上界=下一个大版本列车（0.3 API 可能破坏）。
+- `engines.dsh` 若存在则**独自定夺**、peers 全忽略（另一条官方通道）；peer 里的 `workspace:*` 映射为当前运行时版本（永真，但放弃了跨版本护栏）。
+- 2026-11-05 已把全仓 4 件 24 处精确锁改为范围（model-catalog 0.2.1 / feishu-channel 0.6.6 / wechat-channel 0.1.1 / claw-sandbox 0.1.2）。
+
 ## 检查单（新插件上架前过一遍）
 
 - [ ] index.js 零绝对路径 import（grep `^import .* from '/`）
 - [ ] 依赖自持或 README 写明安装要求
 - [ ] package.json 带 `dsh.bundle.patch` + locale 三件套（见 naming.md）
+- [ ] peerDependencies 对 dsh 内部件用范围，禁止精确版本（本文件第 8 条）
 - [ ] 在第二平台（至少一台 Windows 或另台 Linux）真实 boot 过一次
