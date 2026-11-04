@@ -701,12 +701,12 @@
       },
       "versions": [
         {
-          "version": "1.1.0",
-          "publishTimestamp": 1793801819,
+          "version": "1.1.1",
+          "publishTimestamp": 1793804738,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "d1e76044a6c99c70a840d223dddee61fae446f27",
+            "commit": "d771ca5412f19c8386b44d48bc32dac57cadf1d5",
             "path": "plugins/stale-process-pruner"
           },
           "engines": {}
