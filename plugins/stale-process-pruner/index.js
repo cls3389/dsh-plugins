@@ -48,6 +48,32 @@ const [
 
 export const name = 'stale-process-pruner';
 
+// ── v1.4.3 工具执行状态核对(修 P1: 不再无条件声称「均真实执行过」) ──
+// 状态来源: tool/result 事件。DSH 恢复流程(dsh-session repair.js)为中断调用
+// 合成 error.code=TOOL_NOT_STARTED(未启动)/TOOL_OUTCOME_UNKNOWN(已启动结果未知);
+// 真实执行失败为 message.isError 或 error 无上述专用码。
+const RESULT_STATUS = { completed: 'completed', failed: 'failed', notStarted: 'notStarted', unknown: 'unknown' };
+function resultStatusOf(event) {
+	const code = event?.data?.error?.code;
+	if (code === 'TOOL_NOT_STARTED') return RESULT_STATUS.notStarted;
+	if (code === 'TOOL_OUTCOME_UNKNOWN') return RESULT_STATUS.unknown;
+	if (event?.data?.error || event?.data?.message?.isError) return RESULT_STATUS.failed;
+	return RESULT_STATUS.completed;
+}
+const STATUS_LABEL = { failed: ' [失败]', notStarted: ' [未启动]', unknown: ' [结果未知]' };
+/** ▸ 行状态标注: completed 无标注; 无对应结果(配对缺口)按「结果未知」如实标注。 */
+function callStatusLabel(status, map) {
+	if (status === undefined) return map.size > 0 ? STATUS_LABEL.unknown : '';
+	return STATUS_LABEL[status] || '';
+}
+// v1.4.3 修 P3: DSH ToolCallBlock.arguments 本来就是原始 JSON string, 旧代码
+// 再 JSON.stringify 会加引号转义、挤占 80 字摘要额度(实测 ▸ ths_quote "{\\"code\\"...")。
+// 仅对象型 input 做序列化, string 直接截取。
+function stringifyArgs(input) {
+	if (typeof input === 'string') return input;
+	try { return JSON.stringify(input ?? {}); } catch { return String(input); }
+}
+
 // 事件驱动(2026-11-04 定稿「及时裁」语义): 每次模型请求前裁剪。
 // agent/pre-step 是有序 agent 事件; 不能从同步的 session/event 回调里 append,
 // Session 会拒绝 "session append cannot reenter while another append is being published"。
@@ -197,9 +223,22 @@ export class StaleProcessPruner extends ToolResultPruner {
 		while (end >= start && !toolPairingBalancedAfter(session, nodes[end])) end -= 1;
 		if (end < start) return { pruned: 0, charsRemoved: 0 };
 		const shadowedSeqs = nodes.slice(start, end + 1);
+		// v1.4.3 修 P1(工具状态断言): 先按 callId 汇总 tool/result 执行状态,
+		// ▸ 行按状态标注, 头部不再无条件声称「均真实执行过」——DSH 恢复流程
+		// 会为未启动调用合成 TOOL_NOT_STARTED(dsh-session repair.js), 笼统断言
+		// 会让后续模型把未执行的写入/部署当已完成(2026-11-05 审查实证)。
+		const statusByCallId = new Map();
+		for (const seq of shadowedSeqs) {
+			const event = session.eventAt(seq);
+			if (event?.type !== 'tool/result') continue;
+			const callId = event.data?.message?.toolCallId ?? event.data?.callId;
+			if (callId === undefined || callId === null) continue;
+			statusByCallId.set(callId, resultStatusOf(event));
+		}
 		const retained = [];
 		const digestLines = [];
 		let charsRemoved = 0;
+		let hasUnverifiedCall = false;
 		for (const seq of shadowedSeqs) {
 			const event = session.eventAt(seq);
 			const original = session.deriveEventMessage(event);
@@ -211,18 +250,19 @@ export class StaleProcessPruner extends ToolResultPruner {
 			if (event.type === 'assistant/message') {
 				for (const part of original.content || []) {
 					if ((part?.type === 'tool_use' || part?.type === 'tool-call') && (part.name || part.id)) {
-						const args = JSON.stringify(part.input ?? part.arguments ?? {}).slice(0, 80);
-						digestLines.push(`▸ ${part.name || 'call'} ${args}`);
+						const args = stringifyArgs(part.input ?? part.arguments ?? {}).slice(0, 80);
+						digestLines.push(`▸ ${part.name || 'call'} ${args}${callStatusLabel(statusByCallId.get(part.id), statusByCallId)}`);
 					}
 				}
 				for (const call of original.tool_calls || []) {
 					const fn = call?.function || {};
-					if (fn.name) digestLines.push(`▸ ${fn.name} ${String(fn.arguments ?? '').slice(0, 80)}`);
+					const callId = call?.id;
+					if (fn.name) digestLines.push(`▸ ${fn.name} ${String(fn.arguments ?? '').slice(0, 80)}${callStatusLabel(callId !== undefined ? statusByCallId.get(callId) : undefined, statusByCallId)}`);
 				}
 			} else if (event.type === 'tool/call') {
 				const name = event.data?.name || original?.name || 'call';
 				const argsText = (original.content || []).map((part) => (typeof part === 'string' ? part : part?.text) || '').join(' ').trim();
-				digestLines.push(`▸ ${name} ${argsText.slice(0, 80)}`);
+				digestLines.push(`▸ ${name} ${argsText.slice(0, 80)}${callStatusLabel(statusByCallId.get(event.data?.callId), statusByCallId)}`);
 			} else if (event.type === 'tool/result') {
 				const raw = typeof original.content === 'string'
 					? original.content
@@ -249,16 +289,32 @@ export class StaleProcessPruner extends ToolResultPruner {
 			return sum + (message ? this.ctx.tokenMeter.estimateMessage(message) : 0);
 		}, 0);
 		const text = retained.filter((part) => part.trim()).join('\n\n');
+		// 段内存在未确认完成的调用(未启动/结果未知/失败) → 头部切换为如实声明。
+		hasUnverifiedCall = [...statusByCallId.values()].some((s) => s !== 'completed');
 		// digest 块(▸=调用, ↳=输出头, 上限40行) + 提示词锚(防执行史重写)。
+		// v1.4.3: 头部按真实执行状态二选一——全部完成才声称「均真实执行过」,
+		// 否则如实声明存在未确认项, 防止把未启动/失败的写入、部署当成已完成。
 		let digestBlock = '';
 		if (digestLines.length > 0) {
 			const shown = digestLines.slice(0, 40);
 			const overflow = digestLines.length - shown.length;
-			digestBlock = `[过程记录：以下工具调用均真实执行过；关键结论已在下方正文引用，勿重述为未执行；完整原文在会话日志。]\n${shown.join('\n')}${overflow > 0 ? `\n…另 ${overflow} 项已省` : ''}\n\n`;
+			const anchor = hasUnverifiedCall
+				? '[过程记录：以下工具调用按 callId 核对执行结果，标注[未启动]/[结果未知]/[失败]的调用未确认完成；正文若已引用其结论须显式复核；完整原文在会话日志。]'
+				: '[过程记录：以下工具调用均真实执行过；关键结论已在下方正文引用，勿重述为未执行；完整原文在会话日志。]';
+			digestBlock = `${anchor}\n${shown.join('\n')}${overflow > 0 ? `\n…另 ${overflow} 项已省` : ''}\n\n`;
 		}
 		const fallback = text || (digestBlock ? '' : '（此前只有工具调用过程，无正文。）');
 		const summary = [{ type: 'text', text: `[历史对话精编：正文全保留；工具过程折叠为机械过程记录（▸调用/↳输出头）。]\n\n${digestBlock}${fallback}` }];
 		const checkpointId = `stale-${session.id}-${session.seq}-${shadowedSeqs[0]}`;
+		// v1.4.3 修 P2c(token 反涨): 先估算完整 checkpoint 的 token 成本,
+		// 不省反涨则不折——实测纯正文段 18→35、短结果段 37→53 token,
+		// thresholdChars 从未参与轮龄路径(仅父类单结果截断), README 已勘误。
+		const checkpointMessage = createUserMessage({
+			content: [{ type: 'text', text: `<checkpoint>\n${summary[0].text}\n</checkpoint>` }],
+			source: compactCheckpointSource(checkpointId),
+		});
+		const checkpointTokens = this.ctx.tokenMeter.estimateMessage(checkpointMessage);
+		if (checkpointTokens >= originalTokens) return { pruned: 0, charsRemoved: 0 };
 		const startEvent = session.append('compaction/start', { compactionId: checkpointId, turn: openTurn });
 		const summaryEvent = session.append('compaction/summary', {
 			compactionId: checkpointId,
@@ -269,10 +325,6 @@ export class StaleProcessPruner extends ToolResultPruner {
 			provider: 'local',
 			model: 'deterministic-stale-process-pruner',
 			deterministic: true,
-		});
-		const checkpointMessage = createUserMessage({
-			content: [{ type: 'text', text: `<checkpoint>\n${summary[0].text}\n</checkpoint>` }],
-			source: compactCheckpointSource(checkpointId),
 		});
 		session.append('user/message', checkpointMessage, {
 			surfaceOp: { op: 'replace', startSeq: shadowedSeqs[0], endSeq: shadowedSeqs[shadowedSeqs.length - 1] },

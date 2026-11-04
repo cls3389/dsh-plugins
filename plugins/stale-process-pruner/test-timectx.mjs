@@ -210,4 +210,90 @@ const ckBodyLike = (n) => `<checkpoint>\n[历史对话精编：第${n}轮]\n\n�
 	check('case11 replace 覆盖到段尾(seq3)', replace?.opts?.surfaceOp?.endSeq === 3);
 }
 
+// ── 用例12(v1.4.3 修 P2c): token 反涨门——纯正文段 checkpoint 更长则不折 ──
+{
+	const lenCtx = { ...ctx, tokenMeter: { estimateMessage: (m) => (m?.content?.[0]?.text ?? '').length } };
+	const session = mkSession([
+		U(1, 'user', 'q1', null),
+		A(2, 5, '好'),
+		U(3, 'user', 'q2', null),
+	]);
+	const pruner = new StaleProcessPruner(lenCtx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 6);
+	check('case12 纯正文段不折(pruned=0)', r.pruned === 0);
+	check('case12 无任何 compaction 事件落盘', !session.appended.some((x) => x.type?.startsWith('compaction/')));
+}
+
+// ── 用例13(v1.4.3 修 P1): TOOL_NOT_STARTED 不再被声称「均真实执行过」 ──
+{
+	const NOT_STARTED = { seq: 3, type: 'tool/result', data: { turn: 5, error: { name: 'ToolNotStartedError', code: 'TOOL_NOT_STARTED' }, message: { role: 'tool', toolCallId: 'call_2', isError: true, content: [{ type: 'text', text: 'interrupted before ths_quote started, retry' }] } } };
+	const session = mkSession([
+		U(1, 'user', '执行部署', null),
+		A(2, 5, '部署开始。', true),
+		NOT_STARTED,
+		U(4, 'user', '继续', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	const r = pruner.pruneStaleProcess(session, 6);
+	const ck = session.appended.filter((a) => a.type === 'user/message')
+		.map((a) => (a.data?.content?.[0]?.text) || '').find((t) => t.startsWith('<checkpoint>')) || '';
+	check('case13 折叠发生', r.pruned > 0);
+	check('case13 ▸ 行标注[未启动]', ck.includes('[未启动]'));
+	check('case13 头部如实声明未确认完成', ck.includes('未确认完成'));
+	check('case13 不再声称均真实执行过', !ck.includes('均真实执行过'));
+}
+
+// ── 用例14(v1.4.3 修 P1): 失败与结果未知分别标注 ──
+{
+	const session = mkSession([
+		U(1, 'user', 'q1', null),
+		A(2, 5, '第一步。', true), // call_2
+		{ seq: 3, type: 'tool/result', data: { turn: 5, message: { role: 'tool', toolCallId: 'call_2', isError: true, content: [{ type: 'text', text: 'exit code 1' }] } } },
+		A(4, 5, '第二步。', true), // call_4
+		{ seq: 5, type: 'tool/result', data: { turn: 5, error: { name: 'ToolOutcomeUnknownError', code: 'TOOL_OUTCOME_UNKNOWN' }, message: { role: 'tool', toolCallId: 'call_4', isError: true, content: [{ type: 'text', text: 'started but outcome unknown' }] } } },
+		U(6, 'user', 'q2', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	pruner.pruneStaleProcess(session, 6);
+	const ck = session.appended.filter((a) => a.type === 'user/message')
+		.map((a) => (a.data?.content?.[0]?.text) || '').find((t) => t.startsWith('<checkpoint>')) || '';
+	check('case14 失败标注[失败]', ck.includes('[失败]'));
+	check('case14 未知标注[结果未知]', ck.includes('[结果未知]'));
+}
+
+// ── 用例15(v1.4.3 回归保护): 全部完成的段保留「均真实执行过」措辞 ──
+{
+	const session = mkSession([
+		U(1, 'user', '查 600519', null),
+		A(2, 5, '现价 1512.3。', true),
+		{ seq: 3, type: 'tool/result', data: { turn: 5, message: { role: 'tool', toolCallId: 'call_2', content: [{ type: 'text', text: 'price=1512.30' }] } } },
+		U(4, 'user', 'q2', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	pruner.pruneStaleProcess(session, 6);
+	const ck = session.appended.filter((a) => a.type === 'user/message')
+		.map((a) => (a.data?.content?.[0]?.text) || '').find((t) => t.startsWith('<checkpoint>')) || '';
+	check('case15 全部完成保留原措辞', ck.includes('均真实执行过'));
+	check('case15 无状态标注', !ck.includes('[未启动]') && !ck.includes('[失败]') && !ck.includes('[结果未知]'));
+}
+
+// ── 用例16(v1.4.3 修 P3): arguments 已是 JSON string 时不二次编码 ──
+{
+	const session = mkSession([
+		U(1, 'user', 'q1', null),
+		{ seq: 2, type: 'assistant/message', data: { turn: 5, message: { role: 'assistant', content: [
+			{ type: 'text', text: '完成。' },
+			{ type: 'tool-call', id: 'call_2', name: 'ths_quote', arguments: '{"code":"600519"}' },
+		] } } },
+		{ seq: 3, type: 'tool/result', data: { turn: 5, message: { role: 'tool', toolCallId: 'call_2', content: [{ type: 'text', text: 'ok' }] } } },
+		U(4, 'user', 'q2', null),
+	]);
+	const pruner = new StaleProcessPruner(ctx, { staleTurns: 0 });
+	pruner.pruneStaleProcess(session, 6);
+	const ck = session.appended.filter((a) => a.type === 'user/message')
+		.map((a) => (a.data?.content?.[0]?.text) || '').find((t) => t.startsWith('<checkpoint>')) || '';
+	check('case16 ▸ 行直截原始 JSON 参数', ck.includes('▸ ths_quote {"code":"600519"}'));
+	check('case16 无二次编码转义', !ck.includes('\\"'));
+}
+
 process.exit(failed ? 1 : 0);

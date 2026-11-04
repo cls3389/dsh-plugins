@@ -4,6 +4,13 @@ DSH（DeepSeek Harness）轮龄裁剪插件：**每一轮开始时，把上一�
 
 正文与用户消息永久钉住——跨轮要引用的关键信息必须写进回复正文（正文即长期记忆），工具输出原文需要时可读会话原始日志（replay-safe 不丢数据）。
 
+## v1.4.3（2026-11-05）：工具状态如实标注（P1）+ token 收益门（P2c）+ 参数直截（P3）
+
+- **P1**：checkpoint 头部不再无条件声称"均真实执行过"。按 `callId` 核对 `tool/result` 执行状态：DSH 恢复流程会为中断调用合成 `TOOL_NOT_STARTED`（未启动）/`TOOL_OUTCOME_UNKNOWN`（已启动结果未知），旧代码的笼统断言会让后续模型把未执行的写入/部署当已完成（审查实证）。现 ▸ 行按状态标注 `[未启动]`/`[结果未知]`/`[失败]`，存在未确认项时头部如实声明"未确认完成，正文相关结论须显式复核"；全部完成才保留原措辞。
+- **P2c**：折叠前估算完整 checkpoint 的 token 成本，`checkpointTokens >= originalTokens` 则不折——实测纯正文段 18→35、短结果段 37→53 token 的反涨不再发生（v1.4.3 起 `pruneStaleProcess` 路径以 token 估算为准；`thresholdChars` 仅属父类单结果截断，此前 README 表述有误，已勘误）。
+- **P3**：`ToolCallBlock.arguments` 本来就是原始 JSON string，不再二次 `JSON.stringify`（旧代码的引号转义挤占 80 字摘要额度，长路径/命令更早截断失真）；仅对象型 `input` 做序列化。
+- 新增 case12（纯正文不折+零落盘）、case13（未启动标注+头部切换）、case14（失败/未知分标）、case15（全完成保留原措辞）、case16（参数无二次编码）。
+
 ## v1.4.2（2026-11-05）：checkpoint 永不改写真正落地 + 段尾切口 off-by-one（P2）
 
 - **P2b**：checkpoint 从"段内透明节点"升格为**软边界**——段扫描时遇 checkpoint 即收尾折叠，它永不被 shadow/并入；旧的去头并入正则（`</checkpoint>` 残留根源）整体删除。v1.4.0 承诺的"永不改写"此前在混合段（checkpoint+raw 同 gap）中会被重折打破（实证：T2 折出 ckpt+raw 第二对 → T3 重折出 1 开标签 2 闭标签）。
@@ -31,7 +38,7 @@ DSH（DeepSeek Harness）轮龄裁剪插件：**每一轮开始时，把上一�
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `staleTurns` | `1` | 轮龄：**0 = 不保留任何既往轮**（上一轮在下一轮开轮即折叠，web/对话身份推荐值）；**1 = 保留上一轮原始输出**（修 bug 需回看时临时用）；**-1 = 禁用轮龄裁剪**。`0` 与 `-1` 是合法显式值 |
-| `thresholdChars` | `8192` | 过程段字符数超过该阈值才折叠（折叠有收益才动手） |
+| `thresholdChars` | `8192` | 仅父类单工具结果截断阈值；轮龄折叠的收益判定走 token 估算（v1.4.3 起） |
 | `headChars` | `4096` | 单个工具输出折叠时保留头部字符数（父类 ToolResultPruner 参数） |
 | `tailChars` | `1024` | 单个工具输出折叠时保留尾部字符数 |
 
