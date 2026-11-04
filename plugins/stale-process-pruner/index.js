@@ -59,16 +59,33 @@ const ARCHIVE_TAIL_CHARS = 120;
 // v1.2.1 单槽滚动(drop 模式): 出窗 checkpoint 直接替换为极短占位, 正文 O(keep) 恒定;
 // 原文永远留在事件日志(zstdcat 回读, replay-safe)。占位沿用 checkpoint source, 后续段重折可吸收自清洁。
 const DROP_MARK = '[已并档]';
+// v1.3.0 滚动摘要(digest 模式, 用户定调): 出窗 checkpoint 不丢弃细节, 而是与「已有会话摘要」
+// 一起喂给便宜模型异步合并成新摘要(≤500字), 新摘要落在最新出窗位(块级缓存下成本≈摘要块本身),
+// 旧摘要位转为占位。正文结构: [占位墙][滚动摘要(1条)][keep 窗口 checkpoint][当前轮]。
+// LLM 失败则本轮不动(候选保持原文, 信息无损, 下轮自动重试)。长程信息经模型提炼保留, 非 O(N) 拼接。
+const DIGEST_MARK = '[会话滚动摘要';
+const DIGEST_SYS_PROMPT = '你是会话状态压缩器。把「已有摘要」与「新到期的轮次记录」合并成一份最新的会话滚动摘要。规则:保留所有关键决策与结论、重要文件路径与配置参数、错误及其修复方式、关键数字结果、用户明确表达的偏好与要求;丢弃过时的中间过程、重复信息、已被推翻的旧结论(以新为准);不编造,信息不足时宁缺毋滥;直接输出摘要正文(纯文本,中文,不超过500字),不要任何前后缀说明。';
 
 export class StaleProcessPruner extends ToolResultPruner {
 	constructor(ctx, config = {}) {
 		// 父类拿 thresholdChars/headChars/tailChars; 多余键自己取。
-		const { staleTurns, checkpointKeep = DEFAULT_CHECKPOINT_KEEP, checkpointMode = 'drop', ...parent } = config;
+		const { staleTurns, checkpointKeep = DEFAULT_CHECKPOINT_KEEP, checkpointMode = 'drop', digest = {}, ...parent } = config;
 		super(ctx, parent);
 		this.staleTurns = Number.isInteger(staleTurns) ? staleTurns : DEFAULT_STALE_TURNS; // 0/-1 是合法显式值,校验在 pruneStaleProcess
 		this.checkpointKeep = Number.isInteger(checkpointKeep) ? checkpointKeep : DEFAULT_CHECKPOINT_KEEP; // -1 禁用压缩
 		// v1.2.1: drop=出窗 checkpoint 替换为 [已并档] 占位(单槽滚动,正文 O(keep)); archive=v1.2.0 头尾采样归档。
-		this.checkpointMode = checkpointMode === 'archive' ? 'archive' : 'drop';
+		// v1.3.0: digest=drop + 便宜模型异步合并的滚动会话摘要(长程信息保留)。
+		this.checkpointMode = ['archive', 'digest'].includes(checkpointMode) ? checkpointMode : 'drop';
+		this.digestCfg = {
+			model: 'deepseek-v4-flash',
+			baseUrl: 'http://127.0.0.1:8317/v1',
+			apiKeyRef: 'CPA_API_KEY',
+			maxTokens: 700,
+			maxChars: 2000,
+			timeoutMs: 20000,
+			...digest,
+		};
+		this.digestInflight = new Map(); // sessionId -> promise(防重入; 失败候选保留原文下轮重试)
 		// 用引擎 checkpoint 协议替换整段历史，避免 assistant tool-call/result 失配，
 		// 也不触发 session/event 的同步观察者看到半提交状态。
 		ctx.on?.('agent/pre-step', async ({ agent, step, turn, signal }, next) => {
@@ -193,6 +210,21 @@ export class StaleProcessPruner extends ToolResultPruner {
 		}
 		const compressible = checkpoints.slice(0, Math.max(0, checkpoints.length - this.checkpointKeep));
 		let charsRemoved = 0;
+		// digest 模式: 收集候选与旧摘要槽, 异步 LLM 合并成功后一次性替换(失败不动, 候选原文保留)。
+		if (this.checkpointMode === 'digest') {
+			const candidates = [];
+			let oldDigest = null;
+			for (const { seq, event } of compressible) {
+				const message = session.deriveEventMessage(event);
+				const full = (message?.content || []).map((part) => part?.text || '').join('\n').trim();
+				const body = full.replace(/^<checkpoint>\n?/, '').replace(/\n?<\/checkpoint>$/, '').trim();
+				if (!body || body === DROP_MARK) continue;
+				if (body.startsWith(DIGEST_MARK)) { oldDigest = { seq, body }; continue; }
+				candidates.push({ seq, body });
+			}
+			this.scheduleDigestRoll(session, openTurn, candidates, oldDigest);
+			return { charsRemoved: 0 }; // 实际替换异步完成, 见 scheduleDigestRoll 内日志
+		}
 		for (const { seq, event } of compressible) {
 			const message = session.deriveEventMessage(event);
 			const full = (message?.content || []).map((part) => part?.text || '').join('\n').trim();
@@ -243,6 +275,139 @@ export class StaleProcessPruner extends ToolResultPruner {
 			this.ctx?.logger?.info?.(`[stale-process-pruner] checkpoint 归档: ${charsRemoved} 字符 (${session.id})`);
 		}
 		return { charsRemoved };
+	}
+
+	/** digest 模式核心: 出窗候选与旧摘要异步合并 → 新摘要落最新出窗位, 旧摘要/多余候选转占位。 */
+	scheduleDigestRoll(session, openTurn, candidates, oldDigest) {
+		if (candidates.length === 0) return;
+		if (this.digestInflight.has(session.id)) return; // 上一次合并未返回: 候选原文保留, 下轮再试
+		const previous = oldDigest ? oldDigest.body.replace(/^\[会话滚动摘要[^\n]*\]\n?/, '').trim() : '';
+		const incoming = candidates.map((c) => c.body).join('\n\n---\n\n');
+		const task = this.mergeDigestText(session, previous, incoming)
+			.then(async (merged) => {
+				if (!merged) return; // 失败/空: 什么都不动(候选仍为原文, 信息无损, 下轮重试)
+				const meta = `[会话滚动摘要|更新于turn ${openTurn}|并入${candidates.length}轮|${merged.length}字符]`;
+				this.replaceCheckpointBody(session, candidates[0].seq, `${meta}\n${merged}`, openTurn);
+				for (const c of candidates.slice(1)) this.replaceCheckpointBody(session, c.seq, DROP_MARK, openTurn);
+				if (oldDigest) this.replaceCheckpointBody(session, oldDigest.seq, DROP_MARK, openTurn);
+				this.ctx?.logger?.info?.(
+					`[stale-process-pruner] digest 滚动: 并入${candidates.length}轮 → 摘要${merged.length}字符, 旧摘要转占位 (${session.id})`,
+				);
+			})
+			.catch((error) => {
+				this.ctx?.logger?.warn?.(`[stale-process-pruner] digest 合并失败(候选保留原文): ${String(error)}`);
+			})
+			.finally(() => this.digestInflight.delete(session.id));
+		this.digestInflight.set(session.id, task);
+	}
+
+	/** 调便宜模型合并摘要; 返回合并文本或 null(失败)。可被子类/测试覆写。 */
+	async mergeDigestText(session, previous, incoming) {
+		const apiKey = await this.resolveDigestApiKey();
+		if (!apiKey) {
+			this.ctx?.logger?.warn?.('stale-process-pruner: digest API key 未配置(apiKeyRef), 滚动摘要停用');
+			return null;
+		}
+		const url = `${this.digestCfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+		const host = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+		if (!['127.0.0.1', 'localhost', '::1'].includes(host)) {
+			this.ctx?.logger?.warn?.(`stale-process-pruner: digest baseUrl 非本机地址(${host}), 拒绝调用`);
+			return null;
+		}
+		const payload = {
+			model: this.digestCfg.model,
+			temperature: 0.2,
+			max_tokens: this.digestCfg.maxTokens,
+			stream: false,
+			messages: [
+				{ role: 'system', content: DIGEST_SYS_PROMPT },
+				{ role: 'user', content: `已有摘要:\n${previous || '(无,从零开始建立)'}\n\n新到期的轮次记录:\n${incoming}\n\n输出合并后的最新会话滚动摘要:` },
+			],
+		};
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), this.digestCfg.timeoutMs);
+			try {
+				const resp = await fetch(url, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+					body: JSON.stringify(payload),
+					signal: controller.signal,
+				});
+				if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+				const data = await resp.json();
+				const text = (data?.choices?.[0]?.message?.content || '').trim();
+				if (text) return text.slice(0, this.digestCfg.maxChars);
+				throw new Error('empty content');
+			} catch (error) {
+				if (attempt === 1) {
+					this.ctx?.logger?.warn?.(`stale-process-pruner: digest 合并调用失败: ${String(error)}`);
+					return null;
+				}
+			} finally {
+				clearTimeout(timer);
+			}
+		}
+		return null;
+	}
+
+	/** credentials 服务 → $DSH_HOME/.credentials.yaml refs → env 三级兜底(仿 image-tools)。 */
+	async resolveDigestApiKey() {
+		const ref = this.digestCfg.apiKeyRef;
+		if (!ref) return '';
+		try {
+			const stored = await this.ctx?.get?.('credentials')?.resolve(ref);
+			if (stored?.value) return stored.value;
+		} catch { /* 服务未挂载 */ }
+		try {
+			const { readFile } = await import('node:fs/promises');
+			const { join: joinPath } = await import('node:path');
+			const { homedir } = await import('node:os');
+			const base = process.env.DSH_HOME ?? joinPath(homedir(), '.dsh');
+			const text = await readFile(joinPath(base, '.credentials.yaml'), 'utf8');
+			const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+			const lineRe = new RegExp(`^\\s+${escaped}:\\s*(.+?)\\s*$`);
+			let inRefs = false;
+			for (const line of text.split(/\r?\n/)) {
+				if (/^refs:\s*$/.test(line)) { inRefs = true; continue; }
+				if (!inRefs) continue;
+				if (/^\S/.test(line)) break;
+				const match = line.match(lineRe);
+				if (match === null) continue;
+				let value = match[1];
+				if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+				if (value) return value;
+			}
+		} catch { /* 无文件 */ }
+		return process.env[ref] ?? '';
+	}
+
+	/** 把指定 seq 的 checkpoint 原地替换为新的正文(引擎 compaction 协议, 1:1 不重排)。 */
+	replaceCheckpointBody(session, seq, kept, openTurn) {
+		const event = session.eventAt(seq);
+		if (!event) return;
+		const message = session.deriveEventMessage(event);
+		const replaceId = `stale-digest-${session.id}-${session.seq}-${seq}`;
+		const startEvent = session.append('compaction/start', { compactionId: replaceId, turn: openTurn });
+		const summaryEvent = session.append('compaction/summary', {
+			compactionId: replaceId,
+			summary: [{ type: 'text', text: kept }],
+			shadowedRange: { start: seq, end: seq },
+			shadowedSeqs: [seq],
+			shadowedTokenCount: this.ctx.tokenMeter.estimateMessage(message),
+			provider: 'local',
+			model: 'deterministic-stale-process-pruner',
+			deterministic: true,
+		});
+		const replacement = createUserMessage({
+			content: [{ type: 'text', text: `<checkpoint>\n${kept}\n</checkpoint>` }],
+			source: compactCheckpointSource(replaceId),
+		});
+		session.append('user/message', replacement, {
+			surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq },
+			sourceEventSeqs: [startEvent.seq, summaryEvent.seq, seq],
+		});
+		session.append('compaction/end', { compactionId: replaceId, turn: openTurn });
 	}
 
 	/** 折叠一个过程段; 段内必须全部过期且含未折叠的原始内容, 否则跳过。 */

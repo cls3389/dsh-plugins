@@ -172,4 +172,68 @@ const ckBody = (n, size) => `<checkpoint>\n[历史对话精编：仅保留用户
 	check('case7 -1 禁用', session.appended.length === 0);
 }
 
+// ── digest 模式(v1.3.0): 滚动摘要 ──
+// 事件形态: 出窗 checkpoint(keep 窗口外) + keep 窗口内 checkpoint
+const CKPT = (seq, turn, text) => ({ seq, type: 'user/message', data: { turn: null, content: [{ type: 'text', text: `<checkpoint>\n${text}\n</checkpoint>` }], source: { kind: 'compact-checkpoint' } } });
+const digestScenario = (extra = []) => [
+	U(1, 'user', '问题A', null),
+	...extra,
+	CKPT(90, 8, '第8轮记录: 用户要求X, 已完成, 关键文件 /tmp/a.py'),
+	CKPT(91, 9, '第9轮记录: 修复了Y错误, 参数 k=3'),
+	U(92, 'user', '最新问题', null),
+];
+async function digestTests() {
+	// T1: 无旧摘要, 1候选 → 新摘要落候选位
+	{
+		const session = mkSession(digestScenario());
+		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
+		let seen = null;
+		pruner.mergeDigestText = async (_s, prev, inc) => { seen = { prev, inc }; return '合并后的摘要内容'; };
+		pruner.compressStaleCheckpoints(session, 10);
+		await pruner.digestInflight.get(session.id);
+		const replaced = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
+		const newText = replaced.map((a) => a.data?.content?.[0]?.text || '').join('|');
+		check('digest T1 候选被替换为滚动摘要', replaced.length === 1 && newText.includes('[会话滚动摘要') && newText.includes('合并后的摘要内容'));
+		check('digest T1 合并输入含候选原文', seen?.inc?.includes('第8轮记录'));
+	}
+	// T2: 有旧摘要 → 旧摘要转占位, 新候选转摘要
+	{
+		const session = mkSession(digestScenario([CKPT(89, 7, '[会话滚动摘要|更新于turn 7]旧摘要: 此前做了W')]));
+		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
+		let prevSeen = null;
+		pruner.mergeDigestText = async (_s, prev, inc) => { prevSeen = prev; return '新摘要v2'; };
+		pruner.compressStaleCheckpoints(session, 10);
+		await pruner.digestInflight.get(session.id);
+		const replaces = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
+		const texts = replaces.map((a) => (a.data?.content?.[0]?.text || '').replace(/<[^>]+>/g, '').trim());
+		check('digest T2 旧摘要正文进入合并且头部标记被剥离', prevSeen?.includes('此前做了W') && !prevSeen?.includes('更新于turn 7'));
+		check('digest T2 恰好两次替换(新摘要+旧占位)', replaces.length === 2);
+		check('digest T2 含新摘要与占位', texts.some((t) => t.includes('新摘要v2')) && texts.some((t) => t.includes(DROP_MARK_S)));
+	}
+	// T3: LLM 失败 → 候选原文保留, 零替换
+	{
+		const session = mkSession(digestScenario());
+		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
+		pruner.mergeDigestText = async () => null;
+		pruner.compressStaleCheckpoints(session, 10);
+		await pruner.digestInflight.get(session.id);
+		const replaced = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
+		check('digest T3 失败不动(零替换)', replaced.length === 0);
+		check('digest T3 锁已释放可重试', !pruner.digestInflight.has(session.id));
+	}
+	// T4: 多候选一批 → 首个转摘要, 其余转占位
+	{
+		const session = mkSession(digestScenario([CKPT(88, 6, '第6轮记录: 早期工作Z')]));
+		const pruner = new StaleProcessPruner(ctx, { staleTurns: -1, checkpointKeep: 1, checkpointMode: 'digest' });
+		pruner.mergeDigestText = async () => '批次摘要';
+		pruner.compressStaleCheckpoints(session, 10);
+		await pruner.digestInflight.get(session.id);
+		const replaces = session.appended.filter((a) => a.opts?.surfaceOp?.op === 'replace');
+		const texts = replaces.map((a) => (a.data?.content?.[0]?.text || '').replace(/<[^>]+>/g, '').trim());
+		check('digest T4 两次替换(摘要+一占位,keep=1 留 91)', replaces.length === 2);
+		check('digest T4 恰一份摘要其余占位', texts.filter((t) => t.includes('批次摘要')).length === 1 && texts.filter((t) => t.includes(DROP_MARK_S)).length === 1);
+	}
+}
+const DROP_MARK_S = '[已并档]';
+await digestTests();
 process.exit(failed ? 1 : 0);
