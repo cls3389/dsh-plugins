@@ -1,6 +1,6 @@
 {
   "name": "@dsh-friends/market-data",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "type": "module",
   "scripts": {
     "test": "node --test test-adapter.mjs test-watch-service-client.mjs test-watch-wake.mjs"

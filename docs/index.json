@@ -448,12 +448,12 @@
       },
       "versions": [
         {
-          "version": "0.6.7",
-          "publishTimestamp": 1793938252,
+          "version": "0.6.8",
+          "publishTimestamp": 1793940598,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "a4bb2d3d2b5e5d3058d581240a048b89ac423dd3",
+            "commit": "eccadee456f5ce23c9ff348a2cf4e33adb5128b4",
             "path": "plugins/market-data"
           },
           "engines": {}
