@@ -241,7 +241,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "77f9cd2a383087869b663e3928331d54ee810840",
+            "commit": "77e5b8b76da441b598f5e56b2481c3e3f61ab9c2",
             "path": "plugins/feishu-channel"
           },
           "engines": {}
@@ -422,6 +422,39 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/kimi-datasource"
+          },
+          "engines": {}
+        }
+      ]
+    },
+    {
+      "name": "@dsh-friends/market-data",
+      "title": {
+        "zh": "市场数据与提醒",
+        "en": "Market Data & Watch"
+      },
+      "description": {
+        "zh": "行情快照、K线、证券搜索、Level-2、大盘统计、公共涨跌停四池与涨停复盘、板块异动、两融折算率与美债收益率；盯盘仅提供条件提醒。问财筛选、账户交易和AI分时交易由各自独立插件提供。",
+        "en": "Market snapshots, historical bars, security search, Level-2, market breadth, public price-limit pools and review, sector moves, margin collateral rates and US Treasury yields. Watch rules send alerts only. Screening, account trading and AI signal execution use separate plugins."
+      },
+      "author": "dsh-friends",
+      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
+      "repository": {
+        "url": "https://github.com/cls3389/dsh-plugins",
+        "directory": "plugins/market-data"
+      },
+      "metadata": {
+        "keywords": []
+      },
+      "versions": [
+        {
+          "version": "0.6.7",
+          "publishTimestamp": 1793938252,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cls3389/dsh-plugins",
+            "commit": "a4bb2d3d2b5e5d3058d581240a048b89ac423dd3",
+            "path": "plugins/market-data"
           },
           "engines": {}
         }
@@ -677,7 +710,7 @@
         "en": "Stale Process Pruner"
       },
       "description": {
-        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint：staleTurns 0=上一轮即折、1=保留上一轮、-1=禁用；正文与用户消息永久钉住。",
+        "zh": "按轮龄折叠旧轮的工具输出与思考为 checkpoint：staleTurns 0=上一轮即折、1=保留上一轮、-1=禁用；可通过 enableHandoffPrompt 关闭正文交接提示。",
         "en": "Fold tool outputs and thinking of old turns into checkpoints by turn age: staleTurns 0=fold previous turn, 1=keep one turn, -1=disable; assistant bodies and user messages stay pinned."
       },
       "author": "dsh-friends",
@@ -701,12 +734,12 @@
       },
       "versions": [
         {
-          "version": "1.4.0",
-          "publishTimestamp": 1793816962,
+          "version": "1.4.7",
+          "publishTimestamp": 1793847844,
           "source": {
             "type": "git",
             "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "0017016dcef32aade0b9e92a6882b2e1e61351a6",
+            "commit": "f0f1f79c1ae74b218ee50584944504ec8153a220",
             "path": "plugins/stale-process-pruner"
           },
           "engines": {}
@@ -741,39 +774,6 @@
             "url": "https://github.com/cls3389/dsh-plugins",
             "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
             "path": "plugins/ths-favorites"
-          },
-          "engines": {}
-        }
-      ]
-    },
-    {
-      "name": "@dsh-friends/ths-market",
-      "title": {
-        "zh": "同花顺行情与提醒",
-        "en": "THS Market & Watch"
-      },
-      "description": {
-        "zh": "行情快照、K线、证券搜索、Level-2、大盘统计、板块异动、两融折算率与美债收益率；盯盘仅提供条件提醒。问财筛选、账户交易和AI分时交易由各自独立插件提供。",
-        "en": "Market snapshots, historical bars, security search, Level-2, market breadth, sector moves, margin collateral rates and US Treasury yields. Watch rules send alerts only. Screening, account trading and AI signal execution use separate plugins."
-      },
-      "author": "dsh-friends",
-      "homepage": "https://github.com/cls3389/dsh-plugins#readme",
-      "repository": {
-        "url": "https://github.com/cls3389/dsh-plugins",
-        "directory": "plugins/ths-market"
-      },
-      "metadata": {
-        "keywords": []
-      },
-      "versions": [
-        {
-          "version": "0.4.0",
-          "publishTimestamp": 1793686839,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/cls3389/dsh-plugins",
-            "commit": "fc91a02bc22cdcb287dcd751868766f7ec5841ae",
-            "path": "plugins/ths-market"
           },
           "engines": {}
         }
