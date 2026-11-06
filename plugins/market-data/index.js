@@ -115,16 +115,8 @@ async function marketRequest(exec, cfg, path, body, timeoutOverrideMs) {
 	return data.data;
 }
 
-/** 模型侧展示名(mkt_*) → 数据中心 /api/tools/market/<线名> 的解耦规则。
- *  中心 dispatchMarketTool 仍按历史 ths_* 名路由（2026-11-06 插件改名 market-data
- *  时中心端点未改名），故转发前把 mkt_ 前缀还原为 ths_；中心端点同步改名后删除本规则。
- *  watch_ 前缀与 mkt_limit_up_pool、mkt_kline_analysis 不走本函数（固定路径），不受影响。 */
-function hubWireName(toolName) {
-	return toolName.replace(/^mkt_/, 'ths_');
-}
-
 async function marketTool(exec, cfg, toolName, args) {
-	const result = await marketRequest(exec, cfg, `/api/tools/market/${hubWireName(toolName)}`, { arguments: args },
+	const result = await marketRequest(exec, cfg, `/api/tools/market/${toolName}`, { arguments: args },
 		TOOL_TIMEOUT_OVERRIDE_MS[toolName]);
 	if (toolName === 'mkt_klines') {
 		return {

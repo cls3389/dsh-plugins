@@ -55,9 +55,8 @@ test('market tool forwards arguments, identity and token; unwraps data', async (
   const agent = { larkUser: { openId: 'ou_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', appId: 'cli_aa6ec2fe79f89c00' }, session: { header: { id: 'sess-1' } } };
   const result = await ctx.registered.get('mkt_quote').execute({ securities: ['600519'] }, { agent });
   assert.deepEqual(result, { quotes: { USHA600519: { price: 1 } } });
-  // 线名=展示名 mkt_ 前缀还原为 ths_：中心 dispatchMarketTool 仍按历史名路由，
-  // 中心端点改名后此断言与插件 hubWireName 同步删除。
-  assert.equal(seen[0].url, `/api/tools/market/${'mkt_quote'.replace(/^mkt_/, 'ths_')}`);
+  // 直传契约：线上路径与注册工具名一致（mkt_*），无兼容映射层。
+  assert.equal(seen[0].url, '/api/tools/market/mkt_quote');
   assert.deepEqual(seen[0].body, { arguments: { securities: ['600519'] } });
   assert.equal(seen[0].headers['x-api-key'], 'tok');
   assert.equal(seen[0].headers['x-ths-open-id'], 'ou_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
