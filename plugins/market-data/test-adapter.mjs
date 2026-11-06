@@ -191,6 +191,42 @@ test('watch add validates before calling service (big_order rejected locally)', 
     () => tool.execute({ code: '600519', type: 'price_above', threshold: -1 }, { agent: {} }),
     /threshold 必须是正数/,
   );
+  await assert.rejects(
+    () => tool.execute({ type: 'price_above', threshold: 100 }, { agent: {} }),
+    /code 不能为空/,
+  );
+});
+
+// etf_level_up 订阅：无需 code/threshold，剥掉后原样转发创建。
+test('watch add passes etf_level_up subscription without code/threshold', async (t) => {
+  let seen;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      seen = { method: req.method, url: req.url, body: JSON.parse(body || '{}') };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, rule: { id: 'w1', type: 'etf_level_up', code: 'ETF-POOL' } }));
+    });
+  });
+  await listen(server);
+  t.after(() => close(server));
+  const ctx = fakeCtx();
+  const port = server.address().port;
+  apply(ctx, { watchEnabled: true, watchServiceBaseUrl: `http://127.0.0.1:${port}`, watchServiceToken: 't' });
+  const tool = ctx.registered.get('watch_add');
+  const out = await tool.execute({ type: 'etf_level_up', note: '汪汪队订阅' }, { agent: {} });
+  assert.equal(out.rule.type, 'etf_level_up');
+  assert.equal(seen.method, 'POST');
+  assert.equal(seen.body.type, 'etf_level_up');
+  assert.equal(seen.body.code, undefined);
+  assert.equal(seen.body.threshold, undefined);
+  assert.equal(seen.body.note, '汪汪队订阅');
+  // and 子条件拒绝。
+  await assert.rejects(
+    () => tool.execute({ type: 'etf_level_up', and: [{ type: 'price_above', threshold: 1 }] }, { agent: {} }),
+    /etf_level_up 不支持 and/,
+  );
 });
 
 test('reminder tool does not advertise or forward trade actions', async () => {

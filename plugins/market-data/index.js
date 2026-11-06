@@ -183,6 +183,16 @@ function assertWatchSubscriptionSupported(args) {
 function validateWatchRule(args) {
 	if (!cfgTypeAllowed(args.type)) throw new Error(`未知盯盘类型: ${args.type}`);
 	assertWatchSubscriptionSupported(args);
+	if (args.type === 'etf_level_up') {
+		// 系统级订阅：汪汪队ETF池分级升级提醒，无 code/threshold 语义，
+		// 由中心 etf-tracker 监控在分级上升时推送本会话。
+		delete args.code;
+		delete args.threshold;
+		if (Array.isArray(args.and) && args.and.length > 0) throw new Error('etf_level_up 不支持 and 子条件');
+		if (Object.hasOwn(args, 'action')) throw new Error('行情盯盘仅支持提醒，不接受 action 交易动作');
+		return;
+	}
+	if (!args.code) throw new Error('code 不能为空（etf_level_up 订阅除外）');
 	if (!Number.isFinite(args.threshold) || args.threshold <= 0) throw new Error('threshold 必须是正数');
 	for (const condition of args.and ?? []) {
 		if (!['price_above', 'price_below', 'change_above', 'change_below'].includes(condition?.type)) {
@@ -194,7 +204,7 @@ function validateWatchRule(args) {
 }
 
 function cfgTypeAllowed(type) {
-	return ['price_above', 'price_below', 'change_above', 'change_below', 'pullback_sell', 'rebound_buy', 'big_order'].includes(type);
+	return ['price_above', 'price_below', 'change_above', 'change_below', 'pullback_sell', 'rebound_buy', 'big_order', 'etf_level_up'].includes(type);
 }
 
 function renderJson(value, budget = 6000) {
@@ -337,20 +347,20 @@ function apply(ctx, config) {
 	const watchClient = cfg.watchServiceBaseUrl ? createWatchServiceClient(cfg) : null;
 	register({
 		name: 'watch_add',
-		description: '创建当前用户的行情提醒规则：支持价格、涨跌幅、从高点回落及从低点反弹条件，and 子条件须全部命中。中心共享采样并在触发后提醒与唤醒 Agent，不提交交易委托；不传 action。big_order 大单订阅未实现，不支持创建；盘口和逐笔查询用 mkt_level2。oneShot 默认 true，触发一次后停止。',
+		description: '创建当前用户的行情提醒规则：支持价格、涨跌幅、从高点回落及从低点反弹条件，and 子条件须全部命中。中心共享采样并在触发后提醒与唤醒 Agent，不提交交易委托；不传 action。big_order 大单订阅未实现，不支持创建；盘口和逐笔查询用 mkt_level2。oneShot 默认 true，触发一次后停止。type=etf_level_up 是汪汪队ETF池分级升级订阅：只传 type 与可选 note，盘中分级上升时推送到当前会话，无需 code/threshold。',
 		parameters: { type: 'object', properties: {
-			code: { type: 'string', description: '证券代码;也支持全球期货/指数统一代码(ES/NQ/YM/VX/CHA50CFD/HSI/CL/GC/LC碳酸锂/PS/GSI/N225日经/KOSPI韩国等,即 mkt_global_futures 的代码),期货提醒全天评估' },
-			type: { type: 'string', description: 'price_above | price_below | change_above | change_below | pullback_sell | rebound_buy。pullback_sell/rebound_buy 的 threshold 是回落/反弹百分比；big_order 已禁用' },
-			threshold: { type: 'number', description: '阈值：price_* 为价格，change_* 为相对前收涨跌百分比，pullback_sell/rebound_buy 为从极值回落/反弹百分比；百分比填3代表3%' },
+			code: { type: 'string', description: '证券代码(etf_level_up 不需要);也支持全球期货/指数统一代码(ES/NQ/YM/VX/CHA50CFD/HSI/CL/GC/LC碳酸锂/PS/GSI/N225日经/KOSPI韩国等,即 mkt_global_futures 的代码),期货提醒全天评估' },
+			type: { type: 'string', description: 'price_above | price_below | change_above | change_below | pullback_sell | rebound_buy | etf_level_up。pullback_sell/rebound_buy 的 threshold 是回落/反弹百分比；big_order 已禁用；etf_level_up 为汪汪队ETF池分级升级订阅(无需 code/threshold)' },
+			threshold: { type: 'number', description: '阈值(etf_level_up 不需要)：price_* 为价格，change_* 为相对前收涨跌百分比，pullback_sell/rebound_buy 为从极值回落/反弹百分比；百分比填3代表3%' },
 			anchorPrice: { type: 'number', description: '拐点初始锚定价；缺省用启用后的首个报价，后续按新极值更新，不自动使用全天高低点' },
 			expiresAt: { type: 'string', format: 'date-time', description: '可选到期时间RFC3339，必须在未来，例如2026-11-03T15:00:00+08:00；到期后停止评估和采样但保留可查。日内规则应填写' },
 			confirmSeconds: { type: 'number', description: '拐点型连续确认秒数,默认 3;新极值出现会重置确认' },
 			cooldownMinutes: { type: 'integer', description: '同规则冷却分钟数,默认 15' },
-			oneShot: { type: 'boolean', description: '默认 true：触发提醒一次后停止；false：冷却后可再次提醒' },
+			oneShot: { type: 'boolean', description: '默认 true：触发提醒一次后停止；false：冷却后可再次提醒。etf_level_up 每日分级升级至多各推一条，此参数不适用' },
 			note: { type: 'string', description: '备注(触发消息里带上)' },
 			and: { type: 'array', description: '复合条件(可选):子条件数组,全部命中才触发。子条件只支持瞬时阈值型(price_*/change_*),如 [{type:"change_below", threshold:3}]', items: { type: 'object' } },
 
-		}, required: ['code', 'type', 'threshold'] },
+		}, required: ['type'] },
 		output: anyJsonOutput,
 		async execute(args, exec) {
 			if (!cfg.watchEnabled) throw new Error('盯盘引擎未开启:在 profile 配置里设 watchEnabled: true 并重载');
