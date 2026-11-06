@@ -11,7 +11,7 @@ test('watch wake uses formal channel reply service with stable event identity', 
     return { deliver: async (input) => calls.push(input) };
   } };
   await deliverWatchWake(ctx, {}, rule, 'test alert', 'owner-session', 'event-1');
-  assert.deepEqual(calls, [{ sessionId: 'owner-session', ownerOpenId: rule.ownerOpenId, ownerAppId: rule.ownerAppId, text: 'test alert', eventId: 'ths-watch-event-1' }]);
+  assert.deepEqual(calls, [{ sessionId: 'owner-session', ownerOpenId: rule.ownerOpenId, ownerAppId: rule.ownerAppId, text: 'test alert', eventId: 'ths-watch-event-1', immediateAlert: true }]);
 });
 
 test('watch wake cannot override rule session or fall back to other live agents', async () => {

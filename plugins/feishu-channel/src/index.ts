@@ -184,7 +184,7 @@ export function apply(ctx: Context, config: Config): void {
     const tools = ctx.get('tools');
     const names = tools?.schemas(agent).map((tool) => tool.name).sort() ?? [];
     ctx.logger.info(`[lark] ${names.length} tools enabled for session ${agent.session.id}: ${names.join(', ')}`);
-    for (const name of ['web_search', 'web_fetch', 'browser_health', 'ths_quote']) {
+    for (const name of ['web_search', 'web_fetch', 'browser_health', 'mkt_quote']) {
       if (tools?.get(name, agent) === undefined) {
         ctx.logger.warn(`[lark] ${name} is not visible to session ${agent.session.id}`);
       } else {

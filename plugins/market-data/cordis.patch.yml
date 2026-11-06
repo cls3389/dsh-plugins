@@ -2,8 +2,8 @@
 # 2026-11-02 起本插件只是薄壳：行情/盯盘业务全部在 ths-data-hub(127.0.0.1:17896)。
 # 不再含 FQGate/THS 协议、本地盯盘引擎、xiadan 配置——那些只属于中心。
 - insert:
-    - id: ths-market
-      name: '@dsh-friends/ths-market'
+    - id: market-data
+      name: '@dsh-friends/market-data'
       config:
         # 数据中心（行情工具唯一后端；多用户时按 usersFile 条目覆盖）
         dataCenterBaseUrl: http://127.0.0.1:17896

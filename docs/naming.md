@@ -2,6 +2,7 @@
 
 > 2026-11-04 起草。现状盘点基于 29 个自研插件（`plugins/` 全量）+ 各 profile 实际挂载。
 > **执行状态：第 1/2 批已于 2026-11-04 落地**（10 个目录/包改名 + 通道件自 id 对齐，六 profile dump 全绿，五服务已重启核验）。第 0 批文档部分随本批完成；第 3 批缓行，zread 待定。
+> 2026-11-06 增补：ths-market → market-data（三层名 + 工具名 `ths_X`→`mkt_X`/`ths_watch_X`→`watch_X` 例外穿透，见规则 5 例外与 L3 表）。
 > 备份：仓库 tarball `/data/dsh/backups/dsh-plugins-pre-rename-20261104-0055.tar.gz`；各 profile patch/package.json 留有 `.bak-rename-20261104`。
 
 ## 一、现状：一个插件最多三个名字
@@ -40,7 +41,7 @@
 
 | 目录 | 包名 | 挂载 id | 角色 | 问题 |
 |---|---|---|---|---|
-| ths-market | @dsh-friends/ths-market | ths-market | 同花顺·行情 | ✅ 范本 |
+| market-data | @dsh-friends/market-data | market-data | 市场数据·行情（多源聚合：FQGate/同花顺/东财/腾讯/美债/全球期货/两融/ETF 跟踪） | ✅ 范本（2026-11-06 由 ths-market 改名：覆盖多数据源后 ths 前缀名不副实，用户定调；工具名同步穿透见规则 5 例外） |
 | ths-favorites | @dsh-friends/ths-favorites | ths-favorites | 同花顺·自选股 | ✅ |
 | ths-wencai | @dsh-friends/ths-wencai | ths-wencai | 同花顺·问财 | ✅ |
 | ths-signal | @dsh-friends/ths-signal | ths-signal | 同花顺·AI分时交易 | ✅ |
@@ -124,6 +125,7 @@
 **规则 4 · `dsh-` 前缀专属官方**：`@deepseek-ai/dsh-*` 是 DSH 官方件命名空间，自研插件不再新增 `dsh-` 前缀。
 
 **规则 5 · 工具名不改**：`ths_*`、`feishu_*`、`zread_*`、`memory_*`、`asr_*` 已带域前缀，是 agent 提示词、AGENTS 文档、长期记忆共同依赖的稳定接口，任何改名只到包/id 层，不穿透工具名。
+**例外（2026-11-06，用户批准）**：ths-market 改名 market-data 时，行情类工具 `ths_X` → `mkt_X`、盯盘类 `ths_watch_X` → `watch_X`（去前缀）——因插件已覆盖 FQGate/同花顺/东财/腾讯/美债/全球期货/两融/多数据源，ths 前缀语义失效，属前缀失义而非命名漂移，经用户批准穿透工具名层；引用该规范的 agent 文档（4 份 AGENTS.md）、profile agentToolAllow 白名单与 feishu-channel protoToolSets 已同步。其余插件工具名仍不改。
 
 **规则 6 · 名字首先是功能名**：目录/包/挂载共用的那一个名字必须功能自解释——`ls plugins/` 一眼可找（"生图的在哪"→ image-tools）。上游引擎名只有在其本身就近似功能名时才直接采用（anydoc、onepanel、asr-tools、officecli-tools）；不自解释的品牌/技术名用功能名替代（zread、tokenjuice-compactor 见对应条目）。
 
@@ -192,8 +194,8 @@ GUI 插件列表与市场索引的标题/描述都来自 `locale/zh.json` + `loc
 |---|---|---|
 | 全员（web+4 身份） | dsh-memory、model-catalog、anydoc、pdf-tools | 基座+通用工具全员 |
 | 4 身份服务（无 web） | feishu-channel、feishu-principal、idle-compactor | 渠道运行时核心 |
-| web + 按需身份 | asr-tools（+IA/PI）、feishu-messages（+IA/PI）、image-tools（+IA/PI/headless）、ths-market（+IA/PI/headless）、ths-favorites（+IA/PI/headless）、ths-wencai（+IA/PI）、ths-trade（+PI/headless）、ths-signal（+PI）、officecli-tools（+PI/interview） | 域件按身份裁剪（IA=investment-assistant，PI=personal-investment） |
-| 身份按需（无 web） | kimi-datasource（IA/PI） | |
+| web + 按需身份 | asr-tools（+IA/PI）、feishu-messages（+IA/PI）、image-tools（+IA/PI/headless）、ths-favorites（+IA/PI/headless）、ths-wencai（+IA/PI）、ths-trade（+PI/headless）、ths-signal（+PI）、officecli-tools（+PI/interview） | 域件按身份裁剪（IA=investment-assistant，PI=personal-investment） |
+| 身份按需（无 web） | kimi-datasource（IA/PI）、market-data（IA/PI/headless，2026-11-06 改名自 ths-market；web 曾挂载已于 2026-11-04 移除，2026-11-06 dump 复核确认未挂） | |
 | 仅 web | browser-tools、zread、onepanel、ops-guard、turn-resumer、title-keeper、ui-workspaces、output-compactor | 管理员工具箱+UI+治理 |
 | 单点 | claw-sandbox（investment-assistant）、wechat-channel（goutoujunshi）、feishu-bitable-sync（personal-investment） | |
 | 未挂载 | model-config | skill/CLI 驱动，无需挂载 |

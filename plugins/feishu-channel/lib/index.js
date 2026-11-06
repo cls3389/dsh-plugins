@@ -1439,17 +1439,17 @@ const AGENT_PROTO_ALLOW = {
 		"workflow",
 		"present",
 		"ask_user_question",
-		"ths_search",
-		"ths_quote",
-		"ths_klines",
-		"ths_yield_curve",
-		"ths_level2",
-		"ths_sec_kline",
+		"mkt_search",
+		"mkt_quote",
+		"mkt_klines",
+		"mkt_yield_curve",
+		"mkt_level2",
+		"mkt_sec_kline",
 		"ths_wencai",
-		"ths_market_pulse",
-		"ths_move_detail",
-		"ths_margin_collateral",
-		"ths_etf_tracker"
+		"mkt_market_pulse",
+		"mkt_move_detail",
+		"mkt_margin_collateral",
+		"mkt_etf_tracker"
 	],
 	companion: [
 		"web_search",
@@ -20806,7 +20806,7 @@ function apply(ctx, config) {
 			"web_search",
 			"web_fetch",
 			"browser_health",
-			"ths_quote"
+			"mkt_quote"
 		]) if (tools?.get(name, agent) === void 0) ctx.logger.warn(`[lark] ${name} is not visible to session ${agent.session.id}`);
 		else ctx.logger.info(`[lark] ${name} enabled for session ${agent.session.id}`);
 	});

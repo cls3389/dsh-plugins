@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Market Data & Watch",
+    "description": "Market snapshots, historical bars, security search, Level-2, market breadth, public price-limit pools and review, sector moves, margin collateral rates and US Treasury yields. Watch rules send alerts only. Screening, account trading and AI signal execution use separate plugins."
+  }
+}

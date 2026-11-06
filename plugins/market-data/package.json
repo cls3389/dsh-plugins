@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-friends/ths-market",
-  "version": "0.4.0",
+  "name": "@dsh-friends/market-data",
+  "version": "0.6.7",
   "type": "module",
   "scripts": {
     "test": "node --test test-adapter.mjs test-watch-service-client.mjs test-watch-wake.mjs"
@@ -12,6 +12,7 @@
   },
   "files": [
     "index.js",
+    "limit-up-tools.js",
     "watch-wake.js",
     "test-adapter.mjs",
     "test-watch-service-client.mjs",
@@ -24,6 +25,6 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "description": "同花顺行情与提醒：9个行情/数据查询工具及4个提醒管理工具（增查改删），业务统一由 ths-data-hub 提供",
+  "description": "市场行情、独立K线指标分析与提醒，业务统一由 ths-data-hub 提供",
   "license": "MIT"
 }
