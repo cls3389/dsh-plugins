@@ -1448,7 +1448,8 @@ const AGENT_PROTO_ALLOW = {
 		"ths_wencai",
 		"ths_market_pulse",
 		"ths_move_detail",
-		"ths_margin_collateral"
+		"ths_margin_collateral",
+		"ths_etf_tracker"
 	],
 	companion: [
 		"web_search",
@@ -5408,7 +5409,7 @@ function recordFeishuSendSentinels(resolvedAccountId, to, threadId, sentinels) {
 * @returns The send result containing the new message ID.
 */
 async function sendMessageFeishu(params) {
-	const { cfg, to, replyToMessageId, mentions, accountId, replyInThread, i18nTexts, threadId } = params;
+	const { cfg, to, replyToMessageId, mentions, accountId, replyInThread, i18nTexts, threadId, uuid } = params;
 	let { text } = params;
 	let normalizationSentinels = [];
 	let normalizationAccountId = accountId ?? void 0;
@@ -5465,7 +5466,10 @@ async function sendMessageFeishu(params) {
 	if (!target) throw new Error(`[feishu-send] Invalid target: "${to}"`);
 	const receiveIdType = resolveReceiveIdType(target);
 	const response = await client.im.message.create({
-		params: { receive_id_type: receiveIdType },
+		params: {
+			receive_id_type: receiveIdType,
+			...uuid ? { uuid } : {}
+		},
 		data: {
 			receive_id: target,
 			msg_type: "post",
@@ -9577,6 +9581,47 @@ var DedupStore = class {
 	}
 };
 //#endregion
+//#region src/image.ts
+/** Save an inbound Feishu image as a durable model-visible image block. */
+async function imageMessageContent(agent, fileName, bytes, logger, contentType) {
+	try {
+		const attachments = agent.ctx.get("attachments");
+		if (!attachments) throw new Error("当前会话未提供图片附件服务");
+		return [{
+			type: "image",
+			attachment: await attachments.saveImage({
+				data: bytes,
+				mediaType: imageMediaType(fileName, bytes, contentType),
+				name: fileName
+			})
+		}];
+	} catch (error) {
+		logger.warn(`[lark] image inline failed: ${fileName}: ${String(error)}`);
+		return [{
+			type: "text",
+			text: `飞书图片「${fileName}」内联失败：${String(error)}。原始附件路径如下，可用 read_image 直接读取；不要转换为 PDF 或进行 OCR 环境探测。`
+		}];
+	}
+}
+function imageMediaType(fileName, bytes, contentType) {
+	const magic = sniffImageMediaType(bytes);
+	if (magic) return magic;
+	const declared = contentType?.split(";")[0]?.trim().toLowerCase();
+	if (declared === "image/jpg") return "image/jpeg";
+	if (declared === "image/jpeg" || declared === "image/png" || declared === "image/gif" || declared === "image/webp") return declared;
+	const extension = fileName.split(".").pop()?.toLowerCase();
+	if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+	if (extension === "png" || extension === "gif" || extension === "webp") return `image/${extension}`;
+	throw new Error(`不支持的图片类型：${contentType || fileName}`);
+}
+function sniffImageMediaType(bytes) {
+	if (bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
+	if (bytes.length >= 8 && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71 && bytes[4] === 13 && bytes[5] === 10 && bytes[6] === 26 && bytes[7] === 10) return "image/png";
+	const ascii = (offset, length) => String.fromCharCode(...bytes.subarray(offset, offset + length));
+	if (bytes.length >= 6 && (ascii(0, 6) === "GIF87a" || ascii(0, 6) === "GIF89a")) return "image/gif";
+	if (bytes.length >= 12 && ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") return "image/webp";
+}
+//#endregion
 //#region src/notifications.ts
 function validateNotification(input) {
 	for (const key of [
@@ -12487,7 +12532,7 @@ var LarkChannel = class {
 	notifications;
 	constructor(options) {
 		this.options = options;
-		this.notifications = new NotificationQueue(join(dataDirectory(options.config), "notifications.json"), (record) => this.enqueue(record.chatId, () => this.dispatchNotification(record)), (message) => options.logger.warn(message));
+		this.notifications = new NotificationQueue(join(dataDirectory(options.config), "notifications.json"), (record) => this.processNotification(record), (message) => options.logger.warn(message));
 		this.dedup = new MessageDedup({ persistence: new DedupStore(join(dataDirectory(options.config), "message-dedup.json")) });
 	}
 	async start() {
@@ -12600,6 +12645,20 @@ var LarkChannel = class {
 		}).catch(() => {});
 		return next;
 	}
+	async processNotification(record) {
+		if (record.input.immediateAlert && record.alertSentAt === void 0) {
+			const target = this.notificationTarget(record.input);
+			if (target.chatId !== record.chatId) throw new Error("Notification chat binding changed");
+			const sent = await this.send(target.chatId, record.input.text, notificationUuid(`alert:${record.input.eventId}`));
+			this.notifications.checkpoint(record, {
+				alertSentAt: Date.now(),
+				...sent.messageId ? { alertMessageId: sent.messageId } : {}
+			});
+			this.options.logger.info(`notification alert sent event=${record.input.eventId} message=${sent.messageId || "unknown"}`);
+		}
+		if (this.abort.signal.aborted) return;
+		await this.enqueue(record.chatId, () => this.dispatchNotification(record));
+	}
 	async dispatchNotification(record) {
 		let target = this.notificationTarget(record.input);
 		if (target.chatId !== record.chatId) throw new Error("Notification chat binding changed");
@@ -12672,7 +12731,7 @@ var LarkChannel = class {
 						role: "user",
 						content: [{
 							type: "text",
-							text: record.input.text
+							text: notificationPrompt(record)
 						}],
 						source: { kind: "schedule" }
 					});
@@ -12937,6 +12996,7 @@ var LarkChannel = class {
 			const path = join(directory, basename(name));
 			await writeFile(path, downloaded.buffer);
 			parts.push(`[Attachment: ${path}]`);
+			if (resource.type === "image") blocks.push(...await imageMessageContent(agent, name, downloaded.buffer, this.options.logger, downloaded.contentType));
 			const pdf = await pdfMessageContent(agent, name, downloaded.buffer, this.options.logger, downloaded.contentType);
 			if (pdf) blocks.push(...pdf);
 		} catch (error) {
@@ -12947,15 +13007,20 @@ var LarkChannel = class {
 			text: parts.filter(Boolean).join("\n\n")
 		}, ...blocks];
 	}
-	async send(chatId, text) {
-		await sendMessageFeishu({
+	async send(chatId, text, uuid) {
+		return sendMessageFeishu({
 			cfg: this.options.officialConfig,
 			to: chatId,
 			text,
-			accountId: this.options.config.accountId ?? "default"
+			accountId: this.options.config.accountId ?? "default",
+			...uuid ? { uuid } : {}
 		});
 	}
 };
+function notificationPrompt(record) {
+	if (!record.input.immediateAlert) return record.input.text;
+	return `以下盯盘原始告警已经直接发送给用户，用户已经收到。请勿复述或再次发送原始告警；只做必要的行情、持仓、量能和板块复核，补充告警后的变化与风险。\n\n原始告警（仅供复核）：\n${record.input.text}`;
+}
 function notificationClaimed(events, id) {
 	const pending = /* @__PURE__ */ new Map();
 	for (const event of events) {
